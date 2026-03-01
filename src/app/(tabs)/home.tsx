@@ -1,33 +1,136 @@
-import { StyleSheet, Text, View } from "react-native";
-import { HugeiconsIcon } from "@hugeicons/react-native";
-import { UserCircleIcon } from "@hugeicons/core-free-icons";
+import { useEffect, useMemo, useState } from "react";
+import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from "react-native";
+import {
+  collection,
+  onSnapshot,
+  orderBy,
+  query,
+  type DocumentData,
+} from "firebase/firestore";
 
-import { COLORS, FONT_SIZE, SPACING } from "@/constants/theme";
+import { COLORS, FONT_SIZE, RADIUS, SPACING } from "@/constants/theme";
+import { formatDate, mapPostRecord, POSTS_COLLECTION, type PostRecord } from "@/lib/content";
+import { firestore } from "@/lib/firebase";
 import { useAuth } from "@/providers/auth-provider";
 
 export default function HomeScreen() {
-  const { user, isGuest } = useAuth();
+  const { user, isGuest, isAdmin } = useAuth();
+  const [posts, setPosts] = useState<PostRecord[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState("");
 
-  const subtitle = isGuest
-    ? "You are browsing as guest. Open Settings to login."
-    : `Logged in as ${user?.displayName || user?.email || "User"}`;
+  const accountSubtitle = isGuest
+    ? "Guest interface is active. Login for full features."
+    : isAdmin
+      ? `Admin logged in: ${user?.email || "Admin"}`
+      : `User logged in: ${user?.displayName || user?.email || "User"}`;
+
+  useEffect(() => {
+    const postsQuery = query(
+      collection(firestore, POSTS_COLLECTION),
+      orderBy("createDate", "desc")
+    );
+
+    const unsubscribe = onSnapshot(
+      postsQuery,
+      (snapshot) => {
+        const nextPosts = snapshot.docs
+          .map((item) => mapPostRecord(item.id, item.data() as DocumentData))
+          .filter((post) => post.status === "published");
+
+        setError("");
+        setPosts(nextPosts);
+        setIsLoading(false);
+      },
+      () => {
+        setError("Unable to load posts right now.");
+        setIsLoading(false);
+      }
+    );
+
+    return unsubscribe;
+  }, []);
+
+  const visiblePosts = useMemo(() => (isGuest ? posts.slice(0, 3) : posts), [isGuest, posts]);
+
+  const subtitle = useMemo(() => {
+    if (isLoading) {
+      return "Loading posts...";
+    }
+
+    if (error) {
+      return error;
+    }
+
+    if (!visiblePosts.length) {
+      return "No published posts yet.";
+    }
+
+    if (isGuest) {
+      return `Guest view: showing ${visiblePosts.length} latest published posts.`;
+    }
+
+    return `${visiblePosts.length} post${visiblePosts.length === 1 ? "" : "s"} published.`;
+  }, [error, isGuest, isLoading, visiblePosts.length]);
 
   return (
-    <View style={styles.container}>
-      <HugeiconsIcon icon={UserCircleIcon} size={64} color={COLORS.primary} />
-      <Text style={styles.title}>Welcome to DevGeet</Text>
-      <Text style={styles.subtitle}>{subtitle}</Text>
-    </View>
+    <ScrollView contentContainerStyle={styles.container}>
+      <Text style={styles.title}>DevGeet Posts</Text>
+      <Text style={styles.subtitle}>{accountSubtitle}</Text>
+      <View
+        style={[
+          styles.roleBanner,
+          isGuest
+            ? styles.roleBannerGuest
+            : isAdmin
+              ? styles.roleBannerAdmin
+              : styles.roleBannerUser,
+        ]}
+      >
+        <Text style={styles.roleBannerTitle}>
+          {isGuest ? "Guest Interface" : isAdmin ? "Admin Interface" : "User Interface"}
+        </Text>
+        <Text style={styles.roleBannerText}>
+          {isGuest
+            ? "Limited browsing mode. Login to access full features."
+            : isAdmin
+              ? "You can manage posts and categories from the Admin tab."
+              : "You are in standard user mode with normal app features."}
+        </Text>
+      </View>
+      <Text style={styles.feedText}>{subtitle}</Text>
+
+      {isLoading ? (
+        <ActivityIndicator size="large" color={COLORS.primary} style={styles.loader} />
+      ) : null}
+
+      {visiblePosts.map((post) => (
+        <View key={post.id} style={styles.card}>
+          <Text style={styles.cardTitle}>{post.title}</Text>
+          <Text style={styles.cardContent}>{post.content}</Text>
+          <Text style={styles.meta}>Category: {post.category}</Text>
+          <Text style={styles.meta}>Create Date: {formatDate(post.createDate)}</Text>
+          {isGuest ? (
+            <Text style={styles.guestNotice}>Login to view full post metadata.</Text>
+          ) : (
+            <>
+              <Text style={styles.meta}>ID: {post.id}</Text>
+              <Text style={styles.meta}>Slug: {post.slug || "-"}</Text>
+              <Text style={styles.meta}>Status: {post.status}</Text>
+              <Text style={styles.meta}>Upload Date: {formatDate(post.uploadDate)}</Text>
+            </>
+          )}
+        </View>
+      ))}
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
+    flexGrow: 1,
     padding: SPACING.xxl,
-    gap: SPACING.md,
+    gap: SPACING.sm,
     backgroundColor: COLORS.background,
   },
   title: {
@@ -38,6 +141,68 @@ const styles = StyleSheet.create({
   subtitle: {
     fontSize: FONT_SIZE.body,
     color: COLORS.mutedText,
-    textAlign: "center",
+  },
+  feedText: {
+    fontSize: FONT_SIZE.body,
+    color: COLORS.text,
+    marginBottom: SPACING.md,
+  },
+  roleBanner: {
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    padding: SPACING.md,
+    gap: SPACING.xs,
+  },
+  roleBannerGuest: {
+    backgroundColor: "#FFF7ED",
+    borderColor: "#FDBA74",
+  },
+  roleBannerUser: {
+    backgroundColor: "#EFF6FF",
+    borderColor: "#93C5FD",
+  },
+  roleBannerAdmin: {
+    backgroundColor: "#ECFDF5",
+    borderColor: "#6EE7B7",
+  },
+  roleBannerTitle: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: COLORS.text,
+  },
+  roleBannerText: {
+    fontSize: 13,
+    color: COLORS.mutedText,
+  },
+  loader: {
+    marginVertical: SPACING.md,
+  },
+  card: {
+    backgroundColor: COLORS.surface,
+    borderColor: COLORS.border,
+    borderWidth: 1,
+    borderRadius: 14,
+    padding: SPACING.lg,
+    marginBottom: SPACING.md,
+    gap: SPACING.xs,
+  },
+  cardTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: COLORS.text,
+  },
+  cardContent: {
+    fontSize: FONT_SIZE.body,
+    color: COLORS.text,
+    marginBottom: SPACING.xs,
+  },
+  meta: {
+    fontSize: 12,
+    color: COLORS.mutedText,
+  },
+  guestNotice: {
+    fontSize: 12,
+    color: "#9A3412",
+    marginTop: SPACING.xs,
   },
 });

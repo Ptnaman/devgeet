@@ -2,6 +2,7 @@ import { Tabs, Redirect } from "expo-router";
 import { ActivityIndicator, StyleSheet, View } from "react-native";
 import { HugeiconsIcon } from "@hugeicons/react-native";
 import {
+  Add01Icon,
   FavouriteIcon,
   Home01Icon,
   Settings01Icon,
@@ -11,7 +12,7 @@ import { COLORS } from "@/constants/theme";
 import { useAuth } from "@/providers/auth-provider";
 
 export default function TabsLayout() {
-  const { user, isGuest, isBootstrapping } = useAuth();
+  const { user, isGuest, isBootstrapping, isAdmin } = useAuth();
 
   if (isBootstrapping) {
     return (
@@ -43,16 +44,18 @@ export default function TabsLayout() {
           ),
         }}
       />
-      <Tabs.Screen
-        name="favorite"
-        options={{
-          title: "Favorite",
-          headerTitle: "Favorite",
-          tabBarIcon: ({ color, size }) => (
-            <HugeiconsIcon icon={FavouriteIcon} color={color} size={size} />
-          ),
-        }}
-      />
+      {!isGuest ? (
+        <Tabs.Screen
+          name="favorite"
+          options={{
+            title: "Favorite",
+            headerTitle: "Favorite",
+            tabBarIcon: ({ color, size }) => (
+              <HugeiconsIcon icon={FavouriteIcon} color={color} size={size} />
+            ),
+          }}
+        />
+      ) : null}
       <Tabs.Screen
         name="settings"
         options={{
@@ -63,6 +66,18 @@ export default function TabsLayout() {
           ),
         }}
       />
+      {isAdmin ? (
+        <Tabs.Screen
+          name="admin"
+          options={{
+            title: "Admin",
+            headerTitle: "Admin",
+            tabBarIcon: ({ color, size }) => (
+              <HugeiconsIcon icon={Add01Icon} color={color} size={size} />
+            ),
+          }}
+        />
+      ) : null}
     </Tabs>
   );
 }

@@ -33,15 +33,26 @@ export default function SignupScreen() {
   const { continueAsGuest, signupWithEmail } = useAuth();
 
   const [username, setUsername] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
+  const [role, setRole] = useState("user");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleSignup = async () => {
-    if (!username.trim() || !email.trim() || !password || !confirmPassword) {
-      setError("Fill username, email and password.");
+    if (
+      !username.trim() ||
+      !firstName.trim() ||
+      !lastName.trim() ||
+      !email.trim() ||
+      !role.trim() ||
+      !password ||
+      !confirmPassword
+    ) {
+      setError("Fill username, first name, last name, email, role and password.");
       return;
     }
 
@@ -53,7 +64,14 @@ export default function SignupScreen() {
     try {
       setIsSubmitting(true);
       setError("");
-      await signupWithEmail(username, email, password);
+      await signupWithEmail({
+        username,
+        firstName,
+        lastName,
+        email,
+        password,
+        role,
+      });
       router.replace("/home");
     } catch (signupError) {
       setError(getErrorMessage(signupError));
@@ -98,6 +116,28 @@ export default function SignupScreen() {
         </View>
 
         <View style={styles.inputWrap}>
+          <HugeiconsIcon icon={UserIcon} size={20} color={COLORS.tabInactive} />
+          <TextInput
+            value={firstName}
+            onChangeText={setFirstName}
+            placeholder="First name"
+            placeholderTextColor={COLORS.mutedText}
+            style={styles.input}
+          />
+        </View>
+
+        <View style={styles.inputWrap}>
+          <HugeiconsIcon icon={UserIcon} size={20} color={COLORS.tabInactive} />
+          <TextInput
+            value={lastName}
+            onChangeText={setLastName}
+            placeholder="Last name"
+            placeholderTextColor={COLORS.mutedText}
+            style={styles.input}
+          />
+        </View>
+
+        <View style={styles.inputWrap}>
           <HugeiconsIcon icon={Mail01Icon} size={20} color={COLORS.tabInactive} />
           <TextInput
             value={email}
@@ -105,6 +145,18 @@ export default function SignupScreen() {
             placeholder="Email"
             placeholderTextColor={COLORS.mutedText}
             keyboardType="email-address"
+            autoCapitalize="none"
+            style={styles.input}
+          />
+        </View>
+
+        <View style={styles.inputWrap}>
+          <HugeiconsIcon icon={UserIcon} size={20} color={COLORS.tabInactive} />
+          <TextInput
+            value={role}
+            onChangeText={setRole}
+            placeholder="Role"
+            placeholderTextColor={COLORS.mutedText}
             autoCapitalize="none"
             style={styles.input}
           />

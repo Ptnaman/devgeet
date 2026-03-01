@@ -9,8 +9,9 @@ import { useAuth } from "@/providers/auth-provider";
 
 export default function SettingsScreen() {
   const router = useRouter();
-  const { user, isGuest, logout } = useAuth();
+  const { user, isGuest, isAdmin, logout } = useAuth();
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const roleLabel = isGuest ? "Guest" : isAdmin ? "Admin" : "User";
 
   const handleAuthButton = async () => {
     try {
@@ -26,10 +27,20 @@ export default function SettingsScreen() {
     <View style={styles.container}>
       <HugeiconsIcon icon={Settings01Icon} size={56} color={COLORS.primary} />
       <Text style={styles.title}>Settings</Text>
+      <View
+        style={[
+          styles.roleBadge,
+          isGuest ? styles.roleBadgeGuest : isAdmin ? styles.roleBadgeAdmin : styles.roleBadgeUser,
+        ]}
+      >
+        <Text style={styles.roleBadgeText}>{roleLabel} Interface</Text>
+      </View>
       <Text style={styles.subtitle}>
         {isGuest
           ? "Guest mode is active."
-          : `Signed in as ${user?.displayName || user?.email || "User"}`}
+          : isAdmin
+            ? `Admin signed in: ${user?.email || "Admin"}`
+            : `Signed in as ${user?.displayName || user?.email || "User"}`}
       </Text>
 
       <Pressable
@@ -73,6 +84,29 @@ const styles = StyleSheet.create({
     color: COLORS.mutedText,
     textAlign: "center",
     marginBottom: SPACING.sm,
+  },
+  roleBadge: {
+    borderRadius: 999,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.xs,
+    borderWidth: 1,
+  },
+  roleBadgeGuest: {
+    backgroundColor: "#FFF7ED",
+    borderColor: "#FDBA74",
+  },
+  roleBadgeUser: {
+    backgroundColor: "#EFF6FF",
+    borderColor: "#93C5FD",
+  },
+  roleBadgeAdmin: {
+    backgroundColor: "#ECFDF5",
+    borderColor: "#6EE7B7",
+  },
+  roleBadgeText: {
+    color: COLORS.text,
+    fontSize: 12,
+    fontWeight: "700",
   },
   button: {
     flexDirection: "row",
