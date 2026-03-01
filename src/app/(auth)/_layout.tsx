@@ -1,9 +1,9 @@
-import { Redirect } from "expo-router";
+import { Redirect, Stack } from "expo-router";
 import { ActivityIndicator, StyleSheet, View } from "react-native";
 
 import { useAuth } from "@/providers/auth-provider";
 
-export default function IndexGate() {
+export default function AuthLayout() {
   const { user, isGuest, isBootstrapping } = useAuth();
 
   if (isBootstrapping) {
@@ -18,7 +18,12 @@ export default function IndexGate() {
     return <Redirect href="/home" />;
   }
 
-  return <Redirect href="/login" />;
+  return (
+    <Stack screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="login" />
+      <Stack.Screen name="signup" />
+    </Stack>
+  );
 }
 
 const styles = StyleSheet.create({
