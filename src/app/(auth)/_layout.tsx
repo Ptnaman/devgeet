@@ -1,6 +1,7 @@
 import { Redirect, Stack } from "expo-router";
 import { ActivityIndicator, StyleSheet, View } from "react-native";
 
+import { COLORS } from "@/constants/theme";
 import { useAuth } from "@/providers/auth-provider";
 
 export default function AuthLayout() {
@@ -9,7 +10,7 @@ export default function AuthLayout() {
   if (isBootstrapping) {
     return (
       <View style={styles.container}>
-        <ActivityIndicator size="large" color="#111827" />
+        <ActivityIndicator size="large" color={COLORS.primary} />
       </View>
     );
   }

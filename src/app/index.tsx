@@ -1,6 +1,7 @@
 import { Redirect } from "expo-router";
 import { ActivityIndicator, StyleSheet, View } from "react-native";
 
+import { COLORS } from "@/constants/theme";
 import { useAuth } from "@/providers/auth-provider";
 
 export default function IndexGate() {
@@ -9,7 +10,7 @@ export default function IndexGate() {
   if (isBootstrapping) {
     return (
       <View style={styles.container}>
-        <ActivityIndicator size="large" color="#111827" />
+        <ActivityIndicator size="large" color={COLORS.primary} />
       </View>
     );
   }

@@ -4,6 +4,7 @@ import { useRouter } from "expo-router";
 import { HugeiconsIcon } from "@hugeicons/react-native";
 import { Login03Icon, Logout03Icon, Settings01Icon } from "@hugeicons/core-free-icons";
 
+import { COLORS, FONT_SIZE, RADIUS, SPACING } from "@/constants/theme";
 import { useAuth } from "@/providers/auth-provider";
 
 export default function SettingsScreen() {
@@ -23,7 +24,7 @@ export default function SettingsScreen() {
 
   return (
     <View style={styles.container}>
-      <HugeiconsIcon icon={Settings01Icon} size={56} color="#111827" />
+      <HugeiconsIcon icon={Settings01Icon} size={56} color={COLORS.primary} />
       <Text style={styles.title}>Settings</Text>
       <Text style={styles.subtitle}>
         {isGuest
@@ -43,7 +44,7 @@ export default function SettingsScreen() {
         <HugeiconsIcon
           icon={isGuest ? Login03Icon : Logout03Icon}
           size={18}
-          color="#FFFFFF"
+          color={COLORS.primaryText}
         />
         <Text style={styles.buttonText}>
           {isGuest ? "Login Now" : "Logout"}
@@ -58,28 +59,29 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    padding: 24,
-    gap: 12,
+    padding: SPACING.xxl,
+    gap: SPACING.md,
+    backgroundColor: COLORS.background,
   },
   title: {
-    fontSize: 24,
+    fontSize: FONT_SIZE.title,
     fontWeight: "700",
-    color: "#111827",
+    color: COLORS.text,
   },
   subtitle: {
-    fontSize: 14,
-    color: "#6B7280",
+    fontSize: FONT_SIZE.body,
+    color: COLORS.mutedText,
     textAlign: "center",
-    marginBottom: 8,
+    marginBottom: SPACING.sm,
   },
   button: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
-    backgroundColor: "#111827",
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    gap: SPACING.sm,
+    backgroundColor: COLORS.primary,
+    borderRadius: RADIUS.md,
+    paddingHorizontal: SPACING.lg,
+    paddingVertical: SPACING.md,
   },
   buttonPressed: {
     opacity: 0.9,
@@ -88,8 +90,8 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
   buttonText: {
-    color: "#FFFFFF",
-    fontSize: 16,
+    color: COLORS.primaryText,
+    fontSize: FONT_SIZE.button,
     fontWeight: "600",
   },
 });

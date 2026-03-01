@@ -6,6 +6,7 @@ import Constants from "expo-constants";
 import { HugeiconsIcon } from "@hugeicons/react-native";
 import { ArrowRight01Icon, GoogleIcon } from "@hugeicons/core-free-icons";
 
+import { COLORS, CONTROL_SIZE, FONT_SIZE, RADIUS, SPACING } from "@/constants/theme";
 import { useAuth } from "@/providers/auth-provider";
 
 WebBrowser.maybeCompleteAuthSession();
@@ -101,17 +102,17 @@ export function GoogleAuthButton({ label, onError }: GoogleAuthButtonProps) {
       style={({ pressed }) => [
         styles.googleButton,
         pressed && styles.buttonPressed,
-        (isSubmitting || !request) && styles.buttonDisabled,
+        isSubmitting && styles.buttonDisabled,
       ]}
-      disabled={isSubmitting || !request}
+      disabled={isSubmitting}
       onPress={handlePress}
     >
-      <HugeiconsIcon icon={GoogleIcon} size={20} color="#111827" />
+      <HugeiconsIcon icon={GoogleIcon} size={20} color={COLORS.primary} />
       <Text style={styles.googleButtonText}>{label}</Text>
       {isSubmitting ? (
-        <ActivityIndicator size="small" color="#111827" />
+        <ActivityIndicator size="small" color={COLORS.primary} />
       ) : (
-        <HugeiconsIcon icon={ArrowRight01Icon} size={18} color="#111827" />
+        <HugeiconsIcon icon={ArrowRight01Icon} size={18} color={COLORS.primary} />
       )}
     </Pressable>
   );
@@ -120,22 +121,22 @@ export function GoogleAuthButton({ label, onError }: GoogleAuthButtonProps) {
 const styles = StyleSheet.create({
   googleButton: {
     width: "100%",
-    borderColor: "#D1D5DB",
+    borderColor: COLORS.border,
     borderWidth: 1,
-    backgroundColor: "#FFFFFF",
-    borderRadius: 12,
-    minHeight: 52,
-    paddingHorizontal: 14,
+    backgroundColor: COLORS.surface,
+    borderRadius: RADIUS.md,
+    minHeight: CONTROL_SIZE.inputHeight,
+    paddingHorizontal: SPACING.md + 2,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
   },
   googleButtonText: {
-    color: "#111827",
-    fontSize: 16,
+    color: COLORS.primary,
+    fontSize: FONT_SIZE.button,
     fontWeight: "600",
     flex: 1,
-    marginHorizontal: 10,
+    marginHorizontal: SPACING.md - 2,
   },
   buttonPressed: {
     opacity: 0.9,

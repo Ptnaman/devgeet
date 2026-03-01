@@ -18,6 +18,7 @@ import {
 } from "@hugeicons/core-free-icons";
 
 import { GoogleAuthButton } from "@/components/google-auth-button";
+import { COLORS, CONTROL_SIZE, FONT_SIZE, RADIUS, SPACING } from "@/constants/theme";
 import { useAuth } from "@/providers/auth-provider";
 
 const getErrorMessage = (error: unknown) => {
@@ -78,31 +79,31 @@ export default function SignupScreen() {
       keyboardShouldPersistTaps="handled"
     >
       <View style={styles.card}>
-        <HugeiconsIcon icon={Add01Icon} size={42} color="#111827" />
+        <HugeiconsIcon icon={Add01Icon} size={42} color={COLORS.primary} />
         <Text style={styles.title}>Create Account</Text>
         <Text style={styles.subtitle}>
           Sign up with email, choose a username, or use Google.
         </Text>
 
         <View style={styles.inputWrap}>
-          <HugeiconsIcon icon={UserIcon} size={20} color="#6B7280" />
+          <HugeiconsIcon icon={UserIcon} size={20} color={COLORS.tabInactive} />
           <TextInput
             value={username}
             onChangeText={setUsername}
             placeholder="Username"
-            placeholderTextColor="#9CA3AF"
+            placeholderTextColor={COLORS.mutedText}
             autoCapitalize="none"
             style={styles.input}
           />
         </View>
 
         <View style={styles.inputWrap}>
-          <HugeiconsIcon icon={Mail01Icon} size={20} color="#6B7280" />
+          <HugeiconsIcon icon={Mail01Icon} size={20} color={COLORS.tabInactive} />
           <TextInput
             value={email}
             onChangeText={setEmail}
             placeholder="Email"
-            placeholderTextColor="#9CA3AF"
+            placeholderTextColor={COLORS.mutedText}
             keyboardType="email-address"
             autoCapitalize="none"
             style={styles.input}
@@ -110,24 +111,24 @@ export default function SignupScreen() {
         </View>
 
         <View style={styles.inputWrap}>
-          <HugeiconsIcon icon={LockIcon} size={20} color="#6B7280" />
+          <HugeiconsIcon icon={LockIcon} size={20} color={COLORS.tabInactive} />
           <TextInput
             value={password}
             onChangeText={setPassword}
             placeholder="Password"
-            placeholderTextColor="#9CA3AF"
+            placeholderTextColor={COLORS.mutedText}
             secureTextEntry
             style={styles.input}
           />
         </View>
 
         <View style={styles.inputWrap}>
-          <HugeiconsIcon icon={LockIcon} size={20} color="#6B7280" />
+          <HugeiconsIcon icon={LockIcon} size={20} color={COLORS.tabInactive} />
           <TextInput
             value={confirmPassword}
             onChangeText={setConfirmPassword}
             placeholder="Confirm password"
-            placeholderTextColor="#9CA3AF"
+            placeholderTextColor={COLORS.mutedText}
             secureTextEntry
             style={styles.input}
           />
@@ -145,9 +146,9 @@ export default function SignupScreen() {
           disabled={isSubmitting}
         >
           {isSubmitting ? (
-            <ActivityIndicator size="small" color="#FFFFFF" />
+            <ActivityIndicator size="small" color={COLORS.primaryText} />
           ) : (
-            <HugeiconsIcon icon={Add01Icon} size={20} color="#FFFFFF" />
+            <HugeiconsIcon icon={Add01Icon} size={20} color={COLORS.primaryText} />
           )}
           <Text style={styles.primaryButtonText}>Sign up</Text>
         </Pressable>
@@ -181,82 +182,82 @@ const styles = StyleSheet.create({
   scroll: {
     flexGrow: 1,
     justifyContent: "center",
-    padding: 20,
-    backgroundColor: "#F9FAFB",
+    padding: SPACING.xl,
+    backgroundColor: COLORS.background,
   },
   card: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 20,
-    padding: 20,
-    gap: 12,
+    backgroundColor: COLORS.surface,
+    borderRadius: RADIUS.lg,
+    padding: SPACING.xl,
+    gap: SPACING.md,
     borderWidth: 1,
-    borderColor: "#E5E7EB",
+    borderColor: COLORS.border,
   },
   title: {
-    fontSize: 28,
+    fontSize: FONT_SIZE.heroTitle,
     fontWeight: "700",
-    color: "#111827",
+    color: COLORS.text,
   },
   subtitle: {
-    color: "#6B7280",
-    fontSize: 14,
+    color: COLORS.mutedText,
+    fontSize: FONT_SIZE.subtitle,
     marginBottom: 4,
   },
   inputWrap: {
-    minHeight: 52,
-    borderRadius: 12,
+    minHeight: CONTROL_SIZE.inputHeight,
+    borderRadius: RADIUS.md,
     borderWidth: 1,
-    borderColor: "#D1D5DB",
-    backgroundColor: "#FFFFFF",
-    paddingHorizontal: 12,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.surface,
+    paddingHorizontal: SPACING.md,
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
+    gap: SPACING.sm,
   },
   input: {
     flex: 1,
-    color: "#111827",
-    fontSize: 16,
+    color: COLORS.text,
+    fontSize: FONT_SIZE.button,
   },
   error: {
-    color: "#B91C1C",
+    color: COLORS.danger,
     fontSize: 13,
   },
   primaryButton: {
-    minHeight: 52,
-    borderRadius: 12,
-    backgroundColor: "#111827",
+    minHeight: CONTROL_SIZE.inputHeight,
+    borderRadius: RADIUS.md,
+    backgroundColor: COLORS.primary,
     alignItems: "center",
     justifyContent: "center",
     flexDirection: "row",
-    gap: 8,
+    gap: SPACING.sm,
   },
   primaryButtonText: {
-    color: "#FFFFFF",
+    color: COLORS.primaryText,
     fontWeight: "700",
-    fontSize: 16,
+    fontSize: FONT_SIZE.button,
   },
   secondaryButton: {
-    minHeight: 52,
-    borderRadius: 12,
+    minHeight: CONTROL_SIZE.inputHeight,
+    borderRadius: RADIUS.md,
     borderWidth: 1,
-    borderColor: "#D1D5DB",
+    borderColor: COLORS.border,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#FFFFFF",
+    backgroundColor: COLORS.surface,
   },
   secondaryButtonText: {
-    color: "#111827",
-    fontSize: 16,
+    color: COLORS.text,
+    fontSize: FONT_SIZE.button,
     fontWeight: "600",
   },
   switchText: {
     textAlign: "center",
-    color: "#6B7280",
+    color: COLORS.mutedText,
     marginTop: 4,
   },
   switchLink: {
-    color: "#111827",
+    color: COLORS.text,
     fontWeight: "700",
   },
   buttonPressed: {

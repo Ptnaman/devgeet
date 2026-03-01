@@ -46,6 +46,8 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 const normalizeEmail = (value: string) => value.trim().toLowerCase();
 const normalizeUsername = (value: string) => value.trim().toLowerCase();
+const sanitizeUsername = (value: string) =>
+  value.trim().toLowerCase().replace(/[^a-z0-9._-]/g, "").slice(0, 20);
 
 const readUsernameEmail = async (username: string) => {
   const usernameRef = doc(firestore, USERNAMES_COLLECTION, normalizeUsername(username));
@@ -77,8 +79,15 @@ const validateUsername = (username: string) => {
 
 const getFallbackUsername = (email: string | null, uid: string) => {
   const base = email?.split("@")[0] ?? `user_${uid.slice(0, 6)}`;
-  const sanitized = base.toLowerCase().replace(/[^a-z0-9._-]/g, "");
+  const sanitized = sanitizeUsername(base);
   return (sanitized || `user_${uid.slice(0, 6)}`).slice(0, 20);
+};
+
+const ensureUniqueGoogleUsername = (uid: string, email: string | null) => {
+  const base = getFallbackUsername(email, uid);
+  const suffix = uid.slice(0, 4).toLowerCase();
+  const head = base.slice(0, Math.max(0, 20 - suffix.length - 1));
+  return `${head}_${suffix}`;
 };
 
 const writeUserProfile = async (payload: {
@@ -205,15 +214,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     const username = result.user.displayName?.trim()
-      ? result.user.displayName.trim()
+      ? sanitizeUsername(result.user.displayName)
       : getFallbackUsername(result.user.email, result.user.uid);
 
-    await writeUserProfile({
-      uid: result.user.uid,
-      username,
-      email: normalizedEmail,
-      provider: "google",
-    });
+    const candidate =
+      username || getFallbackUsername(result.user.email, result.user.uid);
+
+    try {
+      await writeUserProfile({
+        uid: result.user.uid,
+        username: candidate,
+        email: normalizedEmail,
+        provider: "google",
+      });
+    } catch (error) {
+      if (
+        !(error instanceof Error) ||
+        !error.message.toLowerCase().includes("already taken")
+      ) {
+        throw error;
+      }
+
+      await writeUserProfile({
+        uid: result.user.uid,
+        username: ensureUniqueGoogleUsername(result.user.uid, result.user.email),
+        email: normalizedEmail,
+        provider: "google",
+      });
+    }
   };
 
   const continueAsGuest = async () => {

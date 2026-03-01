@@ -1,0 +1,33 @@
+:root {
+  --color-bg: #f3f6fb;
+  --color-surface: #ffffff;
+  --color-text: #0f172a;
+  --color-muted: #64748b;
+  --color-border: #d8e0ea;
+  --color-primary: #0f172a;
+  --color-primary-text: #ffffff;
+  --radius-lg: 20px;
+  --radius-md: 12px;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  color: var(--color-text);
+  background:
+    radial-gradient(circle at 0% 0%, #e4eefb 0%, transparent 40%),
+    radial-gradient(circle at 100% 100%, #eef3f9 0%, transparent 45%),
+    var(--color-bg);
+  font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+}

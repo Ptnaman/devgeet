@@ -8,7 +8,9 @@
     "scheme": "devgeet",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "icon": "./assets/expo.icon"
+      "supportsTablet": true,
+      "bundleIdentifier": "com.panditnaman.devgeet",
+      "icon": "./assets/images/icon.png"
     },
     "android": {
       "adaptiveIcon": {
@@ -17,6 +19,7 @@
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
+      "package": "com.panditnaman.devgeet",
       "predictiveBackGestureEnabled": false
     },
     "web": {
@@ -39,6 +42,13 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "7b26d1ab-6c19-41ce-ae29-782c13a616fa"
+      }
+    },
+    "owner": "panditnaman"
   }
 }

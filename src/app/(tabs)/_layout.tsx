@@ -7,6 +7,7 @@ import {
   Settings01Icon,
 } from "@hugeicons/core-free-icons";
 
+import { COLORS } from "@/constants/theme";
 import { useAuth } from "@/providers/auth-provider";
 
 export default function TabsLayout() {
@@ -15,7 +16,7 @@ export default function TabsLayout() {
   if (isBootstrapping) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#111827" />
+        <ActivityIndicator size="large" color={COLORS.primary} />
       </View>
     );
   }
@@ -28,8 +29,8 @@ export default function TabsLayout() {
     <Tabs
       initialRouteName="home"
       screenOptions={{
-        tabBarActiveTintColor: "#111827",
-        tabBarInactiveTintColor: "#6B7280",
+        tabBarActiveTintColor: COLORS.tabActive,
+        tabBarInactiveTintColor: COLORS.tabInactive,
       }}
     >
       <Tabs.Screen

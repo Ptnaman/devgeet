@@ -2,6 +2,7 @@ import { StyleSheet, Text, View } from "react-native";
 import { HugeiconsIcon } from "@hugeicons/react-native";
 import { UserCircleIcon } from "@hugeicons/core-free-icons";
 
+import { COLORS, FONT_SIZE, SPACING } from "@/constants/theme";
 import { useAuth } from "@/providers/auth-provider";
 
 export default function HomeScreen() {
@@ -13,7 +14,7 @@ export default function HomeScreen() {
 
   return (
     <View style={styles.container}>
-      <HugeiconsIcon icon={UserCircleIcon} size={64} color="#111827" />
+      <HugeiconsIcon icon={UserCircleIcon} size={64} color={COLORS.primary} />
       <Text style={styles.title}>Welcome to DevGeet</Text>
       <Text style={styles.subtitle}>{subtitle}</Text>
     </View>
@@ -25,17 +26,18 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    padding: 24,
-    gap: 12,
+    padding: SPACING.xxl,
+    gap: SPACING.md,
+    backgroundColor: COLORS.background,
   },
   title: {
-    fontSize: 24,
+    fontSize: FONT_SIZE.title,
     fontWeight: "700",
-    color: "#111827",
+    color: COLORS.text,
   },
   subtitle: {
-    fontSize: 14,
-    color: "#6B7280",
+    fontSize: FONT_SIZE.body,
+    color: COLORS.mutedText,
     textAlign: "center",
   },
 });
