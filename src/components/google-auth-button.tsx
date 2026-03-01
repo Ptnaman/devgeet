@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text } from "react-native";
 import * as WebBrowser from "expo-web-browser";
 import * as Google from "expo-auth-session/providers/google";
@@ -14,6 +14,7 @@ WebBrowser.maybeCompleteAuthSession();
 type GoogleAuthButtonProps = {
   label: string;
   onError: (message: string) => void;
+  autoPrompt?: boolean;
 };
 
 const resolveGoogleClientIds = () => {
@@ -35,9 +36,14 @@ const getErrorMessage = (error: unknown) => {
   return "Google sign-in failed. Please try again.";
 };
 
-export function GoogleAuthButton({ label, onError }: GoogleAuthButtonProps) {
+export function GoogleAuthButton({
+  label,
+  onError,
+  autoPrompt = false,
+}: GoogleAuthButtonProps) {
   const { loginWithGoogleIdToken } = useAuth();
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const hasAutoPromptedRef = useRef(false);
 
   const googleClientIds = useMemo(() => resolveGoogleClientIds(), []);
   const isGoogleConfigured = useMemo(
@@ -72,6 +78,32 @@ export function GoogleAuthButton({ label, onError }: GoogleAuthButtonProps) {
 
     void run();
   }, [loginWithGoogleIdToken, onError, response]);
+
+  useEffect(() => {
+    if (!autoPrompt || hasAutoPromptedRef.current) {
+      return;
+    }
+
+    if (!request || !isGoogleConfigured) {
+      return;
+    }
+
+    hasAutoPromptedRef.current = true;
+
+    const run = async () => {
+      try {
+        setIsSubmitting(true);
+        onError("");
+        await promptAsync();
+      } catch (error) {
+        onError(getErrorMessage(error));
+      } finally {
+        setIsSubmitting(false);
+      }
+    };
+
+    void run();
+  }, [autoPrompt, isGoogleConfigured, onError, promptAsync, request]);
 
   const handlePress = async () => {
     if (!isGoogleConfigured) {

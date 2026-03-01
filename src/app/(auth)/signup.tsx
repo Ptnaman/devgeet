@@ -30,7 +30,7 @@ const getErrorMessage = (error: unknown) => {
 
 export default function SignupScreen() {
   const router = useRouter();
-  const { continueAsGuest, signupWithEmail } = useAuth();
+  const { signupWithEmail } = useAuth();
 
   const [username, setUsername] = useState("");
   const [firstName, setFirstName] = useState("");
@@ -80,17 +80,6 @@ export default function SignupScreen() {
     }
   };
 
-  const handleGuestLogin = async () => {
-    try {
-      setError("");
-      setIsSubmitting(true);
-      await continueAsGuest();
-      router.replace("/home");
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
   return (
     <ScrollView
       contentContainerStyle={styles.scroll}
@@ -99,9 +88,7 @@ export default function SignupScreen() {
       <View style={styles.card}>
         <HugeiconsIcon icon={Add01Icon} size={42} color={COLORS.primary} />
         <Text style={styles.title}>Create Account</Text>
-        <Text style={styles.subtitle}>
-          Sign up with email, choose a username, or use Google.
-        </Text>
+        <Text style={styles.subtitle}>Sign up with email or use Google.</Text>
 
         <View style={styles.inputWrap}>
           <HugeiconsIcon icon={UserIcon} size={20} color={COLORS.tabInactive} />
@@ -207,18 +194,6 @@ export default function SignupScreen() {
 
         <GoogleAuthButton label="Sign up with Google" onError={setError} />
 
-        <Pressable
-          style={({ pressed }) => [
-            styles.secondaryButton,
-            pressed && styles.buttonPressed,
-            isSubmitting && styles.buttonDisabled,
-          ]}
-          onPress={handleGuestLogin}
-          disabled={isSubmitting}
-        >
-          <Text style={styles.secondaryButtonText}>Login Later</Text>
-        </Pressable>
-
         <Text style={styles.switchText}>
           Already have an account?{" "}
           <Link href="/login" style={styles.switchLink}>
@@ -288,20 +263,6 @@ const styles = StyleSheet.create({
     color: COLORS.primaryText,
     fontWeight: "700",
     fontSize: FONT_SIZE.button,
-  },
-  secondaryButton: {
-    minHeight: CONTROL_SIZE.inputHeight,
-    borderRadius: RADIUS.md,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: COLORS.surface,
-  },
-  secondaryButtonText: {
-    color: COLORS.text,
-    fontSize: FONT_SIZE.button,
-    fontWeight: "600",
   },
   switchText: {
     textAlign: "center",

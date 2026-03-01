@@ -5,7 +5,7 @@ import { COLORS } from "@/constants/theme";
 import { useAuth } from "@/providers/auth-provider";
 
 export default function IndexGate() {
-  const { user, isGuest, isBootstrapping } = useAuth();
+  const { user, isBootstrapping } = useAuth();
 
   if (isBootstrapping) {
     return (
@@ -15,7 +15,7 @@ export default function IndexGate() {
     );
   }
 
-  if (user || isGuest) {
+  if (user) {
     return <Redirect href="/home" />;
   }
 

@@ -1,7 +1,8 @@
 import { Redirect } from "expo-router";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -13,6 +14,7 @@ import { HugeiconsIcon } from "@hugeicons/react-native";
 import { Add01Icon } from "@hugeicons/core-free-icons";
 import {
   collection,
+  deleteDoc,
   doc,
   getDoc,
   onSnapshot,
@@ -40,23 +42,33 @@ import { useAuth } from "@/providers/auth-provider";
 
 const POST_STATUSES: PostStatus[] = ["draft", "published"];
 
+type PostStatusFilter = "all" | PostStatus;
+
+const DEFAULT_CATEGORY = "general";
+
 export default function AdminScreen() {
   const { user, isAdmin, isBootstrapping } = useAuth();
   const [categories, setCategories] = useState<CategoryRecord[]>([]);
-  const [recentPosts, setRecentPosts] = useState<PostRecord[]>([]);
-  const [isLoadingData, setIsLoadingData] = useState(true);
+  const [posts, setPosts] = useState<PostRecord[]>([]);
+  const [isLoadingCategories, setIsLoadingCategories] = useState(true);
+  const [isLoadingPosts, setIsLoadingPosts] = useState(true);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
   const [categoryName, setCategoryName] = useState("");
   const [isSavingCategory, setIsSavingCategory] = useState(false);
 
+  const [editingPostId, setEditingPostId] = useState<string | null>(null);
   const [title, setTitle] = useState("");
   const [slugInput, setSlugInput] = useState("");
   const [content, setContent] = useState("");
-  const [category, setCategory] = useState("general");
+  const [category, setCategory] = useState(DEFAULT_CATEGORY);
   const [status, setStatus] = useState<PostStatus>("draft");
   const [isSavingPost, setIsSavingPost] = useState(false);
+
+  const [searchTerm, setSearchTerm] = useState("");
+  const [statusFilter, setStatusFilter] = useState<PostStatusFilter>("all");
+  const [categoryFilter, setCategoryFilter] = useState<string>("all");
 
   useEffect(() => {
     const categoriesQuery = query(
@@ -71,28 +83,32 @@ export default function AdminScreen() {
     const unsubscribeCategories = onSnapshot(
       categoriesQuery,
       (snapshot) => {
-        const nextCategories = snapshot.docs.map((item) =>
-          mapCategoryRecord(item.id, item.data() as DocumentData)
+        setError("");
+        setCategories(
+          snapshot.docs.map((item) =>
+            mapCategoryRecord(item.id, item.data() as DocumentData)
+          )
         );
-        setCategories(nextCategories);
-        setIsLoadingData(false);
+        setIsLoadingCategories(false);
       },
       () => {
         setError("Unable to load categories.");
-        setIsLoadingData(false);
+        setIsLoadingCategories(false);
       }
     );
 
     const unsubscribePosts = onSnapshot(
       postsQuery,
       (snapshot) => {
-        const nextPosts = snapshot.docs
-          .map((item) => mapPostRecord(item.id, item.data() as DocumentData))
-          .slice(0, 8);
-        setRecentPosts(nextPosts);
+        setError("");
+        setPosts(
+          snapshot.docs.map((item) => mapPostRecord(item.id, item.data() as DocumentData))
+        );
+        setIsLoadingPosts(false);
       },
       () => {
         setError("Unable to load posts.");
+        setIsLoadingPosts(false);
       }
     );
 
@@ -102,17 +118,67 @@ export default function AdminScreen() {
     };
   }, []);
 
-  if (isBootstrapping) {
-    return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
-      </View>
-    );
-  }
+  const isLoadingData = isLoadingCategories || isLoadingPosts;
 
-  if (!user || !isAdmin) {
-    return <Redirect href="/home" />;
-  }
+  const stats = useMemo(() => {
+    const published = posts.filter((item) => item.status === "published").length;
+    const draft = posts.length - published;
+    return {
+      totalPosts: posts.length,
+      published,
+      draft,
+      categories: categories.length,
+    };
+  }, [categories.length, posts]);
+
+  const filteredPosts = useMemo(() => {
+    const keyword = searchTerm.trim().toLowerCase();
+    return posts.filter((post) => {
+      if (statusFilter !== "all" && post.status !== statusFilter) {
+        return false;
+      }
+
+      if (categoryFilter !== "all" && post.category !== categoryFilter) {
+        return false;
+      }
+
+      if (!keyword) {
+        return true;
+      }
+
+      return [post.title, post.content, post.slug, post.category]
+        .join(" ")
+        .toLowerCase()
+        .includes(keyword);
+    });
+  }, [categoryFilter, posts, searchTerm, statusFilter]);
+
+  const clearFeedback = () => {
+    setError("");
+    setSuccess("");
+  };
+
+  const resetPostForm = () => {
+    setEditingPostId(null);
+    setTitle("");
+    setSlugInput("");
+    setContent("");
+    setCategory(DEFAULT_CATEGORY);
+    setStatus("draft");
+  };
+
+  const getUniqueSlug = (base: string, ignorePostId?: string) => {
+    const normalizedBase = base || "post";
+    let candidate = normalizedBase;
+    let suffix = 1;
+
+    while (posts.some((item) => item.slug === candidate && item.id !== ignorePostId)) {
+      candidate = `${normalizedBase}-${suffix}`;
+      suffix += 1;
+    }
+
+    return candidate;
+  };
 
   const handleCreateCategory = async () => {
     const trimmedName = categoryName.trim();
@@ -130,8 +196,12 @@ export default function AdminScreen() {
 
     try {
       setIsSavingCategory(true);
-      setError("");
-      setSuccess("");
+      clearFeedback();
+
+      if (categories.some((item) => item.slug === slug)) {
+        setError("Category slug already exists.");
+        return;
+      }
 
       const categoryRef = doc(firestore, CATEGORIES_COLLECTION, slug);
       const categorySnapshot = await getDoc(categoryRef);
@@ -146,8 +216,8 @@ export default function AdminScreen() {
         slug,
         createDate: serverTimestamp(),
         uploadDate: serverTimestamp(),
-        createdBy: user.uid,
-        createdByEmail: user.email ?? "",
+        createdBy: user?.uid ?? "",
+        createdByEmail: user?.email ?? "",
       });
 
       setCategoryName("");
@@ -164,10 +234,10 @@ export default function AdminScreen() {
     }
   };
 
-  const handleCreatePost = async () => {
+  const handleSavePost = async () => {
     const trimmedTitle = title.trim();
     const trimmedContent = content.trim();
-    const normalizedCategory = category.trim().toLowerCase() || "general";
+    const normalizedCategory = category.trim().toLowerCase() || DEFAULT_CATEGORY;
     const normalizedStatus: PostStatus = status === "published" ? "published" : "draft";
     const slugBase = createSlug(slugInput || trimmedTitle);
 
@@ -182,7 +252,7 @@ export default function AdminScreen() {
     }
 
     if (
-      normalizedCategory !== "general" &&
+      normalizedCategory !== DEFAULT_CATEGORY &&
       !categories.some((item) => item.slug === normalizedCategory)
     ) {
       setError("Select an existing category or use general.");
@@ -191,51 +261,166 @@ export default function AdminScreen() {
 
     try {
       setIsSavingPost(true);
-      setError("");
-      setSuccess("");
+      clearFeedback();
 
-      const postRef = doc(collection(firestore, POSTS_COLLECTION));
-      const uniqueSlug = `${slugBase}-${postRef.id.slice(0, 6)}`;
+      const uniqueSlug = getUniqueSlug(slugBase, editingPostId ?? undefined);
 
-      await setDoc(postRef, {
-        id: postRef.id,
-        slug: uniqueSlug,
-        title: trimmedTitle,
-        content: trimmedContent,
-        category: normalizedCategory,
-        status: normalizedStatus,
-        createDate: serverTimestamp(),
-        uploadDate: serverTimestamp(),
-        createdBy: user.uid,
-        createdByEmail: user.email ?? "",
-      });
+      if (editingPostId) {
+        const postRef = doc(firestore, POSTS_COLLECTION, editingPostId);
+        await setDoc(
+          postRef,
+          {
+            id: editingPostId,
+            slug: uniqueSlug,
+            title: trimmedTitle,
+            content: trimmedContent,
+            category: normalizedCategory,
+            status: normalizedStatus,
+            uploadDate: serverTimestamp(),
+          },
+          { merge: true }
+        );
 
-      setTitle("");
-      setSlugInput("");
-      setContent("");
-      setStatus("draft");
-      setSuccess("Post created.");
+        setSuccess("Post updated.");
+      } else {
+        const postRef = doc(collection(firestore, POSTS_COLLECTION));
+        await setDoc(postRef, {
+          id: postRef.id,
+          slug: `${uniqueSlug}-${postRef.id.slice(0, 6)}`,
+          title: trimmedTitle,
+          content: trimmedContent,
+          category: normalizedCategory,
+          status: normalizedStatus,
+          createDate: serverTimestamp(),
+          uploadDate: serverTimestamp(),
+          createdBy: user?.uid ?? "",
+          createdByEmail: user?.email ?? "",
+        });
+
+        setSuccess("Post created.");
+      }
+
+      resetPostForm();
     } catch (saveError) {
       if (saveError instanceof Error && saveError.message) {
         setError(saveError.message);
       } else {
-        setError("Unable to create post.");
+        setError("Unable to save post.");
       }
     } finally {
       setIsSavingPost(false);
     }
   };
 
+  const handleEditPost = (post: PostRecord) => {
+    clearFeedback();
+    setEditingPostId(post.id);
+    setTitle(post.title);
+    setSlugInput(post.slug);
+    setContent(post.content);
+    setCategory(post.category);
+    setStatus(post.status);
+  };
+
+  const handleToggleStatus = async (post: PostRecord) => {
+    try {
+      clearFeedback();
+      const postRef = doc(firestore, POSTS_COLLECTION, post.id);
+      const nextStatus: PostStatus = post.status === "published" ? "draft" : "published";
+      await setDoc(
+        postRef,
+        {
+          status: nextStatus,
+          uploadDate: serverTimestamp(),
+        },
+        { merge: true }
+      );
+      setSuccess(`Post moved to ${nextStatus}.`);
+    } catch (updateError) {
+      if (updateError instanceof Error && updateError.message) {
+        setError(updateError.message);
+      } else {
+        setError("Unable to update status.");
+      }
+    }
+  };
+
+  const runDeletePost = async (post: PostRecord) => {
+    try {
+      clearFeedback();
+      await deleteDoc(doc(firestore, POSTS_COLLECTION, post.id));
+      if (editingPostId === post.id) {
+        resetPostForm();
+      }
+      setSuccess("Post deleted.");
+    } catch (deleteError) {
+      if (deleteError instanceof Error && deleteError.message) {
+        setError(deleteError.message);
+      } else {
+        setError("Unable to delete post.");
+      }
+    }
+  };
+
+  const handleDeletePost = (post: PostRecord) => {
+    Alert.alert("Delete Post", `Delete "${post.title}" permanently?`, [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Delete",
+        style: "destructive",
+        onPress: () => {
+          void runDeletePost(post);
+        },
+      },
+    ]);
+  };
+
+  if (isBootstrapping) {
+    return (
+      <View style={styles.center}>
+        <ActivityIndicator size="large" color={COLORS.primary} />
+      </View>
+    );
+  }
+
+  if (!user || !isAdmin) {
+    return <Redirect href="/home" />;
+  }
+
   return (
     <ScrollView contentContainerStyle={styles.container}>
-      <Text style={styles.title}>Admin Panel</Text>
-      <Text style={styles.subtitle}>Only approved admin email can create categories and posts.</Text>
+      <Text style={styles.title}>High-Level Admin Panel</Text>
+      <Text style={styles.subtitle}>
+        Manage posts and categories with full Firebase-backed controls.
+      </Text>
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
       {success ? <Text style={styles.success}>{success}</Text> : null}
 
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Create Category</Text>
+        <Text style={styles.sectionTitle}>Dashboard</Text>
+        <View style={styles.statsGrid}>
+          <View style={styles.statCard}>
+            <Text style={styles.statLabel}>Total Posts</Text>
+            <Text style={styles.statValue}>{stats.totalPosts}</Text>
+          </View>
+          <View style={styles.statCard}>
+            <Text style={styles.statLabel}>Published</Text>
+            <Text style={styles.statValue}>{stats.published}</Text>
+          </View>
+          <View style={styles.statCard}>
+            <Text style={styles.statLabel}>Drafts</Text>
+            <Text style={styles.statValue}>{stats.draft}</Text>
+          </View>
+          <View style={styles.statCard}>
+            <Text style={styles.statLabel}>Categories</Text>
+            <Text style={styles.statValue}>{stats.categories}</Text>
+          </View>
+        </View>
+      </View>
+
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Category Management</Text>
         <View style={styles.inputWrap}>
           <TextInput
             value={categoryName}
@@ -259,12 +444,25 @@ export default function AdminScreen() {
           ) : (
             <HugeiconsIcon icon={Add01Icon} size={18} color={COLORS.primaryText} />
           )}
-          <Text style={styles.primaryButtonText}>Create Category</Text>
+          <Text style={styles.primaryButtonText}>Add Category</Text>
         </Pressable>
+
+        <View style={styles.chipRow}>
+          <View style={[styles.chip, styles.chipActive]}>
+            <Text style={[styles.chipText, styles.chipTextActive]}>{DEFAULT_CATEGORY}</Text>
+          </View>
+          {categories.map((item) => (
+            <View key={item.id} style={styles.chip}>
+              <Text style={styles.chipText}>{item.slug}</Text>
+            </View>
+          ))}
+        </View>
       </View>
 
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Create Post</Text>
+        <Text style={styles.sectionTitle}>
+          {editingPostId ? "Edit Post" : "Create Post"}
+        </Text>
 
         <View style={styles.inputWrap}>
           <TextInput
@@ -304,17 +502,11 @@ export default function AdminScreen() {
           {POST_STATUSES.map((item) => (
             <Pressable
               key={item}
-              style={[
-                styles.chip,
-                status === item ? styles.chipActive : undefined,
-              ]}
+              style={[styles.chip, status === item ? styles.chipActive : undefined]}
               onPress={() => setStatus(item)}
             >
               <Text
-                style={[
-                  styles.chipText,
-                  status === item ? styles.chipTextActive : undefined,
-                ]}
+                style={[styles.chipText, status === item ? styles.chipTextActive : undefined]}
               >
                 {item}
               </Text>
@@ -323,47 +515,145 @@ export default function AdminScreen() {
         </View>
 
         <Text style={styles.label}>Category</Text>
+        <View style={styles.chipRow}>
+          <Pressable
+            style={[styles.chip, category === DEFAULT_CATEGORY ? styles.chipActive : undefined]}
+            onPress={() => setCategory(DEFAULT_CATEGORY)}
+          >
+            <Text
+              style={[
+                styles.chipText,
+                category === DEFAULT_CATEGORY ? styles.chipTextActive : undefined,
+              ]}
+            >
+              {DEFAULT_CATEGORY}
+            </Text>
+          </Pressable>
+          {categories.map((item) => (
+            <Pressable
+              key={item.id}
+              style={[styles.chip, category === item.slug ? styles.chipActive : undefined]}
+              onPress={() => setCategory(item.slug)}
+            >
+              <Text
+                style={[styles.chipText, category === item.slug ? styles.chipTextActive : undefined]}
+              >
+                {item.slug}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+
+        <View style={styles.buttonRow}>
+          <Pressable
+            style={({ pressed }) => [
+              styles.primaryButton,
+              styles.flexButton,
+              pressed && styles.buttonPressed,
+              isSavingPost && styles.buttonDisabled,
+            ]}
+            onPress={handleSavePost}
+            disabled={isSavingPost}
+          >
+            {isSavingPost ? (
+              <ActivityIndicator size="small" color={COLORS.primaryText} />
+            ) : (
+              <HugeiconsIcon icon={Add01Icon} size={18} color={COLORS.primaryText} />
+            )}
+            <Text style={styles.primaryButtonText}>
+              {editingPostId ? "Update Post" : "Create Post"}
+            </Text>
+          </Pressable>
+          {editingPostId ? (
+            <Pressable
+              style={({ pressed }) => [
+                styles.secondaryButton,
+                styles.flexButton,
+                pressed && styles.buttonPressed,
+              ]}
+              onPress={resetPostForm}
+            >
+              <Text style={styles.secondaryButtonText}>Cancel Edit</Text>
+            </Pressable>
+          ) : null}
+        </View>
+      </View>
+
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Post Management</Text>
+        {isLoadingData ? (
+          <ActivityIndicator size="small" color={COLORS.primary} />
+        ) : null}
+
         <View style={styles.inputWrap}>
           <TextInput
-            value={category}
-            onChangeText={setCategory}
-            placeholder="general or existing category slug"
+            value={searchTerm}
+            onChangeText={setSearchTerm}
+            placeholder="Search by title, slug, content, category"
             placeholderTextColor={COLORS.mutedText}
             autoCapitalize="none"
             style={styles.input}
           />
         </View>
 
+        <Text style={styles.label}>Filter by Status</Text>
         <View style={styles.chipRow}>
+          {(["all", ...POST_STATUSES] as PostStatusFilter[]).map((item) => (
+            <Pressable
+              key={item}
+              style={[styles.chip, statusFilter === item ? styles.chipActive : undefined]}
+              onPress={() => setStatusFilter(item)}
+            >
+              <Text
+                style={[
+                  styles.chipText,
+                  statusFilter === item ? styles.chipTextActive : undefined,
+                ]}
+              >
+                {item}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+
+        <Text style={styles.label}>Filter by Category</Text>
+        <View style={styles.chipRow}>
+          <Pressable
+            style={[styles.chip, categoryFilter === "all" ? styles.chipActive : undefined]}
+            onPress={() => setCategoryFilter("all")}
+          >
+            <Text
+              style={[styles.chipText, categoryFilter === "all" ? styles.chipTextActive : undefined]}
+            >
+              all
+            </Text>
+          </Pressable>
           <Pressable
             style={[
               styles.chip,
-              category === "general" ? styles.chipActive : undefined,
+              categoryFilter === DEFAULT_CATEGORY ? styles.chipActive : undefined,
             ]}
-            onPress={() => setCategory("general")}
+            onPress={() => setCategoryFilter(DEFAULT_CATEGORY)}
           >
             <Text
               style={[
                 styles.chipText,
-                category === "general" ? styles.chipTextActive : undefined,
+                categoryFilter === DEFAULT_CATEGORY ? styles.chipTextActive : undefined,
               ]}
             >
-              general
+              {DEFAULT_CATEGORY}
             </Text>
           </Pressable>
           {categories.map((item) => (
             <Pressable
               key={item.id}
-              style={[
-                styles.chip,
-                category === item.slug ? styles.chipActive : undefined,
-              ]}
-              onPress={() => setCategory(item.slug)}
+              style={[styles.chip, categoryFilter === item.slug ? styles.chipActive : undefined]}
+              onPress={() => setCategoryFilter(item.slug)}
             >
               <Text
                 style={[
                   styles.chipText,
-                  category === item.slug ? styles.chipTextActive : undefined,
+                  categoryFilter === item.slug ? styles.chipTextActive : undefined,
                 ]}
               >
                 {item.slug}
@@ -372,41 +662,87 @@ export default function AdminScreen() {
           ))}
         </View>
 
-        <Pressable
-          style={({ pressed }) => [
-            styles.primaryButton,
-            pressed && styles.buttonPressed,
-            isSavingPost && styles.buttonDisabled,
-          ]}
-          onPress={handleCreatePost}
-          disabled={isSavingPost}
-        >
-          {isSavingPost ? (
-            <ActivityIndicator size="small" color={COLORS.primaryText} />
-          ) : (
-            <HugeiconsIcon icon={Add01Icon} size={18} color={COLORS.primaryText} />
-          )}
-          <Text style={styles.primaryButtonText}>Create Post</Text>
-        </Pressable>
-      </View>
+        <Text style={styles.resultText}>
+          Showing {filteredPosts.length} of {posts.length} posts
+        </Text>
 
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Recent Posts</Text>
-        {isLoadingData ? (
-          <ActivityIndicator size="small" color={COLORS.primary} />
+        {!filteredPosts.length ? (
+          <Text style={styles.emptyText}>No posts match current filters.</Text>
         ) : null}
-        {!isLoadingData && !recentPosts.length ? (
-          <Text style={styles.emptyText}>No posts yet.</Text>
-        ) : null}
-        {recentPosts.map((post) => (
+
+        {filteredPosts.map((post) => (
           <View key={post.id} style={styles.postCard}>
-            <Text style={styles.postTitle}>{post.title}</Text>
+            <View style={styles.postHeaderRow}>
+              <Text style={styles.postTitle}>{post.title}</Text>
+              <View
+                style={[
+                  styles.statusBadge,
+                  post.status === "published"
+                    ? styles.statusBadgePublished
+                    : styles.statusBadgeDraft,
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.statusBadgeText,
+                    post.status === "published"
+                      ? styles.statusBadgeTextPublished
+                      : styles.statusBadgeTextDraft,
+                  ]}
+                >
+                  {post.status}
+                </Text>
+              </View>
+            </View>
+
+            <Text style={styles.postBody}>
+              {post.content.length > 180 ? `${post.content.slice(0, 180)}...` : post.content}
+            </Text>
+
             <Text style={styles.postMeta}>ID: {post.id}</Text>
             <Text style={styles.postMeta}>Slug: {post.slug}</Text>
             <Text style={styles.postMeta}>Category: {post.category}</Text>
-            <Text style={styles.postMeta}>Status: {post.status}</Text>
             <Text style={styles.postMeta}>Create Date: {formatDate(post.createDate)}</Text>
             <Text style={styles.postMeta}>Upload Date: {formatDate(post.uploadDate)}</Text>
+
+            <View style={styles.buttonRow}>
+              <Pressable
+                style={({ pressed }) => [
+                  styles.secondaryButton,
+                  styles.flexButton,
+                  pressed && styles.buttonPressed,
+                ]}
+                onPress={() => handleEditPost(post)}
+              >
+                <Text style={styles.secondaryButtonText}>Edit</Text>
+              </Pressable>
+
+              <Pressable
+                style={({ pressed }) => [
+                  styles.secondaryButton,
+                  styles.flexButton,
+                  pressed && styles.buttonPressed,
+                ]}
+                onPress={() => {
+                  void handleToggleStatus(post);
+                }}
+              >
+                <Text style={styles.secondaryButtonText}>
+                  {post.status === "published" ? "Move to Draft" : "Publish"}
+                </Text>
+              </Pressable>
+
+              <Pressable
+                style={({ pressed }) => [
+                  styles.deleteButton,
+                  styles.flexButton,
+                  pressed && styles.buttonPressed,
+                ]}
+                onPress={() => handleDeletePost(post)}
+              >
+                <Text style={styles.deleteButtonText}>Delete</Text>
+              </Pressable>
+            </View>
           </View>
         ))}
       </View>
@@ -456,6 +792,30 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: COLORS.text,
   },
+  statsGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: SPACING.sm,
+  },
+  statCard: {
+    width: "48%",
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: RADIUS.md,
+    paddingVertical: SPACING.md,
+    paddingHorizontal: SPACING.md,
+    backgroundColor: COLORS.surface,
+  },
+  statLabel: {
+    fontSize: 12,
+    color: COLORS.mutedText,
+  },
+  statValue: {
+    fontSize: 20,
+    fontWeight: "700",
+    color: COLORS.text,
+    marginTop: 2,
+  },
   inputWrap: {
     minHeight: CONTROL_SIZE.inputHeight,
     borderRadius: RADIUS.md,
@@ -466,7 +826,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   textAreaWrap: {
-    minHeight: 120,
+    minHeight: 140,
     borderRadius: RADIUS.md,
     borderWidth: 1,
     borderColor: COLORS.border,
@@ -479,14 +839,13 @@ const styles = StyleSheet.create({
     fontSize: FONT_SIZE.button,
   },
   textArea: {
-    minHeight: 100,
+    minHeight: 120,
     color: COLORS.text,
     fontSize: FONT_SIZE.body,
   },
   label: {
     color: COLORS.text,
     fontWeight: "600",
-    marginTop: 2,
   },
   chipRow: {
     flexDirection: "row",
@@ -513,6 +872,13 @@ const styles = StyleSheet.create({
   chipTextActive: {
     color: COLORS.primaryText,
   },
+  buttonRow: {
+    flexDirection: "row",
+    gap: SPACING.sm,
+  },
+  flexButton: {
+    flex: 1,
+  },
   primaryButton: {
     minHeight: CONTROL_SIZE.inputHeight,
     borderRadius: RADIUS.md,
@@ -521,17 +887,54 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     flexDirection: "row",
     gap: SPACING.sm,
+    paddingHorizontal: SPACING.md,
   },
   primaryButtonText: {
     color: COLORS.primaryText,
     fontSize: FONT_SIZE.button,
     fontWeight: "700",
   },
+  secondaryButton: {
+    minHeight: CONTROL_SIZE.inputHeight,
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: COLORS.surface,
+    paddingHorizontal: SPACING.sm,
+  },
+  secondaryButtonText: {
+    color: COLORS.text,
+    fontSize: 14,
+    fontWeight: "600",
+    textAlign: "center",
+  },
+  deleteButton: {
+    minHeight: CONTROL_SIZE.inputHeight,
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    borderColor: "#DC2626",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#FEF2F2",
+    paddingHorizontal: SPACING.sm,
+  },
+  deleteButtonText: {
+    color: "#B91C1C",
+    fontSize: 14,
+    fontWeight: "700",
+    textAlign: "center",
+  },
   buttonPressed: {
     opacity: 0.9,
   },
   buttonDisabled: {
     opacity: 0.6,
+  },
+  resultText: {
+    color: COLORS.mutedText,
+    fontSize: 13,
   },
   emptyText: {
     color: COLORS.mutedText,
@@ -545,14 +948,50 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.surface,
     gap: SPACING.xs,
   },
+  postHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: SPACING.sm,
+  },
   postTitle: {
     color: COLORS.text,
     fontSize: 16,
     fontWeight: "700",
+    flex: 1,
+  },
+  postBody: {
+    color: COLORS.text,
+    fontSize: FONT_SIZE.body,
   },
   postMeta: {
     color: COLORS.mutedText,
     fontSize: 12,
+  },
+  statusBadge: {
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: 3,
+  },
+  statusBadgePublished: {
+    borderColor: "#16A34A",
+    backgroundColor: "#F0FDF4",
+  },
+  statusBadgeDraft: {
+    borderColor: "#D97706",
+    backgroundColor: "#FFFBEB",
+  },
+  statusBadgeText: {
+    fontSize: 11,
+    fontWeight: "700",
+    textTransform: "uppercase",
+  },
+  statusBadgeTextPublished: {
+    color: "#166534",
+  },
+  statusBadgeTextDraft: {
+    color: "#92400E",
   },
 });
 

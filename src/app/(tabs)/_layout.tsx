@@ -12,7 +12,7 @@ import { COLORS } from "@/constants/theme";
 import { useAuth } from "@/providers/auth-provider";
 
 export default function TabsLayout() {
-  const { user, isGuest, isBootstrapping, isAdmin } = useAuth();
+  const { user, isBootstrapping, isAdmin } = useAuth();
 
   if (isBootstrapping) {
     return (
@@ -22,7 +22,7 @@ export default function TabsLayout() {
     );
   }
 
-  if (!user && !isGuest) {
+  if (!user) {
     return <Redirect href="/login" />;
   }
 
@@ -44,18 +44,16 @@ export default function TabsLayout() {
           ),
         }}
       />
-      {!isGuest ? (
-        <Tabs.Screen
-          name="favorite"
-          options={{
-            title: "Favorite",
-            headerTitle: "Favorite",
-            tabBarIcon: ({ color, size }) => (
-              <HugeiconsIcon icon={FavouriteIcon} color={color} size={size} />
-            ),
-          }}
-        />
-      ) : null}
+      <Tabs.Screen
+        name="favorite"
+        options={{
+          title: "Favorite",
+          headerTitle: "Favorite",
+          tabBarIcon: ({ color, size }) => (
+            <HugeiconsIcon icon={FavouriteIcon} color={color} size={size} />
+          ),
+        }}
+      />
       <Tabs.Screen
         name="settings"
         options={{

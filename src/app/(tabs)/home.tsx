@@ -14,16 +14,14 @@ import { firestore } from "@/lib/firebase";
 import { useAuth } from "@/providers/auth-provider";
 
 export default function HomeScreen() {
-  const { user, isGuest, isAdmin } = useAuth();
+  const { user, isAdmin } = useAuth();
   const [posts, setPosts] = useState<PostRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
 
-  const accountSubtitle = isGuest
-    ? "Guest interface is active. Login for full features."
-    : isAdmin
-      ? `Admin logged in: ${user?.email || "Admin"}`
-      : `User logged in: ${user?.displayName || user?.email || "User"}`;
+  const accountSubtitle = isAdmin
+    ? `Admin logged in: ${user?.email || "Admin"}`
+    : `User logged in: ${user?.displayName || user?.email || "User"}`;
 
   useEffect(() => {
     const postsQuery = query(
@@ -51,8 +49,6 @@ export default function HomeScreen() {
     return unsubscribe;
   }, []);
 
-  const visiblePosts = useMemo(() => (isGuest ? posts.slice(0, 3) : posts), [isGuest, posts]);
-
   const subtitle = useMemo(() => {
     if (isLoading) {
       return "Loading posts...";
@@ -62,16 +58,12 @@ export default function HomeScreen() {
       return error;
     }
 
-    if (!visiblePosts.length) {
+    if (!posts.length) {
       return "No published posts yet.";
     }
 
-    if (isGuest) {
-      return `Guest view: showing ${visiblePosts.length} latest published posts.`;
-    }
-
-    return `${visiblePosts.length} post${visiblePosts.length === 1 ? "" : "s"} published.`;
-  }, [error, isGuest, isLoading, visiblePosts.length]);
+    return `${posts.length} post${posts.length === 1 ? "" : "s"} published.`;
+  }, [error, isLoading, posts.length]);
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
@@ -80,22 +72,16 @@ export default function HomeScreen() {
       <View
         style={[
           styles.roleBanner,
-          isGuest
-            ? styles.roleBannerGuest
-            : isAdmin
-              ? styles.roleBannerAdmin
-              : styles.roleBannerUser,
+          isAdmin ? styles.roleBannerAdmin : styles.roleBannerUser,
         ]}
       >
         <Text style={styles.roleBannerTitle}>
-          {isGuest ? "Guest Interface" : isAdmin ? "Admin Interface" : "User Interface"}
+          {isAdmin ? "Admin Interface" : "User Interface"}
         </Text>
         <Text style={styles.roleBannerText}>
-          {isGuest
-            ? "Limited browsing mode. Login to access full features."
-            : isAdmin
-              ? "You can manage posts and categories from the Admin tab."
-              : "You are in standard user mode with normal app features."}
+          {isAdmin
+            ? "You can manage posts and categories from the Admin tab."
+            : "You are in standard user mode with normal app features."}
         </Text>
       </View>
       <Text style={styles.feedText}>{subtitle}</Text>
@@ -104,22 +90,16 @@ export default function HomeScreen() {
         <ActivityIndicator size="large" color={COLORS.primary} style={styles.loader} />
       ) : null}
 
-      {visiblePosts.map((post) => (
+      {posts.map((post) => (
         <View key={post.id} style={styles.card}>
           <Text style={styles.cardTitle}>{post.title}</Text>
           <Text style={styles.cardContent}>{post.content}</Text>
           <Text style={styles.meta}>Category: {post.category}</Text>
           <Text style={styles.meta}>Create Date: {formatDate(post.createDate)}</Text>
-          {isGuest ? (
-            <Text style={styles.guestNotice}>Login to view full post metadata.</Text>
-          ) : (
-            <>
-              <Text style={styles.meta}>ID: {post.id}</Text>
-              <Text style={styles.meta}>Slug: {post.slug || "-"}</Text>
-              <Text style={styles.meta}>Status: {post.status}</Text>
-              <Text style={styles.meta}>Upload Date: {formatDate(post.uploadDate)}</Text>
-            </>
-          )}
+          <Text style={styles.meta}>ID: {post.id}</Text>
+          <Text style={styles.meta}>Slug: {post.slug || "-"}</Text>
+          <Text style={styles.meta}>Status: {post.status}</Text>
+          <Text style={styles.meta}>Upload Date: {formatDate(post.uploadDate)}</Text>
         </View>
       ))}
     </ScrollView>
@@ -152,10 +132,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     padding: SPACING.md,
     gap: SPACING.xs,
-  },
-  roleBannerGuest: {
-    backgroundColor: "#FFF7ED",
-    borderColor: "#FDBA74",
   },
   roleBannerUser: {
     backgroundColor: "#EFF6FF",
@@ -199,10 +175,5 @@ const styles = StyleSheet.create({
   meta: {
     fontSize: 12,
     color: COLORS.mutedText,
-  },
-  guestNotice: {
-    fontSize: 12,
-    color: "#9A3412",
-    marginTop: SPACING.xs,
   },
 });

@@ -1,4 +1,3 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   createContext,
   useContext,
@@ -25,16 +24,14 @@ import {
   type DocumentData,
 } from "firebase/firestore";
 
-import { auth, firestore } from "@/lib/firebase";
 import { isAdminEmail } from "@/lib/access";
+import { auth, firestore } from "@/lib/firebase";
 
-const GUEST_MODE_KEY = "devgeet.auth.guest_mode";
 const USERNAMES_COLLECTION = "usernames";
 const USERS_COLLECTION = "users";
 
 type AuthContextType = {
   user: User | null;
-  isGuest: boolean;
   isAdmin: boolean;
   isBootstrapping: boolean;
   loginWithEmailOrUsername: (identifier: string, password: string) => Promise<void>;
@@ -47,7 +44,6 @@ type AuthContextType = {
     role: string;
   }) => Promise<void>;
   loginWithGoogleIdToken: (idToken: string) => Promise<void>;
-  continueAsGuest: () => Promise<void>;
   logout: () => Promise<void>;
 };
 
@@ -185,30 +181,13 @@ const writeUserProfile = async (payload: {
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
-  const [isGuest, setIsGuest] = useState(false);
   const [authReady, setAuthReady] = useState(false);
-  const [guestReady, setGuestReady] = useState(false);
   const isAdmin = isAdminEmail(user?.email);
-
-  useEffect(() => {
-    const loadGuestMode = async () => {
-      const stored = await AsyncStorage.getItem(GUEST_MODE_KEY);
-      setIsGuest(stored === "true");
-      setGuestReady(true);
-    };
-
-    void loadGuestMode();
-  }, []);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (nextUser) => {
       setUser(nextUser);
       setAuthReady(true);
-
-      if (nextUser) {
-        setIsGuest(false);
-        void AsyncStorage.removeItem(GUEST_MODE_KEY);
-      }
     });
 
     return unsubscribe;
@@ -323,32 +302,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const continueAsGuest = async () => {
-    setIsGuest(true);
-    await AsyncStorage.setItem(GUEST_MODE_KEY, "true");
-  };
-
   const logout = async () => {
     if (auth.currentUser) {
       await signOut(auth);
     }
-    setIsGuest(false);
-    await AsyncStorage.removeItem(GUEST_MODE_KEY);
   };
 
   const value = useMemo<AuthContextType>(
     () => ({
       user,
-      isGuest,
       isAdmin,
-      isBootstrapping: !authReady || !guestReady,
+      isBootstrapping: !authReady,
       loginWithEmailOrUsername,
       signupWithEmail,
       loginWithGoogleIdToken,
-      continueAsGuest,
       logout,
     }),
-    [authReady, guestReady, isAdmin, isGuest, user]
+    [authReady, isAdmin, user]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
@@ -361,3 +331,4 @@ export function useAuth() {
   }
   return context;
 }
+

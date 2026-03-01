@@ -2,16 +2,16 @@ import { useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
 import { HugeiconsIcon } from "@hugeicons/react-native";
-import { Login03Icon, Logout03Icon, Settings01Icon } from "@hugeicons/core-free-icons";
+import { Logout03Icon, Settings01Icon } from "@hugeicons/core-free-icons";
 
 import { COLORS, FONT_SIZE, RADIUS, SPACING } from "@/constants/theme";
 import { useAuth } from "@/providers/auth-provider";
 
 export default function SettingsScreen() {
   const router = useRouter();
-  const { user, isGuest, isAdmin, logout } = useAuth();
+  const { user, isAdmin, logout } = useAuth();
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const roleLabel = isGuest ? "Guest" : isAdmin ? "Admin" : "User";
+  const roleLabel = isAdmin ? "Admin" : "User";
 
   const handleAuthButton = async () => {
     try {
@@ -30,17 +30,15 @@ export default function SettingsScreen() {
       <View
         style={[
           styles.roleBadge,
-          isGuest ? styles.roleBadgeGuest : isAdmin ? styles.roleBadgeAdmin : styles.roleBadgeUser,
+          isAdmin ? styles.roleBadgeAdmin : styles.roleBadgeUser,
         ]}
       >
         <Text style={styles.roleBadgeText}>{roleLabel} Interface</Text>
       </View>
       <Text style={styles.subtitle}>
-        {isGuest
-          ? "Guest mode is active."
-          : isAdmin
-            ? `Admin signed in: ${user?.email || "Admin"}`
-            : `Signed in as ${user?.displayName || user?.email || "User"}`}
+        {isAdmin
+          ? `Admin signed in: ${user?.email || "Admin"}`
+          : `Signed in as ${user?.displayName || user?.email || "User"}`}
       </Text>
 
       <Pressable
@@ -52,13 +50,9 @@ export default function SettingsScreen() {
         onPress={handleAuthButton}
         disabled={isSubmitting}
       >
-        <HugeiconsIcon
-          icon={isGuest ? Login03Icon : Logout03Icon}
-          size={18}
-          color={COLORS.primaryText}
-        />
+        <HugeiconsIcon icon={Logout03Icon} size={18} color={COLORS.primaryText} />
         <Text style={styles.buttonText}>
-          {isGuest ? "Login Now" : "Logout"}
+          Logout
         </Text>
       </Pressable>
     </View>
@@ -90,10 +84,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.xs,
     borderWidth: 1,
-  },
-  roleBadgeGuest: {
-    backgroundColor: "#FFF7ED",
-    borderColor: "#FDBA74",
   },
   roleBadgeUser: {
     backgroundColor: "#EFF6FF",
