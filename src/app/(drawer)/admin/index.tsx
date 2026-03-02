@@ -1,5 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import {
+  ActivityIndicator,
+  Image,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import { useRouter } from "expo-router";
 import {
   collection,
@@ -14,6 +22,7 @@ import {
   CATEGORIES_COLLECTION,
   POSTS_COLLECTION,
   formatDate,
+  getPostCardThumbnailUrl,
   mapCategoryRecord,
   mapPostRecord,
   type CategoryRecord,
@@ -147,14 +156,25 @@ export default function AdminOverviewScreen() {
         {!latestPosts.length ? (
           <Text style={styles.mutedText}>No posts available yet.</Text>
         ) : null}
-        {latestPosts.map((post) => (
-          <View key={post.id} style={styles.postCard}>
-            <Text style={styles.postTitle}>{post.title}</Text>
-            <Text style={styles.postMeta}>Category: {post.category}</Text>
-            <Text style={styles.postMeta}>Status: {post.status}</Text>
-            <Text style={styles.postMeta}>Upload Date: {formatDate(post.uploadDate)}</Text>
-          </View>
-        ))}
+        {latestPosts.map((post) => {
+          const thumbnailUrl = getPostCardThumbnailUrl(post);
+
+          return (
+            <View key={post.id} style={styles.postCard}>
+              {thumbnailUrl ? (
+                <Image
+                  source={{ uri: thumbnailUrl }}
+                  style={styles.thumbnail}
+                  resizeMode="cover"
+                />
+              ) : null}
+              <Text style={styles.postTitle}>{post.title}</Text>
+              <Text style={styles.postMeta}>Category: {post.category}</Text>
+              <Text style={styles.postMeta}>Status: {post.status}</Text>
+              <Text style={styles.postMeta}>Upload Date: {formatDate(post.uploadDate)}</Text>
+            </View>
+          );
+        })}
       </View>
     </ScrollView>
   );
@@ -246,6 +266,13 @@ const styles = StyleSheet.create({
     padding: SPACING.md,
     backgroundColor: COLORS.surface,
     gap: SPACING.xs,
+  },
+  thumbnail: {
+    width: "100%",
+    height: 150,
+    borderRadius: RADIUS.md,
+    backgroundColor: "#E5E7EB",
+    marginBottom: SPACING.xs,
   },
   postTitle: {
     color: COLORS.text,

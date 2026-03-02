@@ -32,6 +32,8 @@ import {
   CATEGORIES_COLLECTION,
   POSTS_COLLECTION,
   createSlug,
+  getYouTubeVideoId,
+  isValidOptionalHttpUrl,
   mapCategoryRecord,
   mapPostRecord,
   type CategoryRecord,
@@ -105,6 +107,8 @@ export default function AdminPostEditScreen() {
   const [contentHtml, setContentHtml] = useState("");
   const [contentPlainText, setContentPlainText] = useState("");
   const [editorResetKey, setEditorResetKey] = useState(0);
+  const [featureImageUrl, setFeatureImageUrl] = useState("");
+  const [youtubeVideoUrl, setYoutubeVideoUrl] = useState("");
   const [category, setCategory] = useState("");
   const [status, setStatus] = useState<PostStatus>("draft");
   const [isCategoryMenuOpen, setIsCategoryMenuOpen] = useState(false);
@@ -203,6 +207,8 @@ export default function AdminPostEditScreen() {
         setContentHtml(hydratedContentHtml);
         setContentPlainText(hydratedPlainText);
         setEditorResetKey((value) => value + 1);
+        setFeatureImageUrl(post.featureImageUrl);
+        setYoutubeVideoUrl(post.youtubeVideoUrl);
         setCategory(post.category);
         setStatus(post.status);
         setError("");
@@ -289,10 +295,22 @@ export default function AdminPostEditScreen() {
     clearFeedback();
   };
 
+  const handleFeatureImageUrlChange = (value: string) => {
+    setFeatureImageUrl(value);
+    clearFeedback();
+  };
+
+  const handleYoutubeVideoUrlChange = (value: string) => {
+    setYoutubeVideoUrl(value);
+    clearFeedback();
+  };
+
   const handleSave = async () => {
     const trimmedTitle = title.trim();
     const plainContent = contentPlainText.trim();
     const htmlContent = contentHtml.trim() || toHtmlContent(plainContent);
+    const normalizedFeatureImageUrl = featureImageUrl.trim();
+    const normalizedYoutubeVideoUrl = youtubeVideoUrl.trim();
     const normalizedCategory = category.trim().toLowerCase();
     const normalizedStatus: PostStatus =
       status === "published" ? "published" : "draft";
@@ -305,6 +323,24 @@ export default function AdminPostEditScreen() {
 
     if (!plainContent) {
       setError("Blog content is required.");
+      return;
+    }
+
+    if (!isValidOptionalHttpUrl(normalizedFeatureImageUrl)) {
+      setError("Feature image URL must be a valid http/https link.");
+      return;
+    }
+
+    if (!isValidOptionalHttpUrl(normalizedYoutubeVideoUrl)) {
+      setError("YouTube video URL must be a valid http/https link.");
+      return;
+    }
+
+    if (
+      normalizedYoutubeVideoUrl &&
+      !getYouTubeVideoId(normalizedYoutubeVideoUrl)
+    ) {
+      setError("Enter a valid YouTube video link.");
       return;
     }
 
@@ -342,6 +378,8 @@ export default function AdminPostEditScreen() {
             title: trimmedTitle,
             content: plainContent,
             contentHtml: htmlContent,
+            featureImageUrl: normalizedFeatureImageUrl,
+            youtubeVideoUrl: normalizedYoutubeVideoUrl,
             category: normalizedCategory,
             status: normalizedStatus,
             uploadDate: serverTimestamp(),
@@ -362,6 +400,8 @@ export default function AdminPostEditScreen() {
           title: trimmedTitle,
           content: plainContent,
           contentHtml: htmlContent,
+          featureImageUrl: normalizedFeatureImageUrl,
+          youtubeVideoUrl: normalizedYoutubeVideoUrl,
           category: normalizedCategory,
           status: normalizedStatus,
           createDate: serverTimestamp(),
@@ -454,6 +494,38 @@ export default function AdminPostEditScreen() {
         <Text style={styles.helperText}>
           Rich text editor se headings, lists, bold, italic aur alignment use
           kar sakte ho.
+        </Text>
+
+        <Text style={styles.label}>Feature Image URL</Text>
+        <View style={styles.inputWrap}>
+          <TextInput
+            value={featureImageUrl}
+            onChangeText={handleFeatureImageUrlChange}
+            placeholder="https://example.com/post-image.jpg"
+            placeholderTextColor={COLORS.mutedText}
+            autoCapitalize="none"
+            autoCorrect={false}
+            style={styles.input}
+          />
+        </View>
+        <Text style={styles.helperText}>
+          Agar image URL doge to card thumbnail me yahi image dikhegi.
+        </Text>
+
+        <Text style={styles.label}>YouTube Video URL</Text>
+        <View style={styles.inputWrap}>
+          <TextInput
+            value={youtubeVideoUrl}
+            onChangeText={handleYoutubeVideoUrlChange}
+            placeholder="https://www.youtube.com/watch?v=..."
+            placeholderTextColor={COLORS.mutedText}
+            autoCapitalize="none"
+            autoCorrect={false}
+            style={styles.input}
+          />
+        </View>
+        <Text style={styles.helperText}>
+          Feature image blank hoga to YouTube thumbnail card me auto use hoga.
         </Text>
 
         <Text style={styles.label}>Status</Text>

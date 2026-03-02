@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Image,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -27,6 +28,7 @@ import {
   CATEGORIES_COLLECTION,
   POSTS_COLLECTION,
   formatDate,
+  getPostCardThumbnailUrl,
   mapCategoryRecord,
   mapPostRecord,
   type CategoryRecord,
@@ -300,80 +302,91 @@ export default function AdminPostsListScreen() {
           <Text style={styles.emptyText}>No posts match current filters.</Text>
         ) : null}
 
-        {filteredPosts.map((post) => (
-          <View key={post.id} style={styles.postCard}>
-            <View style={styles.postHeaderRow}>
-              <Text style={styles.postTitle}>{post.title}</Text>
-              <View
-                style={[
-                  styles.statusBadge,
-                  post.status === "published"
-                    ? styles.statusBadgePublished
-                    : styles.statusBadgeDraft,
-                ]}
-              >
-                <Text
+        {filteredPosts.map((post) => {
+          const thumbnailUrl = getPostCardThumbnailUrl(post);
+
+          return (
+            <View key={post.id} style={styles.postCard}>
+              {thumbnailUrl ? (
+                <Image
+                  source={{ uri: thumbnailUrl }}
+                  style={styles.thumbnail}
+                  resizeMode="cover"
+                />
+              ) : null}
+              <View style={styles.postHeaderRow}>
+                <Text style={styles.postTitle}>{post.title}</Text>
+                <View
                   style={[
-                    styles.statusBadgeText,
+                    styles.statusBadge,
                     post.status === "published"
-                      ? styles.statusBadgeTextPublished
-                      : styles.statusBadgeTextDraft,
+                      ? styles.statusBadgePublished
+                      : styles.statusBadgeDraft,
                   ]}
                 >
-                  {post.status}
-                </Text>
+                  <Text
+                    style={[
+                      styles.statusBadgeText,
+                      post.status === "published"
+                        ? styles.statusBadgeTextPublished
+                        : styles.statusBadgeTextDraft,
+                    ]}
+                  >
+                    {post.status}
+                  </Text>
+                </View>
+              </View>
+
+              <Text style={styles.postBody}>
+                {post.content.length > 180 ? `${post.content.slice(0, 180)}...` : post.content}
+              </Text>
+              <Text style={styles.postMeta}>ID: {post.id}</Text>
+              <Text style={styles.postMeta}>Slug: {post.slug}</Text>
+              <Text style={styles.postMeta}>Category: {post.category}</Text>
+              <Text style={styles.postMeta}>Create Date: {formatDate(post.createDate)}</Text>
+              <Text style={styles.postMeta}>Upload Date: {formatDate(post.uploadDate)}</Text>
+
+              <View style={styles.buttonRow}>
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.secondaryButton,
+                    styles.flexButton,
+                    pressed && styles.buttonPressed,
+                  ]}
+                  onPress={() => router.push(`/admin/posts/edit?postId=${post.id}`)}
+                >
+                  <Text style={styles.secondaryButtonText}>Edit</Text>
+                </Pressable>
+
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.secondaryButton,
+                    styles.flexButton,
+                    pressed && styles.buttonPressed,
+                  ]}
+                  onPress={() => {
+                    void handleToggleStatus(post);
+                  }}
+                >
+                  <Text style={styles.secondaryButtonText}>
+                    {post.status === "published" ? "Move to Draft" : "Publish"}
+                  </Text>
+                </Pressable>
+
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.deleteButton,
+                    styles.flexButton,
+                    pressed && styles.buttonPressed,
+                  ]}
+                  onPress={() => handleDeletePost(post)}
+                >
+                  <Text style={styles.deleteButtonText}>Delete</Text>
+                </Pressable>
               </View>
             </View>
-
-            <Text style={styles.postBody}>
-              {post.content.length > 180 ? `${post.content.slice(0, 180)}...` : post.content}
-            </Text>
-            <Text style={styles.postMeta}>ID: {post.id}</Text>
-            <Text style={styles.postMeta}>Slug: {post.slug}</Text>
-            <Text style={styles.postMeta}>Category: {post.category}</Text>
-            <Text style={styles.postMeta}>Create Date: {formatDate(post.createDate)}</Text>
-            <Text style={styles.postMeta}>Upload Date: {formatDate(post.uploadDate)}</Text>
-
-            <View style={styles.buttonRow}>
-              <Pressable
-                style={({ pressed }) => [
-                  styles.secondaryButton,
-                  styles.flexButton,
-                  pressed && styles.buttonPressed,
-                ]}
-                onPress={() => router.push(`/admin/posts/edit?postId=${post.id}`)}
-              >
-                <Text style={styles.secondaryButtonText}>Edit</Text>
-              </Pressable>
-
-              <Pressable
-                style={({ pressed }) => [
-                  styles.secondaryButton,
-                  styles.flexButton,
-                  pressed && styles.buttonPressed,
-                ]}
-                onPress={() => {
-                  void handleToggleStatus(post);
-                }}
-              >
-                <Text style={styles.secondaryButtonText}>
-                  {post.status === "published" ? "Move to Draft" : "Publish"}
-                </Text>
-              </Pressable>
-
-              <Pressable
-                style={({ pressed }) => [
-                  styles.deleteButton,
-                  styles.flexButton,
-                  pressed && styles.buttonPressed,
-                ]}
-                onPress={() => handleDeletePost(post)}
-              >
-                <Text style={styles.deleteButtonText}>Delete</Text>
-              </Pressable>
-            </View>
-          </View>
-        ))}
+          );
+        })}
       </View>
     </ScrollView>
   );
@@ -528,6 +541,13 @@ const styles = StyleSheet.create({
     padding: SPACING.md,
     backgroundColor: COLORS.surface,
     gap: SPACING.xs,
+  },
+  thumbnail: {
+    width: "100%",
+    height: 180,
+    borderRadius: RADIUS.md,
+    backgroundColor: "#E5E7EB",
+    marginBottom: SPACING.xs,
   },
   postHeaderRow: {
     flexDirection: "row",
