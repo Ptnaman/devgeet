@@ -1,4 +1,5 @@
-import { Tabs, Redirect } from "expo-router";
+import { Drawer } from "expo-router/drawer";
+import { Redirect } from "expo-router";
 import { ActivityIndicator, StyleSheet, View } from "react-native";
 import { HugeiconsIcon } from "@hugeicons/react-native";
 import {
@@ -11,8 +12,8 @@ import {
 import { COLORS } from "@/constants/theme";
 import { useAuth } from "@/providers/auth-provider";
 
-export default function TabsLayout() {
-  const { user, isBootstrapping, isAdmin } = useAuth();
+export default function DrawerLayout() {
+  const { user, isAdmin, isBootstrapping } = useAuth();
 
   if (isBootstrapping) {
     return (
@@ -27,56 +28,56 @@ export default function TabsLayout() {
   }
 
   return (
-    <Tabs
+    <Drawer
       initialRouteName="home"
       screenOptions={{
-        tabBarActiveTintColor: COLORS.tabActive,
-        tabBarInactiveTintColor: COLORS.tabInactive,
+        headerStyle: { backgroundColor: COLORS.surface },
+        headerTintColor: COLORS.text,
+        headerShadowVisible: false,
+        drawerActiveTintColor: COLORS.primary,
+        drawerInactiveTintColor: COLORS.mutedText,
       }}
     >
-      <Tabs.Screen
+      <Drawer.Screen
         name="home"
         options={{
           title: "Home",
-          headerTitle: "Home",
-          tabBarIcon: ({ color, size }) => (
+          drawerIcon: ({ color, size }) => (
             <HugeiconsIcon icon={Home01Icon} color={color} size={size} />
           ),
         }}
       />
-      <Tabs.Screen
+      <Drawer.Screen
         name="favorite"
         options={{
           title: "Favorite",
-          headerTitle: "Favorite",
-          tabBarIcon: ({ color, size }) => (
+          drawerIcon: ({ color, size }) => (
             <HugeiconsIcon icon={FavouriteIcon} color={color} size={size} />
           ),
         }}
       />
-      <Tabs.Screen
+      <Drawer.Screen
         name="settings"
         options={{
           title: "Settings",
-          headerTitle: "Settings",
-          tabBarIcon: ({ color, size }) => (
+          drawerIcon: ({ color, size }) => (
             <HugeiconsIcon icon={Settings01Icon} color={color} size={size} />
           ),
         }}
       />
       {isAdmin ? (
-        <Tabs.Screen
+        <Drawer.Screen
           name="admin"
           options={{
-            title: "Admin",
-            headerTitle: "Admin",
-            tabBarIcon: ({ color, size }) => (
+            title: "Admin Panel",
+            headerShown: false,
+            drawerIcon: ({ color, size }) => (
               <HugeiconsIcon icon={Add01Icon} color={color} size={size} />
             ),
           }}
         />
       ) : null}
-    </Tabs>
+    </Drawer>
   );
 }
 

@@ -80,7 +80,7 @@ export default function HomeScreen() {
         </Text>
         <Text style={styles.roleBannerText}>
           {isAdmin
-            ? "You can manage posts and categories from the Admin tab."
+            ? "Open Admin Panel from the drawer menu in header."
             : "You are in standard user mode with normal app features."}
         </Text>
       </View>

@@ -40,6 +40,11 @@ export default function SettingsScreen() {
           ? `Admin signed in: ${user?.email || "Admin"}`
           : `Signed in as ${user?.displayName || user?.email || "User"}`}
       </Text>
+      <Text style={styles.helperText}>
+        {isAdmin
+          ? "Use drawer menu from header to open Admin Panel."
+          : "Standard user settings are active."}
+      </Text>
 
       <Pressable
         style={({ pressed }) => [
@@ -97,6 +102,12 @@ const styles = StyleSheet.create({
     color: COLORS.text,
     fontSize: 12,
     fontWeight: "700",
+  },
+  helperText: {
+    color: COLORS.mutedText,
+    fontSize: 12,
+    textAlign: "center",
+    marginBottom: SPACING.sm,
   },
   button: {
     flexDirection: "row",

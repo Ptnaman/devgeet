@@ -1,4 +1,3 @@
-import { Redirect } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -10,13 +9,13 @@ import {
   TextInput,
   View,
 } from "react-native";
+import { useRouter } from "expo-router";
 import { HugeiconsIcon } from "@hugeicons/react-native";
 import { Add01Icon } from "@hugeicons/core-free-icons";
 import {
   collection,
   deleteDoc,
   doc,
-  getDoc,
   onSnapshot,
   orderBy,
   query,
@@ -46,17 +45,15 @@ type PostStatusFilter = "all" | PostStatus;
 
 const DEFAULT_CATEGORY = "general";
 
-export default function AdminScreen() {
-  const { user, isAdmin, isBootstrapping } = useAuth();
+export default function AdminPostsScreen() {
+  const router = useRouter();
+  const { user } = useAuth();
   const [categories, setCategories] = useState<CategoryRecord[]>([]);
   const [posts, setPosts] = useState<PostRecord[]>([]);
   const [isLoadingCategories, setIsLoadingCategories] = useState(true);
   const [isLoadingPosts, setIsLoadingPosts] = useState(true);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
-
-  const [categoryName, setCategoryName] = useState("");
-  const [isSavingCategory, setIsSavingCategory] = useState(false);
 
   const [editingPostId, setEditingPostId] = useState<string | null>(null);
   const [title, setTitle] = useState("");
@@ -120,19 +117,9 @@ export default function AdminScreen() {
 
   const isLoadingData = isLoadingCategories || isLoadingPosts;
 
-  const stats = useMemo(() => {
-    const published = posts.filter((item) => item.status === "published").length;
-    const draft = posts.length - published;
-    return {
-      totalPosts: posts.length,
-      published,
-      draft,
-      categories: categories.length,
-    };
-  }, [categories.length, posts]);
-
   const filteredPosts = useMemo(() => {
     const keyword = searchTerm.trim().toLowerCase();
+
     return posts.filter((post) => {
       if (statusFilter !== "all" && post.status !== statusFilter) {
         return false;
@@ -178,60 +165,6 @@ export default function AdminScreen() {
     }
 
     return candidate;
-  };
-
-  const handleCreateCategory = async () => {
-    const trimmedName = categoryName.trim();
-    const slug = createSlug(trimmedName);
-
-    if (!trimmedName) {
-      setError("Category name is required.");
-      return;
-    }
-
-    if (!slug) {
-      setError("Category name must include letters or numbers.");
-      return;
-    }
-
-    try {
-      setIsSavingCategory(true);
-      clearFeedback();
-
-      if (categories.some((item) => item.slug === slug)) {
-        setError("Category slug already exists.");
-        return;
-      }
-
-      const categoryRef = doc(firestore, CATEGORIES_COLLECTION, slug);
-      const categorySnapshot = await getDoc(categoryRef);
-      if (categorySnapshot.exists()) {
-        setError("Category slug already exists.");
-        return;
-      }
-
-      await setDoc(categoryRef, {
-        id: slug,
-        name: trimmedName,
-        slug,
-        createDate: serverTimestamp(),
-        uploadDate: serverTimestamp(),
-        createdBy: user?.uid ?? "",
-        createdByEmail: user?.email ?? "",
-      });
-
-      setCategoryName("");
-      setCategory(slug);
-      setSuccess("Category created.");
-    } catch (saveError) {
-      if (saveError instanceof Error && saveError.message) {
-        setError(saveError.message);
-      } else {
-        setError("Unable to create category.");
-      }
-    } finally {
-      setIsSavingCategory(false);
-    }
   };
 
   const handleSavePost = async () => {
@@ -375,88 +308,27 @@ export default function AdminScreen() {
     ]);
   };
 
-  if (isBootstrapping) {
-    return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
-      </View>
-    );
-  }
-
-  if (!user || !isAdmin) {
-    return <Redirect href="/home" />;
-  }
-
   return (
     <ScrollView contentContainerStyle={styles.container}>
-      <Text style={styles.title}>High-Level Admin Panel</Text>
+      <Text style={styles.title}>Post Management</Text>
       <Text style={styles.subtitle}>
-        Manage posts and categories with full Firebase-backed controls.
+        Posts are stored in Firebase collection `posts`.
       </Text>
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
       {success ? <Text style={styles.success}>{success}</Text> : null}
 
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Dashboard</Text>
-        <View style={styles.statsGrid}>
-          <View style={styles.statCard}>
-            <Text style={styles.statLabel}>Total Posts</Text>
-            <Text style={styles.statValue}>{stats.totalPosts}</Text>
-          </View>
-          <View style={styles.statCard}>
-            <Text style={styles.statLabel}>Published</Text>
-            <Text style={styles.statValue}>{stats.published}</Text>
-          </View>
-          <View style={styles.statCard}>
-            <Text style={styles.statLabel}>Drafts</Text>
-            <Text style={styles.statValue}>{stats.draft}</Text>
-          </View>
-          <View style={styles.statCard}>
-            <Text style={styles.statLabel}>Categories</Text>
-            <Text style={styles.statValue}>{stats.categories}</Text>
-          </View>
-        </View>
-      </View>
-
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Category Management</Text>
-        <View style={styles.inputWrap}>
-          <TextInput
-            value={categoryName}
-            onChangeText={setCategoryName}
-            placeholder="Category name"
-            placeholderTextColor={COLORS.mutedText}
-            style={styles.input}
-          />
-        </View>
+        <Text style={styles.sectionTitle}>Navigation</Text>
         <Pressable
           style={({ pressed }) => [
-            styles.primaryButton,
+            styles.secondaryButton,
             pressed && styles.buttonPressed,
-            isSavingCategory && styles.buttonDisabled,
           ]}
-          onPress={handleCreateCategory}
-          disabled={isSavingCategory}
+          onPress={() => router.push("/admin/categories")}
         >
-          {isSavingCategory ? (
-            <ActivityIndicator size="small" color={COLORS.primaryText} />
-          ) : (
-            <HugeiconsIcon icon={Add01Icon} size={18} color={COLORS.primaryText} />
-          )}
-          <Text style={styles.primaryButtonText}>Add Category</Text>
+          <Text style={styles.secondaryButtonText}>Go to Category Management</Text>
         </Pressable>
-
-        <View style={styles.chipRow}>
-          <View style={[styles.chip, styles.chipActive]}>
-            <Text style={[styles.chipText, styles.chipTextActive]}>{DEFAULT_CATEGORY}</Text>
-          </View>
-          {categories.map((item) => (
-            <View key={item.id} style={styles.chip}>
-              <Text style={styles.chipText}>{item.slug}</Text>
-            </View>
-          ))}
-        </View>
       </View>
 
       <View style={styles.section}>
@@ -580,7 +452,7 @@ export default function AdminScreen() {
       </View>
 
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Post Management</Text>
+        <Text style={styles.sectionTitle}>Post List</Text>
         {isLoadingData ? (
           <ActivityIndicator size="small" color={COLORS.primary} />
         ) : null}
@@ -751,12 +623,6 @@ export default function AdminScreen() {
 }
 
 const styles = StyleSheet.create({
-  center: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: COLORS.background,
-  },
   container: {
     padding: SPACING.xl,
     backgroundColor: COLORS.background,
@@ -791,30 +657,6 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: "700",
     color: COLORS.text,
-  },
-  statsGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: SPACING.sm,
-  },
-  statCard: {
-    width: "48%",
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    borderRadius: RADIUS.md,
-    paddingVertical: SPACING.md,
-    paddingHorizontal: SPACING.md,
-    backgroundColor: COLORS.surface,
-  },
-  statLabel: {
-    fontSize: 12,
-    color: COLORS.mutedText,
-  },
-  statValue: {
-    fontSize: 20,
-    fontWeight: "700",
-    color: COLORS.text,
-    marginTop: 2,
   },
   inputWrap: {
     minHeight: CONTROL_SIZE.inputHeight,
@@ -994,4 +836,3 @@ const styles = StyleSheet.create({
     color: "#92400E",
   },
 });
-
