@@ -23,7 +23,6 @@ import { COLORS, FONT_SIZE, RADIUS, SPACING } from "@/constants/theme";
 import {
   formatDate,
   getPostCardThumbnailUrl,
-  getPreviewText,
   mapPostRecord,
   POSTS_COLLECTION,
   type PostRecord,
@@ -115,6 +114,13 @@ export default function FavoriteScreen() {
 
       {favoritePosts.map((post) => {
         const thumbnailUrl = getPostCardThumbnailUrl(post);
+        const favorite = isFavorite(post.id);
+        const updatedLabel = formatDate(post.uploadDate || post.createDate);
+        const categoryLabel = (post.category.trim() || "general")
+          .split(/[\s-]+/)
+          .filter(Boolean)
+          .map((word) => `${word.charAt(0).toUpperCase()}${word.slice(1)}`)
+          .join(" ");
 
         return (
           <View key={post.id} style={styles.card}>
@@ -129,36 +135,43 @@ export default function FavoriteScreen() {
                   resizeMode="cover"
                 />
               ) : null}
-              <Text style={styles.cardTitle}>{post.title}</Text>
-              <Text style={styles.cardPreview}>{getPreviewText(post.content, 18)}</Text>
-              <Text style={styles.meta}>
-                Last update: {formatDate(post.uploadDate || post.createDate)}
+              <View style={styles.cardTagRow}>
+                <Text style={styles.categoryBadge}>{categoryLabel}</Text>
+              </View>
+              <Text style={styles.cardTitle} numberOfLines={3} ellipsizeMode="tail">
+                {post.title}
+              </Text>
+              <Text style={styles.cardPreview} numberOfLines={2} ellipsizeMode="tail">
+                {post.content.trim() || "-"}
               </Text>
             </Pressable>
 
-            <Pressable
-              style={[
-                styles.favoriteButton,
-                isFavorite(post.id) ? styles.favoriteButtonActive : undefined,
-              ]}
-              onPress={() => {
-                void handleToggleFavorite(post);
-              }}
-            >
-              <HugeiconsIcon
-                icon={FavouriteIcon}
-                size={18}
-                color={isFavorite(post.id) ? "#B91C1C" : COLORS.mutedText}
-              />
-              <Text
+            <View style={styles.cardFooter}>
+              <Text style={styles.meta}>Updated {updatedLabel}</Text>
+              <Pressable
                 style={[
-                  styles.favoriteButtonText,
-                  isFavorite(post.id) ? styles.favoriteButtonTextActive : undefined,
+                  styles.favoriteButton,
+                  favorite ? styles.favoriteButtonActive : undefined,
                 ]}
+                onPress={() => {
+                  void handleToggleFavorite(post);
+                }}
               >
-                {isFavorite(post.id) ? "Unfav" : "Add to Fav"}
-              </Text>
-            </Pressable>
+                <HugeiconsIcon
+                  icon={FavouriteIcon}
+                  size={16}
+                  color={favorite ? "#B91C1C" : COLORS.mutedText}
+                />
+                <Text
+                  style={[
+                    styles.favoriteButtonText,
+                    favorite ? styles.favoriteButtonTextActive : undefined,
+                  ]}
+                >
+                  {favorite ? "Saved" : "Save"}
+                </Text>
+              </Pressable>
+            </View>
           </View>
         );
       })}
@@ -202,53 +215,86 @@ const styles = StyleSheet.create({
   },
   card: {
     backgroundColor: COLORS.surface,
-    borderColor: COLORS.border,
+    borderColor: "#E2E8F0",
     borderWidth: 1,
-    borderRadius: 14,
+    borderRadius: 16,
     padding: SPACING.lg,
     gap: SPACING.sm,
+    shadowColor: "#0F172A",
+    shadowOffset: {
+      width: 0,
+      height: 8,
+    },
+    shadowOpacity: 0.08,
+    shadowRadius: 14,
+    elevation: 4,
   },
   cardBody: {
-    gap: SPACING.xs,
+    gap: SPACING.sm,
   },
   cardBodyPressed: {
-    opacity: 0.85,
+    opacity: 0.92,
   },
   thumbnail: {
     width: "100%",
-    height: 170,
-    borderRadius: 10,
+    height: 180,
+    borderRadius: 12,
     backgroundColor: "#E5E7EB",
+  },
+  cardTagRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  categoryBadge: {
+    alignSelf: "flex-start",
+    borderWidth: 1,
+    borderColor: "#BFDBFE",
+    borderRadius: 999,
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: 3,
+    backgroundColor: "#EFF6FF",
+    color: "#1D4ED8",
+    fontSize: 11,
+    fontWeight: "700",
   },
   cardTitle: {
     fontSize: 17,
     fontWeight: "700",
     color: COLORS.text,
+    lineHeight: 23,
   },
   cardPreview: {
     fontSize: FONT_SIZE.body,
-    color: COLORS.text,
+    color: "#334155",
+    lineHeight: 21,
+  },
+  cardFooter: {
+    marginTop: SPACING.xs,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: SPACING.sm,
   },
   favoriteButton: {
-    alignSelf: "flex-start",
     flexDirection: "row",
     alignItems: "center",
     gap: SPACING.xs,
     borderWidth: 1,
     borderColor: COLORS.border,
     borderRadius: 999,
-    paddingHorizontal: SPACING.md,
-    paddingVertical: 6,
-    backgroundColor: COLORS.surface,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    backgroundColor: "#F8FAFC",
   },
   favoriteButtonActive: {
-    borderColor: "#FCA5A5",
+    borderColor: "#FECACA",
     backgroundColor: "#FEF2F2",
   },
   favoriteButtonText: {
-    color: COLORS.text,
+    color: "#334155",
     fontSize: 12,
-    fontWeight: "600",
+    fontWeight: "700",
   },
   favoriteButtonTextActive: {
     color: "#B91C1C",

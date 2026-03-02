@@ -42,9 +42,6 @@ import {
 } from "@/lib/content";
 import { firestore } from "@/lib/firebase";
 import { useAuth } from "@/providers/auth-provider";
-import RichTextEditor, {
-  type RichTextEditorValue,
-} from "@/components/rich-text-editor";
 
 const POST_STATUSES: PostStatus[] = ["draft", "published"];
 const HTML_TAG_PATTERN = /<\/?[a-z][\s\S]*>/i;
@@ -104,9 +101,7 @@ export default function AdminPostEditScreen() {
   const [title, setTitle] = useState("");
   const [slugInput, setSlugInput] = useState("");
   const [isSlugManuallyEdited, setIsSlugManuallyEdited] = useState(false);
-  const [contentHtml, setContentHtml] = useState("");
   const [contentPlainText, setContentPlainText] = useState("");
-  const [editorResetKey, setEditorResetKey] = useState(0);
   const [featureImageUrl, setFeatureImageUrl] = useState("");
   const [youtubeVideoUrl, setYoutubeVideoUrl] = useState("");
   const [category, setCategory] = useState("");
@@ -204,9 +199,7 @@ export default function AdminPostEditScreen() {
             : toHtmlContent(post.content);
         const hydratedPlainText =
           post.content.trim() || extractPlainText(hydratedContentHtml);
-        setContentHtml(hydratedContentHtml);
         setContentPlainText(hydratedPlainText);
-        setEditorResetKey((value) => value + 1);
         setFeatureImageUrl(post.featureImageUrl);
         setYoutubeVideoUrl(post.youtubeVideoUrl);
         setCategory(post.category);
@@ -305,10 +298,15 @@ export default function AdminPostEditScreen() {
     clearFeedback();
   };
 
+  const handleContentChange = (value: string) => {
+    setContentPlainText(value);
+    clearFeedback();
+  };
+
   const handleSave = async () => {
     const trimmedTitle = title.trim();
     const plainContent = contentPlainText.trim();
-    const htmlContent = contentHtml.trim() || toHtmlContent(plainContent);
+    const htmlContent = toHtmlContent(plainContent);
     const normalizedFeatureImageUrl = featureImageUrl.trim();
     const normalizedYoutubeVideoUrl = youtubeVideoUrl.trim();
     const normalizedCategory = category.trim().toLowerCase();
@@ -481,19 +479,19 @@ export default function AdminPostEditScreen() {
         </Text>
 
         <Text style={styles.label}>Blog Content *</Text>
-        <RichTextEditor
-          key={editorResetKey}
-          initialHtml={contentHtml}
-          placeholder="Write your blog post here..."
-          onChange={(value: RichTextEditorValue) => {
-            setContentHtml(value.html);
-            setContentPlainText(value.plainText);
-            clearFeedback();
-          }}
-        />
+        <View style={styles.inputWrap}>
+          <TextInput
+            value={contentPlainText}
+            onChangeText={handleContentChange}
+            placeholder="Write your blog post here..."
+            placeholderTextColor={COLORS.mutedText}
+            style={[styles.input, styles.contentInput]}
+            multiline
+            textAlignVertical="top"
+          />
+        </View>
         <Text style={styles.helperText}>
-          Rich text editor se headings, lists, bold, italic aur alignment use
-          kar sakte ho.
+          Simple text content add karein.
         </Text>
 
         <Text style={styles.label}>Feature Image URL</Text>
@@ -723,6 +721,10 @@ const styles = StyleSheet.create({
   input: {
     color: COLORS.text,
     fontSize: FONT_SIZE.button,
+  },
+  contentInput: {
+    minHeight: 180,
+    paddingVertical: SPACING.md,
   },
   label: {
     color: COLORS.text,

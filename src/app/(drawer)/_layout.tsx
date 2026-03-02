@@ -1,17 +1,11 @@
-import { Drawer } from "expo-router/drawer";
-import { Redirect } from "expo-router";
+import { Redirect, Stack } from "expo-router";
 import { ActivityIndicator, StyleSheet, View } from "react-native";
-import { HugeiconsIcon } from "@hugeicons/react-native";
-import {
-  Add01Icon,
-  Home01Icon,
-} from "@hugeicons/core-free-icons";
 
 import { COLORS } from "@/constants/theme";
 import { useAuth } from "@/providers/auth-provider";
 
-export default function DrawerLayout() {
-  const { user, isAdmin, isBootstrapping } = useAuth();
+export default function AppLayout() {
+  const { user, isBootstrapping } = useAuth();
 
   if (isBootstrapping) {
     return (
@@ -26,39 +20,28 @@ export default function DrawerLayout() {
   }
 
   return (
-    <Drawer
+    <Stack
       initialRouteName="(tabs)"
       screenOptions={{
         headerStyle: { backgroundColor: COLORS.surface },
         headerTintColor: COLORS.text,
         headerShadowVisible: false,
-        drawerActiveTintColor: COLORS.primary,
-        drawerInactiveTintColor: COLORS.mutedText,
+        contentStyle: { backgroundColor: COLORS.background },
       }}
     >
-      <Drawer.Screen
+      <Stack.Screen
         name="(tabs)"
         options={{
-          title: "Home",
           headerShown: false,
-          drawerIcon: ({ color, size }) => (
-            <HugeiconsIcon icon={Home01Icon} color={color} size={size} />
-          ),
         }}
       />
-      {isAdmin ? (
-        <Drawer.Screen
-          name="admin"
-          options={{
-            title: "Admin Panel",
-            headerShown: false,
-            drawerIcon: ({ color, size }) => (
-              <HugeiconsIcon icon={Add01Icon} color={color} size={size} />
-            ),
-          }}
-        />
-      ) : null}
-    </Drawer>
+      <Stack.Screen
+        name="admin"
+        options={{
+          headerShown: false,
+        }}
+      />
+    </Stack>
   );
 }
 

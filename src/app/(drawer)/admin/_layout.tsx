@@ -1,11 +1,17 @@
-import { Redirect, Stack } from "expo-router";
-import { DrawerToggleButton } from "@react-navigation/drawer";
-import { ActivityIndicator, StyleSheet, View } from "react-native";
+import { Redirect, Stack, useRouter } from "expo-router";
+import {
+  ActivityIndicator,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 
-import { COLORS } from "@/constants/theme";
+import { COLORS, RADIUS, SPACING } from "@/constants/theme";
 import { useAuth } from "@/providers/auth-provider";
 
 export default function AdminLayout() {
+  const router = useRouter();
   const { isAdmin, isBootstrapping } = useAuth();
 
   if (isBootstrapping) {
@@ -33,7 +39,17 @@ export default function AdminLayout() {
         name="index"
         options={{
           title: "Admin Panel",
-          headerLeft: () => <DrawerToggleButton tintColor={COLORS.text} />,
+          headerLeft: () => (
+            <Pressable
+              style={({ pressed }) => [
+                styles.backButton,
+                pressed && styles.backButtonPressed,
+              ]}
+              onPress={() => router.replace("/home")}
+            >
+              <Text style={styles.backButtonText}>Back</Text>
+            </Pressable>
+          ),
         }}
       />
       <Stack.Screen name="posts/index" options={{ title: "Posts" }} />
@@ -49,5 +65,21 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: COLORS.background,
+  },
+  backButton: {
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: RADIUS.md,
+    backgroundColor: COLORS.surface,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.xs,
+  },
+  backButtonPressed: {
+    opacity: 0.85,
+  },
+  backButtonText: {
+    color: COLORS.text,
+    fontSize: 12,
+    fontWeight: "700",
   },
 });
