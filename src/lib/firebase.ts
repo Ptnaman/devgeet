@@ -1,5 +1,12 @@
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { getApp, getApps, initializeApp, type FirebaseApp } from "firebase/app";
-import { getAuth } from "firebase/auth";
+import * as FirebaseAuth from "firebase/auth";
+import {
+  getAuth,
+  initializeAuth,
+  type Auth,
+  type Persistence,
+} from "firebase/auth";
 import type { Analytics } from "firebase/analytics";
 import { getFirestore } from "firebase/firestore";
 import { Platform } from "react-native";
@@ -18,7 +25,39 @@ export const firebaseApp: FirebaseApp = getApps().length
   ? getApp()
   : initializeApp(firebaseConfig);
 
-export const auth = getAuth(firebaseApp);
+const getNativePersistence = (): Persistence | undefined => {
+  const maybeFactory = (
+    FirebaseAuth as unknown as {
+      getReactNativePersistence?: (storage: typeof AsyncStorage) => Persistence;
+    }
+  ).getReactNativePersistence;
+
+  if (typeof maybeFactory === "function") {
+    return maybeFactory(AsyncStorage);
+  }
+
+  return undefined;
+};
+
+const createAuthInstance = (): Auth => {
+  if (Platform.OS === "web") {
+    return getAuth(firebaseApp);
+  }
+
+  const nativePersistence = getNativePersistence();
+
+  try {
+    if (!nativePersistence) {
+      return getAuth(firebaseApp);
+    }
+
+    return initializeAuth(firebaseApp, { persistence: nativePersistence });
+  } catch {
+    return getAuth(firebaseApp);
+  }
+};
+
+export const auth = createAuthInstance();
 export const firestore = getFirestore(firebaseApp);
 
 let analytics: Analytics | null = null;

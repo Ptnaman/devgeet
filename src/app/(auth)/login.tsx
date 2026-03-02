@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useRouter } from "expo-router";
 import {
   ActivityIndicator,
@@ -9,6 +9,7 @@ import {
   TextInput,
   View,
 } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { HugeiconsIcon } from "@hugeicons/react-native";
 import {
   LockIcon,
@@ -20,6 +21,8 @@ import {
 import { GoogleAuthButton } from "@/components/google-auth-button";
 import { COLORS, CONTROL_SIZE, FONT_SIZE, RADIUS, SPACING } from "@/constants/theme";
 import { useAuth } from "@/providers/auth-provider";
+
+const LAST_LOGIN_IDENTIFIER_KEY = "auth:last_login_identifier";
 
 const getErrorMessage = (error: unknown) => {
   if (error instanceof Error && error.message) {
@@ -37,6 +40,23 @@ export default function LoginScreen() {
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  useEffect(() => {
+    const hydrateIdentifier = async () => {
+      try {
+        const savedIdentifier = await AsyncStorage.getItem(
+          LAST_LOGIN_IDENTIFIER_KEY
+        );
+        if (savedIdentifier) {
+          setIdentifier(savedIdentifier);
+        }
+      } catch {
+        // Ignore local storage read issues and keep blank field.
+      }
+    };
+
+    void hydrateIdentifier();
+  }, []);
+
   const handleLogin = async () => {
     if (!identifier.trim() || !password) {
       setError("Enter username/email and password.");
@@ -46,7 +66,12 @@ export default function LoginScreen() {
     try {
       setIsSubmitting(true);
       setError("");
-      await loginWithEmailOrUsername(identifier, password);
+      const normalizedIdentifier = identifier.trim();
+      await loginWithEmailOrUsername(normalizedIdentifier, password);
+      await AsyncStorage.setItem(
+        LAST_LOGIN_IDENTIFIER_KEY,
+        normalizedIdentifier
+      );
       router.replace("/home");
     } catch (loginError) {
       setError(getErrorMessage(loginError));

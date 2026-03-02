@@ -4,9 +4,7 @@ import { ActivityIndicator, StyleSheet, View } from "react-native";
 import { HugeiconsIcon } from "@hugeicons/react-native";
 import {
   Add01Icon,
-  FavouriteIcon,
   Home01Icon,
-  Settings01Icon,
 } from "@hugeicons/core-free-icons";
 
 import { COLORS } from "@/constants/theme";
@@ -29,7 +27,7 @@ export default function DrawerLayout() {
 
   return (
     <Drawer
-      initialRouteName="home"
+      initialRouteName="(tabs)"
       screenOptions={{
         headerStyle: { backgroundColor: COLORS.surface },
         headerTintColor: COLORS.text,
@@ -39,29 +37,12 @@ export default function DrawerLayout() {
       }}
     >
       <Drawer.Screen
-        name="home"
+        name="(tabs)"
         options={{
           title: "Home",
+          headerShown: false,
           drawerIcon: ({ color, size }) => (
             <HugeiconsIcon icon={Home01Icon} color={color} size={size} />
-          ),
-        }}
-      />
-      <Drawer.Screen
-        name="favorite"
-        options={{
-          title: "Favorite",
-          drawerIcon: ({ color, size }) => (
-            <HugeiconsIcon icon={FavouriteIcon} color={color} size={size} />
-          ),
-        }}
-      />
-      <Drawer.Screen
-        name="settings"
-        options={{
-          title: "Settings",
-          drawerIcon: ({ color, size }) => (
-            <HugeiconsIcon icon={Settings01Icon} color={color} size={size} />
           ),
         }}
       />

@@ -36,7 +36,8 @@ export default function AdminLayout() {
           headerLeft: () => <DrawerToggleButton tintColor={COLORS.text} />,
         }}
       />
-      <Stack.Screen name="posts" options={{ title: "Posts" }} />
+      <Stack.Screen name="posts/index" options={{ title: "Posts" }} />
+      <Stack.Screen name="posts/edit" options={{ title: "Post Editor" }} />
       <Stack.Screen name="categories" options={{ title: "Categories" }} />
     </Stack>
   );
