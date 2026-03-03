@@ -206,6 +206,22 @@ export const getPostCardThumbnailUrl = (
   return getYouTubeThumbnailUrl(post.youtubeVideoUrl);
 };
 
+const toSortableTime = (value: string) => {
+  if (!value) {
+    return 0;
+  }
+
+  const parsed = new Date(value).getTime();
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
+export const sortPostsByRecency = (posts: PostRecord[]) =>
+  [...posts].sort((left, right) => {
+    const leftTime = toSortableTime(left.uploadDate || left.createDate);
+    const rightTime = toSortableTime(right.uploadDate || right.createDate);
+    return rightTime - leftTime;
+  });
+
 export const formatDate = (value: string) => {
   if (!value) {
     return "-";

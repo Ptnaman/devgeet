@@ -31,6 +31,7 @@ import {
   getPostCardThumbnailUrl,
   mapCategoryRecord,
   mapPostRecord,
+  sortPostsByRecency,
   type CategoryRecord,
   type PostRecord,
   type PostStatus,
@@ -59,10 +60,7 @@ export default function AdminPostsListScreen() {
       collection(firestore, CATEGORIES_COLLECTION),
       orderBy("name", "asc")
     );
-    const postsQuery = query(
-      collection(firestore, POSTS_COLLECTION),
-      orderBy("createDate", "desc")
-    );
+    const postsQuery = query(collection(firestore, POSTS_COLLECTION));
 
     const unsubscribeCategories = onSnapshot(
       categoriesQuery,
@@ -85,7 +83,11 @@ export default function AdminPostsListScreen() {
       postsQuery,
       (snapshot) => {
         setPosts(
-          snapshot.docs.map((item) => mapPostRecord(item.id, item.data() as DocumentData))
+          sortPostsByRecency(
+            snapshot.docs.map((item) =>
+              mapPostRecord(item.id, item.data() as DocumentData)
+            )
+          )
         );
         setIsLoadingPosts(false);
         setError("");
@@ -126,6 +128,19 @@ export default function AdminPostsListScreen() {
         .includes(keyword);
     });
   }, [categoryFilter, posts, searchTerm, statusFilter]);
+
+  const hasActiveFilters =
+    Boolean(searchTerm.trim()) || statusFilter !== "all" || categoryFilter !== "all";
+
+  const postStats = useMemo(() => {
+    const published = posts.filter((item) => item.status === "published").length;
+    return {
+      total: posts.length,
+      published,
+      draft: posts.length - published,
+      visible: filteredPosts.length,
+    };
+  }, [filteredPosts.length, posts]);
 
   const clearFeedback = () => {
     setError("");
@@ -186,14 +201,14 @@ export default function AdminPostsListScreen() {
     <ScrollView contentContainerStyle={styles.container}>
       <Text style={styles.title}>Post List</Text>
       <Text style={styles.subtitle}>
-        List and filters are separate from post editing.
+        Filter, manage, and publish posts quickly.
       </Text>
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
       {success ? <Text style={styles.success}>{success}</Text> : null}
 
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Navigation</Text>
+        <Text style={styles.sectionTitle}>Quick Actions</Text>
         <View style={styles.buttonRow}>
           <Pressable
             style={({ pressed }) => [styles.primaryButton, pressed && styles.buttonPressed]}
@@ -207,12 +222,47 @@ export default function AdminPostsListScreen() {
           >
             <Text style={styles.secondaryButtonText}>Category Management</Text>
           </Pressable>
+          <Pressable
+            style={({ pressed }) => [
+              styles.secondaryButton,
+              !hasActiveFilters && styles.buttonDisabled,
+              pressed && styles.buttonPressed,
+            ]}
+            onPress={() => {
+              setSearchTerm("");
+              setStatusFilter("all");
+              setCategoryFilter("all");
+              clearFeedback();
+            }}
+            disabled={!hasActiveFilters}
+          >
+            <Text style={styles.secondaryButtonText}>Reset Filters</Text>
+          </Pressable>
         </View>
       </View>
 
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Filters</Text>
         {isLoadingData ? <ActivityIndicator size="small" color={COLORS.primary} /> : null}
+
+        <View style={styles.statRow}>
+          <View style={styles.statPill}>
+            <Text style={styles.statLabel}>Total</Text>
+            <Text style={styles.statValue}>{postStats.total}</Text>
+          </View>
+          <View style={styles.statPill}>
+            <Text style={styles.statLabel}>Published</Text>
+            <Text style={styles.statValue}>{postStats.published}</Text>
+          </View>
+          <View style={styles.statPill}>
+            <Text style={styles.statLabel}>Draft</Text>
+            <Text style={styles.statValue}>{postStats.draft}</Text>
+          </View>
+          <View style={styles.statPill}>
+            <Text style={styles.statLabel}>Visible</Text>
+            <Text style={styles.statValue}>{postStats.visible}</Text>
+          </View>
+        </View>
 
         <View style={styles.inputWrap}>
           <TextInput
@@ -304,6 +354,13 @@ export default function AdminPostsListScreen() {
 
         {filteredPosts.map((post) => {
           const thumbnailUrl = getPostCardThumbnailUrl(post);
+          const updatedLabel = formatDate(post.uploadDate || post.createDate);
+          const createdLabel = formatDate(post.createDate);
+          const categoryLabel = (post.category.trim() || "general")
+            .split(/[\s-]+/)
+            .filter(Boolean)
+            .map((word) => `${word.charAt(0).toUpperCase()}${word.slice(1)}`)
+            .join(" ");
 
           return (
             <View key={post.id} style={styles.postCard}>
@@ -315,7 +372,7 @@ export default function AdminPostsListScreen() {
                 />
               ) : null}
               <View style={styles.postHeaderRow}>
-                <Text style={styles.postTitle}>{post.title}</Text>
+                <Text style={styles.categoryBadge}>{categoryLabel}</Text>
                 <View
                   style={[
                     styles.statusBadge,
@@ -337,14 +394,20 @@ export default function AdminPostsListScreen() {
                 </View>
               </View>
 
+              <View style={styles.postHeaderRow}>
+                <Text style={styles.postTitle}>{post.title}</Text>
+              </View>
+
               <Text style={styles.postBody}>
                 {post.content.length > 180 ? `${post.content.slice(0, 180)}...` : post.content}
               </Text>
-              <Text style={styles.postMeta}>ID: {post.id}</Text>
+
+              <View style={styles.metaRow}>
+                <Text style={styles.postMeta}>Created {createdLabel}</Text>
+                <Text style={styles.postMeta}>Updated {updatedLabel}</Text>
+              </View>
               <Text style={styles.postMeta}>Slug: {post.slug}</Text>
-              <Text style={styles.postMeta}>Category: {post.category}</Text>
-              <Text style={styles.postMeta}>Create Date: {formatDate(post.createDate)}</Text>
-              <Text style={styles.postMeta}>Upload Date: {formatDate(post.uploadDate)}</Text>
+              <Text style={styles.postMeta}>ID: {post.id}</Text>
 
               <View style={styles.buttonRow}>
                 <Pressable
@@ -470,8 +533,35 @@ const styles = StyleSheet.create({
   chipTextActive: {
     color: COLORS.primaryText,
   },
+  statRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: SPACING.sm,
+  },
+  statPill: {
+    minWidth: 82,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 999,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.xs,
+    backgroundColor: COLORS.surface,
+    alignItems: "center",
+  },
+  statLabel: {
+    color: COLORS.mutedText,
+    fontSize: 11,
+    textTransform: "uppercase",
+    letterSpacing: 0.3,
+  },
+  statValue: {
+    color: COLORS.text,
+    fontSize: 14,
+    fontWeight: "700",
+  },
   buttonRow: {
     flexDirection: "row",
+    flexWrap: "wrap",
     gap: SPACING.sm,
   },
   flexButton: {
@@ -526,6 +616,9 @@ const styles = StyleSheet.create({
   buttonPressed: {
     opacity: 0.9,
   },
+  buttonDisabled: {
+    opacity: 0.55,
+  },
   resultText: {
     color: COLORS.mutedText,
     fontSize: 13,
@@ -555,6 +648,17 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     gap: SPACING.sm,
   },
+  categoryBadge: {
+    borderWidth: 1,
+    borderColor: "#BFDBFE",
+    borderRadius: 999,
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: 3,
+    backgroundColor: "#EFF6FF",
+    color: "#1D4ED8",
+    fontSize: 11,
+    fontWeight: "700",
+  },
   postTitle: {
     color: COLORS.text,
     fontSize: 16,
@@ -564,6 +668,12 @@ const styles = StyleSheet.create({
   postBody: {
     color: COLORS.text,
     fontSize: FONT_SIZE.body,
+  },
+  metaRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: SPACING.sm,
   },
   postMeta: {
     color: COLORS.mutedText,

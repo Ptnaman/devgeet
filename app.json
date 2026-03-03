@@ -29,6 +29,12 @@
     "plugins": [
       "expo-router",
       [
+        "@react-native-google-signin/google-signin/app.plugin.js",
+        {
+          "iosUrlScheme": "com.googleusercontent.apps.180784231307-n1ukgc3u0bpfl3esv1kih50ek7uorsuq"
+        }
+      ],
+      [
         "expo-splash-screen",
         {
           "backgroundColor": "#208AEF",

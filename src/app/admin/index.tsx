@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
-  Image,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -21,10 +20,9 @@ import { COLORS, CONTROL_SIZE, FONT_SIZE, RADIUS, SPACING } from "@/constants/th
 import {
   CATEGORIES_COLLECTION,
   POSTS_COLLECTION,
-  formatDate,
-  getPostCardThumbnailUrl,
   mapCategoryRecord,
   mapPostRecord,
+  sortPostsByRecency,
   type CategoryRecord,
   type PostRecord,
 } from "@/lib/content";
@@ -43,10 +41,7 @@ export default function AdminOverviewScreen() {
       collection(firestore, CATEGORIES_COLLECTION),
       orderBy("name", "asc")
     );
-    const postsQuery = query(
-      collection(firestore, POSTS_COLLECTION),
-      orderBy("createDate", "desc")
-    );
+    const postsQuery = query(collection(firestore, POSTS_COLLECTION));
 
     const unsubscribeCategories = onSnapshot(
       categoriesQuery,
@@ -69,7 +64,11 @@ export default function AdminOverviewScreen() {
       postsQuery,
       (snapshot) => {
         setPosts(
-          snapshot.docs.map((item) => mapPostRecord(item.id, item.data() as DocumentData))
+          sortPostsByRecency(
+            snapshot.docs.map((item) =>
+              mapPostRecord(item.id, item.data() as DocumentData)
+            )
+          )
         );
         setError("");
         setIsLoadingPosts(false);
@@ -99,7 +98,6 @@ export default function AdminOverviewScreen() {
   }, [categories.length, posts]);
 
   const isLoading = isLoadingCategories || isLoadingPosts;
-  const latestPosts = posts.slice(0, 5);
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
@@ -135,46 +133,31 @@ export default function AdminOverviewScreen() {
 
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Quick Actions</Text>
-        <View style={styles.buttonRow}>
+        <View style={styles.quickGrid}>
           <Pressable
-            style={({ pressed }) => [styles.button, pressed && styles.buttonPressed]}
+            style={({ pressed }) => [styles.quickCardPrimary, pressed && styles.buttonPressed]}
+            onPress={() => router.push("/admin/posts/edit")}
+          >
+            <Text style={styles.quickCardTitlePrimary}>Create Post</Text>
+            <Text style={styles.quickCardMetaPrimary}>Open post editor</Text>
+          </Pressable>
+
+          <Pressable
+            style={({ pressed }) => [styles.quickCard, pressed && styles.buttonPressed]}
             onPress={() => router.push("/admin/posts")}
           >
-            <Text style={styles.buttonText}>Manage Posts</Text>
+            <Text style={styles.quickCardTitle}>Post List</Text>
+            <Text style={styles.quickCardMeta}>Manage all posts</Text>
           </Pressable>
+
           <Pressable
-            style={({ pressed }) => [styles.button, pressed && styles.buttonPressed]}
+            style={({ pressed }) => [styles.quickCard, pressed && styles.buttonPressed]}
             onPress={() => router.push("/admin/categories")}
           >
-            <Text style={styles.buttonText}>Manage Categories</Text>
+            <Text style={styles.quickCardTitle}>Categories</Text>
+            <Text style={styles.quickCardMeta}>Manage categories</Text>
           </Pressable>
         </View>
-      </View>
-
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Recent Posts</Text>
-        {!latestPosts.length ? (
-          <Text style={styles.mutedText}>No posts available yet.</Text>
-        ) : null}
-        {latestPosts.map((post) => {
-          const thumbnailUrl = getPostCardThumbnailUrl(post);
-
-          return (
-            <View key={post.id} style={styles.postCard}>
-              {thumbnailUrl ? (
-                <Image
-                  source={{ uri: thumbnailUrl }}
-                  style={styles.thumbnail}
-                  resizeMode="cover"
-                />
-              ) : null}
-              <Text style={styles.postTitle}>{post.title}</Text>
-              <Text style={styles.postMeta}>Category: {post.category}</Text>
-              <Text style={styles.postMeta}>Status: {post.status}</Text>
-              <Text style={styles.postMeta}>Upload Date: {formatDate(post.uploadDate)}</Text>
-            </View>
-          );
-        })}
       </View>
     </ScrollView>
   );
@@ -236,51 +219,48 @@ const styles = StyleSheet.create({
     color: COLORS.text,
     marginTop: 2,
   },
-  buttonRow: {
+  quickGrid: {
     gap: SPACING.sm,
   },
-  button: {
+  quickCardPrimary: {
     minHeight: CONTROL_SIZE.inputHeight,
     borderRadius: RADIUS.md,
     backgroundColor: COLORS.primary,
-    alignItems: "center",
-    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: COLORS.primary,
     paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.md,
+    gap: 2,
   },
-  buttonText: {
+  quickCardTitlePrimary: {
     color: COLORS.primaryText,
-    fontSize: FONT_SIZE.button,
+    fontSize: 15,
     fontWeight: "700",
+  },
+  quickCardMetaPrimary: {
+    color: "#DBEAFE",
+    fontSize: 12,
+  },
+  quickCard: {
+    minHeight: CONTROL_SIZE.inputHeight,
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.surface,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.md,
+    gap: 2,
+  },
+  quickCardTitle: {
+    color: COLORS.text,
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  quickCardMeta: {
+    color: COLORS.mutedText,
+    fontSize: 12,
   },
   buttonPressed: {
     opacity: 0.9,
-  },
-  mutedText: {
-    color: COLORS.mutedText,
-    fontSize: FONT_SIZE.body,
-  },
-  postCard: {
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    borderRadius: RADIUS.md,
-    padding: SPACING.md,
-    backgroundColor: COLORS.surface,
-    gap: SPACING.xs,
-  },
-  thumbnail: {
-    width: "100%",
-    height: 150,
-    borderRadius: RADIUS.md,
-    backgroundColor: "#E5E7EB",
-    marginBottom: SPACING.xs,
-  },
-  postTitle: {
-    color: COLORS.text,
-    fontSize: 16,
-    fontWeight: "700",
-  },
-  postMeta: {
-    color: COLORS.mutedText,
-    fontSize: 12,
   },
 });

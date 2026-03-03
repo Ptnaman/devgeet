@@ -36,6 +36,7 @@ import {
   isValidOptionalHttpUrl,
   mapCategoryRecord,
   mapPostRecord,
+  sortPostsByRecency,
   type CategoryRecord,
   type PostRecord,
   type PostStatus,
@@ -122,10 +123,7 @@ export default function AdminPostEditScreen() {
       collection(firestore, CATEGORIES_COLLECTION),
       orderBy("name", "asc"),
     );
-    const postsQuery = query(
-      collection(firestore, POSTS_COLLECTION),
-      orderBy("createDate", "desc"),
-    );
+    const postsQuery = query(collection(firestore, POSTS_COLLECTION));
 
     const unsubscribeCategories = onSnapshot(
       categoriesQuery,
@@ -147,8 +145,10 @@ export default function AdminPostEditScreen() {
       postsQuery,
       (snapshot) => {
         setPosts(
-          snapshot.docs.map((item) =>
-            mapPostRecord(item.id, item.data() as DocumentData),
+          sortPostsByRecency(
+            snapshot.docs.map((item) =>
+              mapPostRecord(item.id, item.data() as DocumentData),
+            ),
           ),
         );
       },

@@ -1,9 +1,10 @@
 import { Redirect, Stack, useRouter } from "expo-router";
+import { Logout01Icon } from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react-native";
 import {
   ActivityIndicator,
   Pressable,
   StyleSheet,
-  Text,
   View,
 } from "react-native";
 
@@ -33,23 +34,23 @@ export default function AdminLayout() {
         headerTintColor: COLORS.text,
         headerShadowVisible: false,
         contentStyle: { backgroundColor: COLORS.background },
+        headerRight: () => (
+          <Pressable
+            style={({ pressed }) => [
+              styles.logoutIconButton,
+              pressed && styles.iconButtonPressed,
+            ]}
+            onPress={() => router.replace("/home")}
+          >
+            <HugeiconsIcon icon={Logout01Icon} size={18} color={COLORS.text} />
+          </Pressable>
+        ),
       }}
     >
       <Stack.Screen
         name="index"
         options={{
           title: "Admin Panel",
-          headerLeft: () => (
-            <Pressable
-              style={({ pressed }) => [
-                styles.backButton,
-                pressed && styles.backButtonPressed,
-              ]}
-              onPress={() => router.replace("/home")}
-            >
-              <Text style={styles.backButtonText}>Back</Text>
-            </Pressable>
-          ),
         }}
       />
       <Stack.Screen name="posts/index" options={{ title: "Posts" }} />
@@ -66,20 +67,18 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     backgroundColor: COLORS.background,
   },
-  backButton: {
+  logoutIconButton: {
     borderWidth: 1,
     borderColor: COLORS.border,
     borderRadius: RADIUS.md,
     backgroundColor: COLORS.surface,
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.xs,
+    width: 36,
+    height: 36,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: SPACING.xs,
   },
-  backButtonPressed: {
+  iconButtonPressed: {
     opacity: 0.85,
-  },
-  backButtonText: {
-    color: COLORS.text,
-    fontSize: 12,
-    fontWeight: "700",
   },
 });

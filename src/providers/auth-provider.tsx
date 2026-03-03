@@ -16,6 +16,7 @@ import {
   updateProfile,
   type User,
 } from "firebase/auth";
+import { Platform } from "react-native";
 import {
   doc,
   getDoc,
@@ -26,6 +27,7 @@ import {
 
 import { isAdminEmail } from "@/lib/access";
 import { auth, firestore } from "@/lib/firebase";
+import { loadGoogleSignInModule } from "@/lib/google-signin-loader";
 
 const USERNAMES_COLLECTION = "usernames";
 const USERS_COLLECTION = "users";
@@ -303,6 +305,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const logout = async () => {
+    if (Platform.OS !== "web") {
+      try {
+        const googleSignInModule = loadGoogleSignInModule();
+        if (googleSignInModule) {
+          if (googleSignInModule.GoogleOneTapSignIn) {
+            await googleSignInModule.GoogleOneTapSignIn.signOut();
+          } else {
+            await googleSignInModule.GoogleSignin.signOut();
+          }
+        }
+      } catch {
+        // Ignore if Google sign-in is not active on this device/session.
+      }
+    }
+
     if (auth.currentUser) {
       await signOut(auth);
     }
@@ -331,4 +348,3 @@ export function useAuth() {
   }
   return context;
 }
-

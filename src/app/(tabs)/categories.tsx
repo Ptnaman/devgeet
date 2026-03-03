@@ -24,6 +24,7 @@ import {
   mapCategoryRecord,
   mapPostRecord,
   POSTS_COLLECTION,
+  sortPostsByRecency,
   type CategoryRecord,
   type PostRecord,
 } from "@/lib/content";
@@ -45,10 +46,7 @@ export default function CategoriesScreen() {
       collection(firestore, CATEGORIES_COLLECTION),
       orderBy("name", "asc"),
     );
-    const postsQuery = query(
-      collection(firestore, POSTS_COLLECTION),
-      orderBy("createDate", "desc"),
-    );
+    const postsQuery = query(collection(firestore, POSTS_COLLECTION));
 
     const unsubscribeCategories = onSnapshot(
       categoriesQuery,
@@ -69,9 +67,11 @@ export default function CategoriesScreen() {
     const unsubscribePosts = onSnapshot(
       postsQuery,
       (snapshot) => {
-        const nextPosts = snapshot.docs
-          .map((item) => mapPostRecord(item.id, item.data() as DocumentData))
-          .filter((item) => item.status === "published");
+        const nextPosts = sortPostsByRecency(
+          snapshot.docs
+            .map((item) => mapPostRecord(item.id, item.data() as DocumentData))
+            .filter((item) => item.status === "published"),
+        );
         setPosts(nextPosts);
         setError("");
         setIsLoadingPosts(false);

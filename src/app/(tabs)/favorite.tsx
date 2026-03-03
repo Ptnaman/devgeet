@@ -14,7 +14,6 @@ import { FavouriteIcon } from "@hugeicons/core-free-icons";
 import {
   collection,
   onSnapshot,
-  orderBy,
   query,
   type DocumentData,
 } from "firebase/firestore";
@@ -25,6 +24,7 @@ import {
   getPostCardThumbnailUrl,
   mapPostRecord,
   POSTS_COLLECTION,
+  sortPostsByRecency,
   type PostRecord,
 } from "@/lib/content";
 import { useFavorites } from "@/hooks/use-favorites";
@@ -39,17 +39,16 @@ export default function FavoriteScreen() {
   const [postsError, setPostsError] = useState("");
 
   useEffect(() => {
-    const postsQuery = query(
-      collection(firestore, POSTS_COLLECTION),
-      orderBy("createDate", "desc"),
-    );
+    const postsQuery = query(collection(firestore, POSTS_COLLECTION));
 
     const unsubscribe = onSnapshot(
       postsQuery,
       (snapshot) => {
-        const nextPosts = snapshot.docs
-          .map((item) => mapPostRecord(item.id, item.data() as DocumentData))
-          .filter((post) => post.status === "published");
+        const nextPosts = sortPostsByRecency(
+          snapshot.docs
+            .map((item) => mapPostRecord(item.id, item.data() as DocumentData))
+            .filter((post) => post.status === "published"),
+        );
 
         setPosts(nextPosts);
         setPostsError("");

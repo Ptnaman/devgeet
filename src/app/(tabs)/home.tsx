@@ -4,11 +4,10 @@ import { useRouter } from "expo-router";
 import {
   collection,
   onSnapshot,
-  orderBy,
   query,
   type DocumentData,
 } from "firebase/firestore";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Image,
@@ -26,35 +25,29 @@ import {
   getPostCardThumbnailUrl,
   mapPostRecord,
   POSTS_COLLECTION,
+  sortPostsByRecency,
   type PostRecord,
 } from "@/lib/content";
 import { firestore } from "@/lib/firebase";
-import { useAuth } from "@/providers/auth-provider";
 
 export default function HomeScreen() {
   const router = useRouter();
-  const { user, isAdmin } = useAuth();
   const { isFavorite, toggleFavorite } = useFavorites();
   const [posts, setPosts] = useState<PostRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
 
-  const accountSubtitle = isAdmin
-    ? `Admin logged in: ${user?.email || "Admin"}`
-    : `User logged in: ${user?.displayName || user?.email || "User"}`;
-
   useEffect(() => {
-    const postsQuery = query(
-      collection(firestore, POSTS_COLLECTION),
-      orderBy("createDate", "desc"),
-    );
+    const postsQuery = query(collection(firestore, POSTS_COLLECTION));
 
     const unsubscribe = onSnapshot(
       postsQuery,
       (snapshot) => {
-        const nextPosts = snapshot.docs
-          .map((item) => mapPostRecord(item.id, item.data() as DocumentData))
-          .filter((post) => post.status === "published");
+        const nextPosts = sortPostsByRecency(
+          snapshot.docs
+            .map((item) => mapPostRecord(item.id, item.data() as DocumentData))
+            .filter((post) => post.status === "published"),
+        );
 
         setError("");
         setPosts(nextPosts);
@@ -69,22 +62,6 @@ export default function HomeScreen() {
     return unsubscribe;
   }, []);
 
-  const subtitle = useMemo(() => {
-    if (isLoading) {
-      return "Loading posts...";
-    }
-
-    if (error) {
-      return error;
-    }
-
-    if (!posts.length) {
-      return "No published posts yet.";
-    }
-
-    return `${posts.length} post${posts.length === 1 ? "" : "s"} published.`;
-  }, [error, isLoading, posts.length]);
-
   const openPost = (postId: string) => {
     router.push({ pathname: "/post/[postId]", params: { postId } });
   };
@@ -95,10 +72,6 @@ export default function HomeScreen() {
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
-      <Text style={styles.title}>DevGeet Posts</Text>
-      <Text style={styles.subtitle}>{accountSubtitle}</Text>
-      <Text style={styles.feedText}>{subtitle}</Text>
-
       {isLoading ? (
         <ActivityIndicator
           size="large"
@@ -183,19 +156,6 @@ const styles = StyleSheet.create({
     padding: SPACING.xxl,
     gap: SPACING.sm,
     backgroundColor: COLORS.background,
-  },
-  title: {
-    fontSize: FONT_SIZE.title,
-    fontWeight: "700",
-    color: COLORS.text,
-  },
-  subtitle: {
-    fontSize: FONT_SIZE.body,
-    color: COLORS.mutedText,
-  },
-  feedText: {
-    fontSize: FONT_SIZE.body,
-    color: COLORS.text,
   },
   loader: {
     marginVertical: SPACING.md,
