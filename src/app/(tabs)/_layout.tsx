@@ -6,7 +6,7 @@ import {
   Home01Icon,
   Settings01Icon,
 } from "@hugeicons/core-free-icons";
-import { Pressable, StyleSheet, Text } from "react-native";
+import { Pressable, StyleSheet } from "react-native";
 
 import { COLORS } from "@/constants/theme";
 import { useAuth } from "@/providers/auth-provider";
@@ -31,7 +31,7 @@ export default function TabsLayout() {
               ]}
               onPress={() => router.push("/admin")}
             >
-              <Text style={styles.adminButtonText}>Admin Panel</Text>
+              <HugeiconsIcon icon={Add01Icon} size={18} color={COLORS.text} />
             </Pressable>
           ) : null,
         tabBarActiveTintColor: COLORS.tabActive,
@@ -105,16 +105,13 @@ const styles = StyleSheet.create({
     borderColor: COLORS.border,
     borderRadius: 999,
     backgroundColor: COLORS.surface,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    width: 34,
+    height: 34,
+    alignItems: "center",
+    justifyContent: "center",
     marginRight: 8,
   },
   adminButtonPressed: {
     opacity: 0.85,
-  },
-  adminButtonText: {
-    color: COLORS.text,
-    fontSize: 12,
-    fontWeight: "700",
   },
 });
