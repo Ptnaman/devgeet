@@ -14,7 +14,6 @@ import { HugeiconsIcon } from "@hugeicons/react-native";
 import {
   LockIcon,
   Login03Icon,
-  Mail01Icon,
   UserIcon,
 } from "@hugeicons/core-free-icons";
 
@@ -37,6 +36,7 @@ export default function LoginScreen() {
 
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
+  const [isPasswordVisible, setIsPasswordVisible] = useState(false);
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -80,39 +80,73 @@ export default function LoginScreen() {
     }
   };
 
+  const isLoginDisabled = isSubmitting || !identifier.trim() || !password;
+
   return (
     <ScrollView
       contentContainerStyle={styles.scroll}
       keyboardShouldPersistTaps="handled"
     >
-      <View style={styles.card}>
-        <HugeiconsIcon icon={Login03Icon} size={42} color={COLORS.primary} />
-        <Text style={styles.title}>Login</Text>
-        <Text style={styles.subtitle}>Login with username/email or continue with Google.</Text>
+      <View style={styles.hero}>
+        <HugeiconsIcon icon={Login03Icon} size={28} color={COLORS.primary} />
+        <Text style={styles.title}>Sign In</Text>
+        <Text style={styles.subtitle}>Use your username or email to continue.</Text>
+      </View>
 
-        <View style={styles.inputWrap}>
-          <HugeiconsIcon icon={UserIcon} size={20} color={COLORS.tabInactive} />
-          <TextInput
-            value={identifier}
-            onChangeText={setIdentifier}
-            placeholder="Username or email"
-            placeholderTextColor={COLORS.mutedText}
-            autoCapitalize="none"
-            style={styles.input}
-          />
-          <HugeiconsIcon icon={Mail01Icon} size={20} color={COLORS.mutedText} />
+      <View style={styles.card}>
+        <View style={styles.field}>
+          <Text style={styles.label}>Username or Email</Text>
+          <View style={styles.inputWrap}>
+            <HugeiconsIcon icon={UserIcon} size={18} color={COLORS.tabInactive} />
+            <TextInput
+              value={identifier}
+              onChangeText={(value) => {
+                setIdentifier(value);
+                if (error) {
+                  setError("");
+                }
+              }}
+              placeholder="Enter username or email"
+              placeholderTextColor={COLORS.mutedText}
+              autoCapitalize="none"
+              autoCorrect={false}
+              style={styles.input}
+            />
+          </View>
         </View>
 
-        <View style={styles.inputWrap}>
-          <HugeiconsIcon icon={LockIcon} size={20} color={COLORS.tabInactive} />
-          <TextInput
-            value={password}
-            onChangeText={setPassword}
-            placeholder="Password"
-            placeholderTextColor={COLORS.mutedText}
-            secureTextEntry
-            style={styles.input}
-          />
+        <View style={styles.field}>
+          <Text style={styles.label}>Password</Text>
+          <View style={styles.inputWrap}>
+            <HugeiconsIcon icon={LockIcon} size={18} color={COLORS.tabInactive} />
+            <TextInput
+              value={password}
+              onChangeText={(value) => {
+                setPassword(value);
+                if (error) {
+                  setError("");
+                }
+              }}
+              placeholder="Enter password"
+              placeholderTextColor={COLORS.mutedText}
+              secureTextEntry={!isPasswordVisible}
+              autoCapitalize="none"
+              style={styles.input}
+              onSubmitEditing={() => {
+                if (!isLoginDisabled) {
+                  void handleLogin();
+                }
+              }}
+            />
+            <Pressable
+              onPress={() => setIsPasswordVisible((current) => !current)}
+              hitSlop={8}
+            >
+              <Text style={styles.toggleText}>
+                {isPasswordVisible ? "Hide" : "Show"}
+              </Text>
+            </Pressable>
+          </View>
         </View>
 
         {error ? <Text style={styles.error}>{error}</Text> : null}
@@ -121,21 +155,23 @@ export default function LoginScreen() {
           style={({ pressed }) => [
             styles.primaryButton,
             pressed && styles.buttonPressed,
-            isSubmitting && styles.buttonDisabled,
+            isLoginDisabled && styles.buttonDisabled,
           ]}
           onPress={handleLogin}
-          disabled={isSubmitting}
+          disabled={isLoginDisabled}
         >
           {isSubmitting ? (
             <ActivityIndicator size="small" color={COLORS.primaryText} />
           ) : (
             <HugeiconsIcon icon={Login03Icon} size={20} color={COLORS.primaryText} />
           )}
-          <Text style={styles.primaryButtonText}>Login</Text>
+          <Text style={styles.primaryButtonText}>Sign In</Text>
         </Pressable>
 
+        <Text style={styles.orText}>or continue with</Text>
+
         <GoogleAuthButton
-          label="Login with Google"
+          label="Continue with Google"
           onError={setError}
           autoPrompt
         />
@@ -156,7 +192,13 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     justifyContent: "center",
     padding: SPACING.xl,
+    gap: SPACING.md,
     backgroundColor: COLORS.background,
+  },
+  hero: {
+    alignItems: "center",
+    gap: SPACING.xs,
+    paddingHorizontal: SPACING.sm,
   },
   card: {
     backgroundColor: COLORS.surface,
@@ -167,14 +209,22 @@ const styles = StyleSheet.create({
     borderColor: COLORS.border,
   },
   title: {
-    fontSize: FONT_SIZE.heroTitle,
+    fontSize: FONT_SIZE.title,
     fontWeight: "700",
     color: COLORS.text,
   },
   subtitle: {
     color: COLORS.mutedText,
-    fontSize: FONT_SIZE.subtitle,
-    marginBottom: 4,
+    fontSize: FONT_SIZE.body,
+    textAlign: "center",
+  },
+  field: {
+    gap: SPACING.sm,
+  },
+  label: {
+    color: COLORS.text,
+    fontSize: 13,
+    fontWeight: "600",
   },
   inputWrap: {
     minHeight: CONTROL_SIZE.inputHeight,
@@ -191,6 +241,11 @@ const styles = StyleSheet.create({
     flex: 1,
     color: COLORS.text,
     fontSize: FONT_SIZE.button,
+  },
+  toggleText: {
+    color: COLORS.primary,
+    fontSize: 13,
+    fontWeight: "700",
   },
   error: {
     color: COLORS.danger,
@@ -209,6 +264,11 @@ const styles = StyleSheet.create({
     color: COLORS.primaryText,
     fontWeight: "700",
     fontSize: FONT_SIZE.button,
+  },
+  orText: {
+    textAlign: "center",
+    color: COLORS.mutedText,
+    fontSize: 13,
   },
   switchText: {
     textAlign: "center",

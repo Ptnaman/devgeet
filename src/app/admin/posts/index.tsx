@@ -133,11 +133,8 @@ export default function AdminPostsListScreen() {
     Boolean(searchTerm.trim()) || statusFilter !== "all" || categoryFilter !== "all";
 
   const postStats = useMemo(() => {
-    const published = posts.filter((item) => item.status === "published").length;
     return {
       total: posts.length,
-      published,
-      draft: posts.length - published,
       visible: filteredPosts.length,
     };
   }, [filteredPosts.length, posts]);
@@ -208,23 +205,11 @@ export default function AdminPostsListScreen() {
       {success ? <Text style={styles.success}>{success}</Text> : null}
 
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Quick Actions</Text>
-        <View style={styles.buttonRow}>
-          <Pressable
-            style={({ pressed }) => [styles.primaryButton, pressed && styles.buttonPressed]}
-            onPress={() => router.push("/admin/posts/edit")}
-          >
-            <Text style={styles.primaryButtonText}>Create New Post</Text>
-          </Pressable>
-          <Pressable
-            style={({ pressed }) => [styles.secondaryButton, pressed && styles.buttonPressed]}
-            onPress={() => router.push("/admin/categories")}
-          >
-            <Text style={styles.secondaryButtonText}>Category Management</Text>
-          </Pressable>
+        <View style={styles.filterHeader}>
+          <Text style={styles.sectionTitle}>Filters</Text>
           <Pressable
             style={({ pressed }) => [
-              styles.secondaryButton,
+              styles.resetInlineButton,
               !hasActiveFilters && styles.buttonDisabled,
               pressed && styles.buttonPressed,
             ]}
@@ -236,33 +221,10 @@ export default function AdminPostsListScreen() {
             }}
             disabled={!hasActiveFilters}
           >
-            <Text style={styles.secondaryButtonText}>Reset Filters</Text>
+            <Text style={styles.resetInlineButtonText}>Reset</Text>
           </Pressable>
         </View>
-      </View>
-
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Filters</Text>
         {isLoadingData ? <ActivityIndicator size="small" color={COLORS.primary} /> : null}
-
-        <View style={styles.statRow}>
-          <View style={styles.statPill}>
-            <Text style={styles.statLabel}>Total</Text>
-            <Text style={styles.statValue}>{postStats.total}</Text>
-          </View>
-          <View style={styles.statPill}>
-            <Text style={styles.statLabel}>Published</Text>
-            <Text style={styles.statValue}>{postStats.published}</Text>
-          </View>
-          <View style={styles.statPill}>
-            <Text style={styles.statLabel}>Draft</Text>
-            <Text style={styles.statValue}>{postStats.draft}</Text>
-          </View>
-          <View style={styles.statPill}>
-            <Text style={styles.statLabel}>Visible</Text>
-            <Text style={styles.statValue}>{postStats.visible}</Text>
-          </View>
-        </View>
 
         <View style={styles.inputWrap}>
           <TextInput
@@ -275,74 +237,89 @@ export default function AdminPostsListScreen() {
           />
         </View>
 
-        <Text style={styles.label}>Filter by Status</Text>
-        <View style={styles.chipRow}>
-          {(["all", ...POST_STATUSES] as PostStatusFilter[]).map((item) => (
-            <Pressable
-              key={item}
-              style={[styles.chip, statusFilter === item ? styles.chipActive : undefined]}
-              onPress={() => setStatusFilter(item)}
-            >
-              <Text
-                style={[
-                  styles.chipText,
-                  statusFilter === item ? styles.chipTextActive : undefined,
-                ]}
+        <View style={styles.compactFilterRow}>
+          <Text style={styles.compactFilterLabel}>Status</Text>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.chipRow}
+          >
+            {(["all", ...POST_STATUSES] as PostStatusFilter[]).map((item) => (
+              <Pressable
+                key={item}
+                style={[styles.chip, statusFilter === item ? styles.chipActive : undefined]}
+                onPress={() => setStatusFilter(item)}
               >
-                {item}
-              </Text>
-            </Pressable>
-          ))}
+                <Text
+                  style={[
+                    styles.chipText,
+                    statusFilter === item ? styles.chipTextActive : undefined,
+                  ]}
+                >
+                  {item}
+                </Text>
+              </Pressable>
+            ))}
+          </ScrollView>
         </View>
 
-        <Text style={styles.label}>Filter by Category</Text>
-        <View style={styles.chipRow}>
-          <Pressable
-            style={[styles.chip, categoryFilter === "all" ? styles.chipActive : undefined]}
-            onPress={() => setCategoryFilter("all")}
+        <View style={styles.compactFilterRow}>
+          <Text style={styles.compactFilterLabel}>Category</Text>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.chipRow}
           >
-            <Text
-              style={[styles.chipText, categoryFilter === "all" ? styles.chipTextActive : undefined]}
-            >
-              all
-            </Text>
-          </Pressable>
-          <Pressable
-            style={[
-              styles.chip,
-              categoryFilter === DEFAULT_CATEGORY ? styles.chipActive : undefined,
-            ]}
-            onPress={() => setCategoryFilter(DEFAULT_CATEGORY)}
-          >
-            <Text
-              style={[
-                styles.chipText,
-                categoryFilter === DEFAULT_CATEGORY ? styles.chipTextActive : undefined,
-              ]}
-            >
-              {DEFAULT_CATEGORY}
-            </Text>
-          </Pressable>
-          {categories.map((item) => (
             <Pressable
-              key={item.id}
-              style={[styles.chip, categoryFilter === item.slug ? styles.chipActive : undefined]}
-              onPress={() => setCategoryFilter(item.slug)}
+              style={[styles.chip, categoryFilter === "all" ? styles.chipActive : undefined]}
+              onPress={() => setCategoryFilter("all")}
             >
               <Text
                 style={[
                   styles.chipText,
-                  categoryFilter === item.slug ? styles.chipTextActive : undefined,
+                  categoryFilter === "all" ? styles.chipTextActive : undefined,
                 ]}
               >
-                {item.slug}
+                all
               </Text>
             </Pressable>
-          ))}
+            <Pressable
+              style={[
+                styles.chip,
+                categoryFilter === DEFAULT_CATEGORY ? styles.chipActive : undefined,
+              ]}
+              onPress={() => setCategoryFilter(DEFAULT_CATEGORY)}
+            >
+              <Text
+                style={[
+                  styles.chipText,
+                  categoryFilter === DEFAULT_CATEGORY ? styles.chipTextActive : undefined,
+                ]}
+              >
+                {DEFAULT_CATEGORY}
+              </Text>
+            </Pressable>
+            {categories.map((item) => (
+              <Pressable
+                key={item.id}
+                style={[styles.chip, categoryFilter === item.slug ? styles.chipActive : undefined]}
+                onPress={() => setCategoryFilter(item.slug)}
+              >
+                <Text
+                  style={[
+                    styles.chipText,
+                    categoryFilter === item.slug ? styles.chipTextActive : undefined,
+                  ]}
+                >
+                  {item.slug}
+                </Text>
+              </Pressable>
+            ))}
+          </ScrollView>
         </View>
 
         <Text style={styles.resultText}>
-          Showing {filteredPosts.length} of {posts.length} posts
+          Showing {postStats.visible} of {postStats.total} posts
         </Text>
       </View>
 
@@ -491,6 +468,12 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: COLORS.text,
   },
+  filterHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: SPACING.sm,
+  },
   inputWrap: {
     minHeight: CONTROL_SIZE.inputHeight,
     borderRadius: RADIUS.md,
@@ -504,21 +487,28 @@ const styles = StyleSheet.create({
     color: COLORS.text,
     fontSize: FONT_SIZE.button,
   },
-  label: {
-    color: COLORS.text,
-    fontWeight: "600",
+  compactFilterRow: {
+    gap: SPACING.xs,
+  },
+  compactFilterLabel: {
+    color: COLORS.mutedText,
+    fontSize: 12,
+    fontWeight: "700",
+    textTransform: "uppercase",
+    letterSpacing: 0.3,
   },
   chipRow: {
     flexDirection: "row",
-    flexWrap: "wrap",
-    gap: SPACING.sm,
+    alignItems: "center",
+    gap: SPACING.xs,
+    paddingRight: SPACING.md,
   },
   chip: {
     borderWidth: 1,
     borderColor: COLORS.border,
     borderRadius: 999,
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.xs,
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: 5,
     backgroundColor: COLORS.surface,
   },
   chipActive: {
@@ -527,36 +517,23 @@ const styles = StyleSheet.create({
   },
   chipText: {
     color: COLORS.text,
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: "600",
   },
   chipTextActive: {
     color: COLORS.primaryText,
   },
-  statRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: SPACING.sm,
-  },
-  statPill: {
-    minWidth: 82,
+  resetInlineButton: {
     borderWidth: 1,
     borderColor: COLORS.border,
     borderRadius: 999,
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.xs,
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: 5,
     backgroundColor: COLORS.surface,
-    alignItems: "center",
   },
-  statLabel: {
-    color: COLORS.mutedText,
-    fontSize: 11,
-    textTransform: "uppercase",
-    letterSpacing: 0.3,
-  },
-  statValue: {
+  resetInlineButtonText: {
     color: COLORS.text,
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: "700",
   },
   buttonRow: {
@@ -566,20 +543,6 @@ const styles = StyleSheet.create({
   },
   flexButton: {
     flex: 1,
-  },
-  primaryButton: {
-    minHeight: CONTROL_SIZE.inputHeight,
-    borderRadius: RADIUS.md,
-    backgroundColor: COLORS.primary,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: SPACING.md,
-  },
-  primaryButtonText: {
-    color: COLORS.primaryText,
-    fontSize: FONT_SIZE.button,
-    fontWeight: "700",
-    textAlign: "center",
   },
   secondaryButton: {
     minHeight: CONTROL_SIZE.inputHeight,

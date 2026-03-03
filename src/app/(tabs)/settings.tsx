@@ -13,7 +13,7 @@ import {
   View,
 } from "react-native";
 
-import { COLORS, FONT_SIZE, RADIUS, SPACING } from "@/constants/theme";
+import { COLORS, FONT_SIZE, RADIUS, SHADOWS, SPACING } from "@/constants/theme";
 import { useAuth } from "@/providers/auth-provider";
 
 export default function SettingsScreen() {
@@ -208,12 +208,11 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
   sectionCard: {
-    borderWidth: 1,
-    borderColor: COLORS.border,
     borderRadius: RADIUS.md,
     backgroundColor: COLORS.surface,
     padding: SPACING.md,
     gap: SPACING.sm,
+    ...SHADOWS.sm,
   },
   sectionTitle: {
     color: COLORS.text,
@@ -279,6 +278,7 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.md,
     paddingHorizontal: SPACING.lg,
     paddingVertical: SPACING.md,
+    ...SHADOWS.sm,
   },
   buttonPressed: {
     opacity: 0.9,

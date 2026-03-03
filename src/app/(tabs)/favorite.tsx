@@ -18,7 +18,7 @@ import {
   type DocumentData,
 } from "firebase/firestore";
 
-import { COLORS, FONT_SIZE, RADIUS, SPACING } from "@/constants/theme";
+import { COLORS, FONT_SIZE, RADIUS, SHADOWS, SPACING } from "@/constants/theme";
 import {
   formatDate,
   getPostCardThumbnailUrl,
@@ -201,11 +201,10 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     gap: SPACING.sm,
-    borderWidth: 1,
-    borderColor: COLORS.border,
     borderRadius: RADIUS.md,
     padding: SPACING.lg,
     backgroundColor: COLORS.surface,
+    ...SHADOWS.sm,
   },
   emptyText: {
     color: COLORS.mutedText,
@@ -214,19 +213,10 @@ const styles = StyleSheet.create({
   },
   card: {
     backgroundColor: COLORS.surface,
-    borderColor: "#E2E8F0",
-    borderWidth: 1,
     borderRadius: 16,
     padding: SPACING.lg,
     gap: SPACING.sm,
-    shadowColor: "#0F172A",
-    shadowOffset: {
-      width: 0,
-      height: 8,
-    },
-    shadowOpacity: 0.08,
-    shadowRadius: 14,
-    elevation: 4,
+    ...SHADOWS.md,
   },
   cardBody: {
     gap: SPACING.sm,

@@ -18,7 +18,7 @@ import {
   View,
 } from "react-native";
 
-import { COLORS, FONT_SIZE, SPACING } from "@/constants/theme";
+import { COLORS, FONT_SIZE, SHADOWS, SPACING } from "@/constants/theme";
 import { useFavorites } from "@/hooks/use-favorites";
 import {
   formatDate,
@@ -162,19 +162,10 @@ const styles = StyleSheet.create({
   },
   card: {
     backgroundColor: COLORS.surface,
-    borderColor: "#E2E8F0",
-    borderWidth: 1,
     borderRadius: 16,
     padding: SPACING.lg,
     gap: SPACING.sm,
-    shadowColor: "#0F172A",
-    shadowOffset: {
-      width: 0,
-      height: 8,
-    },
-    shadowOpacity: 0.08,
-    shadowRadius: 14,
-    elevation: 4,
+    ...SHADOWS.md,
   },
   cardBody: {
     gap: SPACING.sm,

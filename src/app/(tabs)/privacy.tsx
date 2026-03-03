@@ -1,6 +1,6 @@
 import { ScrollView, StyleSheet, Text, View } from "react-native";
 
-import { COLORS, FONT_SIZE, RADIUS, SPACING } from "@/constants/theme";
+import { COLORS, FONT_SIZE, RADIUS, SHADOWS, SPACING } from "@/constants/theme";
 
 export default function PrivacyPolicyScreen() {
   return (
@@ -59,12 +59,11 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
   section: {
-    borderWidth: 1,
-    borderColor: COLORS.border,
     borderRadius: RADIUS.md,
     backgroundColor: COLORS.surface,
     padding: SPACING.md,
     gap: SPACING.xs,
+    ...SHADOWS.sm,
   },
   sectionTitle: {
     color: COLORS.text,
