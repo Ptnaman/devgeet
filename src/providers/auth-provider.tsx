@@ -2,7 +2,6 @@ import {
   createContext,
   useContext,
   useEffect,
-  useMemo,
   useState,
   type ReactNode,
 } from "react";
@@ -38,12 +37,10 @@ type AuthContextType = {
   isBootstrapping: boolean;
   loginWithEmailOrUsername: (identifier: string, password: string) => Promise<void>;
   signupWithEmail: (payload: {
-    username: string;
     firstName: string;
     lastName: string;
     email: string;
     password: string;
-    role: string;
   }) => Promise<void>;
   loginWithGoogleIdToken: (idToken: string) => Promise<void>;
   logout: () => Promise<void>;
@@ -55,8 +52,10 @@ const normalizeEmail = (value: string) => value.trim().toLowerCase();
 const normalizeUsername = (value: string) => value.trim().toLowerCase();
 const normalizeName = (value: string) => value.trim();
 const normalizeRole = (value: string) => value.trim().toLowerCase();
+const normalizePhotoUrl = (value: string | null | undefined) => value?.trim() ?? "";
 const sanitizeUsername = (value: string) =>
   value.trim().toLowerCase().replace(/[^a-z0-9._-]/g, "").slice(0, 20);
+const readStringValue = (value: unknown) => (typeof value === "string" ? value.trim() : "");
 
 const readUsernameEmail = async (username: string) => {
   const usernameRef = doc(firestore, USERNAMES_COLLECTION, normalizeUsername(username));
@@ -92,16 +91,18 @@ const validateName = (label: "First name" | "Last name", value: string) => {
   }
 };
 
-const validateRole = (role: string) => {
-  if (!role.trim()) {
-    throw new Error("Role is required.");
-  }
-};
-
 const getFallbackUsername = (email: string | null, uid: string) => {
   const base = email?.split("@")[0] ?? `user_${uid.slice(0, 6)}`;
   const sanitized = sanitizeUsername(base);
   return (sanitized || `user_${uid.slice(0, 6)}`).slice(0, 20);
+};
+
+const getEmailSignupUsername = (email: string, uid: string) => {
+  const base = sanitizeUsername(email.split("@")[0] ?? "");
+  const fallback = base || `user_${uid.slice(0, 6)}`;
+  const suffix = uid.slice(0, 4).toLowerCase();
+  const head = fallback.slice(0, Math.max(0, 20 - suffix.length - 1));
+  return `${head}_${suffix}`;
 };
 
 const ensureUniqueGoogleUsername = (uid: string, email: string | null) => {
@@ -124,6 +125,29 @@ const getNameParts = (displayName: string | null) => {
   };
 };
 
+const isUsernameTakenError = (error: unknown) =>
+  error instanceof Error && error.message.toLowerCase().includes("already taken");
+
+const mapEmailSignupError = (error: unknown) => {
+  const code =
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    typeof (error as { code?: unknown }).code === "string"
+      ? (error as { code: string }).code
+      : "";
+
+  if (code === "auth/email-already-in-use") {
+    return new Error("This email is already registered. Please login instead.");
+  }
+
+  if (error instanceof Error) {
+    return error;
+  }
+
+  return new Error("Unable to create account. Please try again.");
+};
+
 const writeUserProfile = async (payload: {
   uid: string;
   username: string;
@@ -132,12 +156,18 @@ const writeUserProfile = async (payload: {
   email: string;
   role: string;
   provider: "password" | "google";
+  displayName?: string | null;
+  photoURL?: string | null;
 }) => {
-  const { uid, username, firstName, lastName, email, role, provider } = payload;
+  const { uid, username, firstName, lastName, email, role, provider, displayName, photoURL } =
+    payload;
   const usernameLower = normalizeUsername(username);
   const normalizedFirstName = normalizeName(firstName);
   const normalizedLastName = normalizeName(lastName);
   const normalizedRole = normalizeRole(role);
+  const normalizedDisplayName =
+    normalizeName(displayName ?? `${normalizedFirstName} ${normalizedLastName}`) || username;
+  const normalizedPhotoURL = normalizePhotoUrl(photoURL);
   const usernameRef = doc(firestore, USERNAMES_COLLECTION, usernameLower);
   const usernameSnapshot = await getDoc(usernameRef);
 
@@ -159,7 +189,10 @@ const writeUserProfile = async (payload: {
       email,
       role: normalizedRole,
       provider,
+      displayName: normalizedDisplayName,
+      photoURL: normalizedPhotoURL || null,
       updatedAt: serverTimestamp(),
+      lastLoginAt: serverTimestamp(),
     },
     { merge: true }
   );
@@ -175,7 +208,10 @@ const writeUserProfile = async (payload: {
       email,
       role: normalizedRole,
       provider,
+      displayName: normalizedDisplayName,
+      photoURL: normalizedPhotoURL || null,
       updatedAt: serverTimestamp(),
+      lastLoginAt: serverTimestamp(),
     },
     { merge: true }
   );
@@ -205,103 +241,115 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signupWithEmail = async (payload: {
-    username: string;
     firstName: string;
     lastName: string;
     email: string;
     password: string;
-    role: string;
   }) => {
-    const { username, firstName, lastName, email, password, role } = payload;
-    validateUsername(username);
+    const { firstName, lastName, email, password } = payload;
     validateName("First name", firstName);
     validateName("Last name", lastName);
-    validateRole(role);
-    const normalizedUsername = username.trim();
     const normalizedFirstName = normalizeName(firstName);
     const normalizedLastName = normalizeName(lastName);
     const normalizedEmail = normalizeEmail(email);
-    const normalizedRole = normalizeRole(role);
-    const effectiveRole =
-      normalizedRole === "admin" && !isAdminEmail(normalizedEmail)
-        ? "user"
-        : normalizedRole;
 
-    const usernameRef = doc(
-      firestore,
-      USERNAMES_COLLECTION,
-      normalizeUsername(normalizedUsername)
-    );
-    const existingUsername = await getDoc(usernameRef);
-    if (existingUsername.exists()) {
-      throw new Error("Username is already taken.");
+    try {
+      const credential = await createUserWithEmailAndPassword(
+        auth,
+        normalizedEmail,
+        password
+      );
+      const generatedUsername = getEmailSignupUsername(normalizedEmail, credential.user.uid);
+      validateUsername(generatedUsername);
+      const normalizedDisplayName = `${normalizedFirstName} ${normalizedLastName}`.trim();
+
+      await updateProfile(credential.user, {
+        displayName: normalizedDisplayName || generatedUsername,
+      });
+      await writeUserProfile({
+        uid: credential.user.uid,
+        username: generatedUsername,
+        firstName: normalizedFirstName,
+        lastName: normalizedLastName,
+        email: normalizedEmail,
+        role: "user",
+        provider: "password",
+        displayName: normalizedDisplayName || generatedUsername,
+        photoURL: null,
+      });
+    } catch (error) {
+      throw mapEmailSignupError(error);
     }
-
-    const credential = await createUserWithEmailAndPassword(
-      auth,
-      normalizedEmail,
-      password
-    );
-
-    await updateProfile(credential.user, { displayName: normalizedUsername });
-    await writeUserProfile({
-      uid: credential.user.uid,
-      username: normalizedUsername,
-      firstName: normalizedFirstName,
-      lastName: normalizedLastName,
-      email: normalizedEmail,
-      role: effectiveRole,
-      provider: "password",
-    });
   };
 
-  const loginWithGoogleIdToken = async (idToken: string) => {
-    const credential = GoogleAuthProvider.credential(idToken);
-    const result = await signInWithCredential(auth, credential);
-    const normalizedEmail = normalizeEmail(result.user.email ?? "");
+  const persistGoogleUserProfile = async (googleUser: User) => {
+    const normalizedEmail = normalizeEmail(googleUser.email ?? "");
 
     if (!normalizedEmail) {
       throw new Error("Google account did not return an email.");
     }
 
-    const effectiveRole = isAdminEmail(normalizedEmail) ? "admin" : "user";
+    const existingUserSnapshot = await getDoc(doc(firestore, USERS_COLLECTION, googleUser.uid));
+    const existingProfile = existingUserSnapshot.exists()
+      ? (existingUserSnapshot.data() as DocumentData)
+      : null;
 
-    const username = result.user.displayName?.trim()
-      ? sanitizeUsername(result.user.displayName)
-      : getFallbackUsername(result.user.email, result.user.uid);
-
+    const existingUsername = readStringValue(existingProfile?.username);
+    const generatedUsername = googleUser.displayName?.trim()
+      ? sanitizeUsername(googleUser.displayName)
+      : getFallbackUsername(googleUser.email, googleUser.uid);
     const candidate =
-      username || getFallbackUsername(result.user.email, result.user.uid);
-    const { firstName, lastName } = getNameParts(result.user.displayName);
+      existingUsername ||
+      generatedUsername ||
+      getFallbackUsername(googleUser.email, googleUser.uid);
+
+    const { firstName, lastName } = getNameParts(googleUser.displayName);
+    const existingFirstName = readStringValue(existingProfile?.firstName);
+    const existingLastName = readStringValue(existingProfile?.lastName);
+    const existingRole = normalizeRole(readStringValue(existingProfile?.role));
+    const effectiveRole = existingRole || (isAdminEmail(normalizedEmail) ? "admin" : "user");
+    const effectiveFirstName = normalizeName(firstName || existingFirstName || candidate);
+    const effectiveLastName = normalizeName(lastName || existingLastName);
+    const effectiveDisplayName =
+      normalizeName(
+        googleUser.displayName ?? `${effectiveFirstName} ${effectiveLastName}`.trim()
+      ) || candidate;
 
     try {
       await writeUserProfile({
-        uid: result.user.uid,
+        uid: googleUser.uid,
         username: candidate,
-        firstName: firstName || candidate,
-        lastName,
+        firstName: effectiveFirstName,
+        lastName: effectiveLastName,
         email: normalizedEmail,
         role: effectiveRole,
         provider: "google",
+        displayName: effectiveDisplayName,
+        photoURL: googleUser.photoURL,
       });
     } catch (error) {
-      if (
-        !(error instanceof Error) ||
-        !error.message.toLowerCase().includes("already taken")
-      ) {
+      if (existingUsername || !isUsernameTakenError(error)) {
         throw error;
       }
 
       await writeUserProfile({
-        uid: result.user.uid,
-        username: ensureUniqueGoogleUsername(result.user.uid, result.user.email),
-        firstName: firstName || candidate,
-        lastName,
+        uid: googleUser.uid,
+        username: ensureUniqueGoogleUsername(googleUser.uid, googleUser.email),
+        firstName: effectiveFirstName,
+        lastName: effectiveLastName,
         email: normalizedEmail,
         role: effectiveRole,
         provider: "google",
+        displayName: effectiveDisplayName,
+        photoURL: googleUser.photoURL,
       });
     }
+  };
+
+  const loginWithGoogleIdToken = async (idToken: string) => {
+    const credential = GoogleAuthProvider.credential(idToken);
+    const result = await signInWithCredential(auth, credential);
+    await persistGoogleUserProfile(result.user);
   };
 
   const logout = async () => {
@@ -325,18 +373,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const value = useMemo<AuthContextType>(
-    () => ({
-      user,
-      isAdmin,
-      isBootstrapping: !authReady,
-      loginWithEmailOrUsername,
-      signupWithEmail,
-      loginWithGoogleIdToken,
-      logout,
-    }),
-    [authReady, isAdmin, user]
-  );
+  const value: AuthContextType = {
+    user,
+    isAdmin,
+    isBootstrapping: !authReady,
+    loginWithEmailOrUsername,
+    signupWithEmail,
+    loginWithGoogleIdToken,
+    logout,
+  };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

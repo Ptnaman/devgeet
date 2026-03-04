@@ -1,5 +1,6 @@
 import { Tabs, useRouter } from "expo-router";
 import { HugeiconsIcon } from "@hugeicons/react-native";
+import { Stack } from "expo-router";
 import {
   Add01Icon,
   FavouriteIcon,

@@ -10,15 +10,16 @@ import {
   View,
 } from "react-native";
 import { HugeiconsIcon } from "@hugeicons/react-native";
-import {
-  Add01Icon,
-  LockIcon,
-  Mail01Icon,
-  UserIcon,
-} from "@hugeicons/core-free-icons";
+import { LockIcon, Mail01Icon } from "@hugeicons/core-free-icons";
 
 import { GoogleAuthButton } from "@/components/google-auth-button";
-import { COLORS, CONTROL_SIZE, FONT_SIZE, RADIUS, SPACING } from "@/constants/theme";
+import {
+  COLORS,
+  CONTROL_SIZE,
+  FONT_SIZE,
+  RADIUS,
+  SPACING,
+} from "@/constants/theme";
 import { useAuth } from "@/providers/auth-provider";
 
 const getErrorMessage = (error: unknown) => {
@@ -32,27 +33,19 @@ export default function SignupScreen() {
   const router = useRouter();
   const { signupWithEmail } = useAuth();
 
-  const [username, setUsername] = useState("");
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
-  const [role, setRole] = useState("user");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [isPasswordVisible, setIsPasswordVisible] = useState(false);
+  const [isConfirmPasswordVisible, setIsConfirmPasswordVisible] = useState(false);
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleSignup = async () => {
-    if (
-      !username.trim() ||
-      !firstName.trim() ||
-      !lastName.trim() ||
-      !email.trim() ||
-      !role.trim() ||
-      !password ||
-      !confirmPassword
-    ) {
-      setError("Fill username, first name, last name, email, role and password.");
+    if (!firstName.trim() || !lastName.trim() || !email.trim() || !password || !confirmPassword) {
+      setError("Fill first name, last name, email and password.");
       return;
     }
 
@@ -64,13 +57,15 @@ export default function SignupScreen() {
     try {
       setIsSubmitting(true);
       setError("");
+      const normalizedFirstName = firstName.trim();
+      const normalizedLastName = lastName.trim();
+      const normalizedEmail = email.trim().toLowerCase();
+
       await signupWithEmail({
-        username,
-        firstName,
-        lastName,
-        email,
+        firstName: normalizedFirstName,
+        lastName: normalizedLastName,
+        email: normalizedEmail,
         password,
-        role,
       });
       router.replace("/home");
     } catch (signupError) {
@@ -80,127 +75,164 @@ export default function SignupScreen() {
     }
   };
 
+  const isSignupDisabled =
+    isSubmitting ||
+    !firstName.trim() ||
+    !lastName.trim() ||
+    !email.trim() ||
+    !password ||
+    !confirmPassword;
+  const isEmailError = error.toLowerCase().includes("email");
+
+  const clearError = () => {
+    if (error) {
+      setError("");
+    }
+  };
+
   return (
     <ScrollView
       contentContainerStyle={styles.scroll}
       keyboardShouldPersistTaps="handled"
     >
-      <View style={styles.card}>
-        <HugeiconsIcon icon={Add01Icon} size={42} color={COLORS.primary} />
-        <Text style={styles.title}>Create Account</Text>
-        <Text style={styles.subtitle}>Sign up with email or use Google.</Text>
+      <Text style={styles.title}>Create Your Account</Text>
+      <Text style={styles.subtitle}>Simple signup for all users.</Text>
 
-        <View style={styles.inputWrap}>
-          <HugeiconsIcon icon={UserIcon} size={20} color={COLORS.tabInactive} />
-          <TextInput
-            value={username}
-            onChangeText={setUsername}
-            placeholder="Username"
-            placeholderTextColor={COLORS.mutedText}
-            autoCapitalize="none"
-            style={styles.input}
-          />
-        </View>
+      <View style={styles.field}>
+        <Text style={styles.label}>First Name</Text>
+        <TextInput
+          value={firstName}
+          onChangeText={(value) => {
+            setFirstName(value);
+            clearError();
+          }}
+          placeholder="First name"
+          placeholderTextColor={COLORS.mutedText}
+          autoCapitalize="words"
+          style={styles.input}
+        />
+      </View>
 
-        <View style={styles.inputWrap}>
-          <HugeiconsIcon icon={UserIcon} size={20} color={COLORS.tabInactive} />
-          <TextInput
-            value={firstName}
-            onChangeText={setFirstName}
-            placeholder="First name"
-            placeholderTextColor={COLORS.mutedText}
-            style={styles.input}
-          />
-        </View>
+      <View style={styles.field}>
+        <Text style={styles.label}>Last Name</Text>
+        <TextInput
+          value={lastName}
+          onChangeText={(value) => {
+            setLastName(value);
+            clearError();
+          }}
+          placeholder="Last name"
+          placeholderTextColor={COLORS.mutedText}
+          autoCapitalize="words"
+          style={styles.input}
+        />
+      </View>
 
-        <View style={styles.inputWrap}>
-          <HugeiconsIcon icon={UserIcon} size={20} color={COLORS.tabInactive} />
-          <TextInput
-            value={lastName}
-            onChangeText={setLastName}
-            placeholder="Last name"
-            placeholderTextColor={COLORS.mutedText}
-            style={styles.input}
-          />
-        </View>
-
-        <View style={styles.inputWrap}>
-          <HugeiconsIcon icon={Mail01Icon} size={20} color={COLORS.tabInactive} />
+      <View style={styles.field}>
+        <Text style={styles.label}>Email Address</Text>
+        <View style={styles.inputWithIcon}>
+          <HugeiconsIcon icon={Mail01Icon} size={18} color={COLORS.tabInactive} />
           <TextInput
             value={email}
-            onChangeText={setEmail}
-            placeholder="Email"
+            onChangeText={(value) => {
+              setEmail(value);
+              clearError();
+            }}
+            placeholder="you@example.com"
             placeholderTextColor={COLORS.mutedText}
             keyboardType="email-address"
             autoCapitalize="none"
-            style={styles.input}
+            autoCorrect={false}
+            style={styles.inputWithIconText}
           />
         </View>
+        {isEmailError ? <Text style={styles.error}>{error}</Text> : null}
+      </View>
 
-        <View style={styles.inputWrap}>
-          <HugeiconsIcon icon={UserIcon} size={20} color={COLORS.tabInactive} />
-          <TextInput
-            value={role}
-            onChangeText={setRole}
-            placeholder="Role"
-            placeholderTextColor={COLORS.mutedText}
-            autoCapitalize="none"
-            style={styles.input}
-          />
-        </View>
-
-        <View style={styles.inputWrap}>
-          <HugeiconsIcon icon={LockIcon} size={20} color={COLORS.tabInactive} />
+      <View style={styles.field}>
+        <Text style={styles.label}>Password</Text>
+        <View style={styles.inputWithIcon}>
+          <HugeiconsIcon icon={LockIcon} size={18} color={COLORS.tabInactive} />
           <TextInput
             value={password}
-            onChangeText={setPassword}
-            placeholder="Password"
+            onChangeText={(value) => {
+              setPassword(value);
+              clearError();
+            }}
+            placeholder="Create a strong password"
             placeholderTextColor={COLORS.mutedText}
-            secureTextEntry
-            style={styles.input}
+            secureTextEntry={!isPasswordVisible}
+            autoCapitalize="none"
+            style={styles.inputWithIconText}
           />
+          <Pressable
+            onPress={() => setIsPasswordVisible((current) => !current)}
+            hitSlop={8}
+          >
+            <Text style={styles.toggleText}>{isPasswordVisible ? "Hide" : "Show"}</Text>
+          </Pressable>
         </View>
+      </View>
 
-        <View style={styles.inputWrap}>
-          <HugeiconsIcon icon={LockIcon} size={20} color={COLORS.tabInactive} />
+      <View style={styles.field}>
+        <Text style={styles.label}>Confirm Password</Text>
+        <View style={styles.inputWithIcon}>
+          <HugeiconsIcon icon={LockIcon} size={18} color={COLORS.tabInactive} />
           <TextInput
             value={confirmPassword}
-            onChangeText={setConfirmPassword}
-            placeholder="Confirm password"
+            onChangeText={(value) => {
+              setConfirmPassword(value);
+              clearError();
+            }}
+            placeholder="Re-enter your password"
             placeholderTextColor={COLORS.mutedText}
-            secureTextEntry
-            style={styles.input}
+            secureTextEntry={!isConfirmPasswordVisible}
+            autoCapitalize="none"
+            style={styles.inputWithIconText}
+            onSubmitEditing={() => {
+              if (!isSignupDisabled) {
+                void handleSignup();
+              }
+            }}
           />
+          <Pressable
+            onPress={() => setIsConfirmPasswordVisible((current) => !current)}
+            hitSlop={8}
+          >
+            <Text style={styles.toggleText}>
+              {isConfirmPasswordVisible ? "Hide" : "Show"}
+            </Text>
+          </Pressable>
         </View>
-
-        {error ? <Text style={styles.error}>{error}</Text> : null}
-
-        <Pressable
-          style={({ pressed }) => [
-            styles.primaryButton,
-            pressed && styles.buttonPressed,
-            isSubmitting && styles.buttonDisabled,
-          ]}
-          onPress={handleSignup}
-          disabled={isSubmitting}
-        >
-          {isSubmitting ? (
-            <ActivityIndicator size="small" color={COLORS.primaryText} />
-          ) : (
-            <HugeiconsIcon icon={Add01Icon} size={20} color={COLORS.primaryText} />
-          )}
-          <Text style={styles.primaryButtonText}>Sign up</Text>
-        </Pressable>
-
-        <GoogleAuthButton label="Sign up with Google" onError={setError} />
-
-        <Text style={styles.switchText}>
-          Already have an account?{" "}
-          <Link href="/login" style={styles.switchLink}>
-            Login
-          </Link>
-        </Text>
       </View>
+
+      {!isEmailError && error ? <Text style={styles.error}>{error}</Text> : null}
+
+      <Pressable
+        style={({ pressed }) => [
+          styles.primaryButton,
+          pressed && styles.buttonPressed,
+          isSignupDisabled && styles.buttonDisabled,
+        ]}
+        onPress={handleSignup}
+        disabled={isSignupDisabled}
+      >
+        {isSubmitting ? (
+          <ActivityIndicator size="small" color={COLORS.primaryText} />
+        ) : (
+          <Text style={styles.primaryButtonText}>Create Account</Text>
+        )}
+      </Pressable>
+
+      <Text style={styles.orText}>or continue with</Text>
+      <GoogleAuthButton label="Sign up with Google" onError={setError} />
+
+      <Text style={styles.switchText}>
+        Already have an account?{" "}
+        <Link href="/login" style={styles.switchLink}>
+          Login
+        </Link>
+      </Text>
     </ScrollView>
   );
 }
@@ -208,29 +240,42 @@ export default function SignupScreen() {
 const styles = StyleSheet.create({
   scroll: {
     flexGrow: 1,
-    justifyContent: "center",
-    padding: SPACING.xl,
-    backgroundColor: COLORS.background,
-  },
-  card: {
-    backgroundColor: COLORS.surface,
-    borderRadius: RADIUS.lg,
     padding: SPACING.xl,
     gap: SPACING.md,
-    borderWidth: 1,
-    borderColor: COLORS.border,
+    backgroundColor: COLORS.background,
   },
   title: {
-    fontSize: FONT_SIZE.heroTitle,
+    marginTop: SPACING.md,
+    fontSize: FONT_SIZE.title,
     fontWeight: "700",
     color: COLORS.text,
+    textAlign: "center",
   },
   subtitle: {
     color: COLORS.mutedText,
-    fontSize: FONT_SIZE.subtitle,
-    marginBottom: 4,
+    fontSize: FONT_SIZE.body,
+    textAlign: "center",
+    marginBottom: SPACING.sm,
   },
-  inputWrap: {
+  field: {
+    gap: SPACING.sm,
+  },
+  label: {
+    color: COLORS.text,
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  input: {
+    minHeight: CONTROL_SIZE.inputHeight,
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.surface,
+    paddingHorizontal: SPACING.md,
+    color: COLORS.text,
+    fontSize: FONT_SIZE.button,
+  },
+  inputWithIcon: {
     minHeight: CONTROL_SIZE.inputHeight,
     borderRadius: RADIUS.md,
     borderWidth: 1,
@@ -241,10 +286,15 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: SPACING.sm,
   },
-  input: {
+  inputWithIconText: {
     flex: 1,
     color: COLORS.text,
     fontSize: FONT_SIZE.button,
+  },
+  toggleText: {
+    color: COLORS.primary,
+    fontSize: 13,
+    fontWeight: "700",
   },
   error: {
     color: COLORS.danger,
@@ -256,13 +306,16 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.primary,
     alignItems: "center",
     justifyContent: "center",
-    flexDirection: "row",
-    gap: SPACING.sm,
   },
   primaryButtonText: {
     color: COLORS.primaryText,
     fontWeight: "700",
     fontSize: FONT_SIZE.button,
+  },
+  orText: {
+    textAlign: "center",
+    color: COLORS.mutedText,
+    fontSize: 13,
   },
   switchText: {
     textAlign: "center",

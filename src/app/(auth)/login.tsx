@@ -22,6 +22,7 @@ import { COLORS, CONTROL_SIZE, FONT_SIZE, RADIUS, SPACING } from "@/constants/th
 import { useAuth } from "@/providers/auth-provider";
 
 const LAST_LOGIN_IDENTIFIER_KEY = "auth:last_login_identifier";
+const GOOGLE_SIGNUP_PROMPT_SHOWN_KEY = "auth:google_signup_prompt_shown";
 
 const getErrorMessage = (error: unknown) => {
   if (error instanceof Error && error.message) {
@@ -39,22 +40,30 @@ export default function LoginScreen() {
   const [isPasswordVisible, setIsPasswordVisible] = useState(false);
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [shouldAutoPromptGoogle, setShouldAutoPromptGoogle] = useState(false);
 
   useEffect(() => {
-    const hydrateIdentifier = async () => {
+    const hydrateScreenState = async () => {
       try {
-        const savedIdentifier = await AsyncStorage.getItem(
-          LAST_LOGIN_IDENTIFIER_KEY
-        );
+        const [savedIdentifier, hasShownGooglePrompt] = await Promise.all([
+          AsyncStorage.getItem(LAST_LOGIN_IDENTIFIER_KEY),
+          AsyncStorage.getItem(GOOGLE_SIGNUP_PROMPT_SHOWN_KEY),
+        ]);
+
         if (savedIdentifier) {
           setIdentifier(savedIdentifier);
+        }
+
+        if (!hasShownGooglePrompt) {
+          setShouldAutoPromptGoogle(true);
+          await AsyncStorage.setItem(GOOGLE_SIGNUP_PROMPT_SHOWN_KEY, "1");
         }
       } catch {
         // Ignore local storage read issues and keep blank field.
       }
     };
 
-    void hydrateIdentifier();
+    void hydrateScreenState();
   }, []);
 
   const handleLogin = async () => {
@@ -173,7 +182,7 @@ export default function LoginScreen() {
         <GoogleAuthButton
           label="Continue with Google"
           onError={setError}
-          autoPrompt
+          autoPrompt={shouldAutoPromptGoogle}
         />
 
         <Text style={styles.switchText}>
