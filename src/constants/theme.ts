@@ -39,24 +39,24 @@ export const CONTROL_SIZE = {
 
 export const SHADOWS = {
   sm: {
-    shadowColor: "#000",
+    shadowColor: "#0000001A",
     shadowOffset: { width: 0, height: 5 },
-    shadowOpacity: 0.06,
+    shadowOpacity: 1,
+    shadowRadius: 25,
+    elevation: 8,
+  },
+  md: {
+    shadowColor: "#0000001A",
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 1,
     shadowRadius: 30,
     elevation: 12,
   },
-  md: {
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.08,
-    shadowRadius: 35,
-    elevation: 14,
-  },
   lg: {
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 7 },
-    shadowOpacity: 0.1,
-    shadowRadius: 40,
-    elevation: 17,
+    shadowColor: "#0000001A",
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 1,
+    shadowRadius: 35,
+    elevation: 16,
   },
 } as const;

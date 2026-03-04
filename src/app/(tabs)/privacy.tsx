@@ -46,7 +46,7 @@ export default function PrivacyPolicyScreen() {
 const styles = StyleSheet.create({
   container: {
     padding: SPACING.xl,
-    gap: SPACING.md,
+    gap: SPACING.lg,
     backgroundColor: COLORS.background,
   },
   title: {

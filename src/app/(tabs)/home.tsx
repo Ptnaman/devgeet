@@ -154,7 +154,7 @@ const styles = StyleSheet.create({
   container: {
     flexGrow: 1,
     padding: SPACING.xxl,
-    gap: SPACING.sm,
+    gap: SPACING.xl,
     backgroundColor: COLORS.background,
   },
   loader: {
@@ -162,7 +162,7 @@ const styles = StyleSheet.create({
   },
   card: {
     backgroundColor: COLORS.surface,
-    borderRadius: 16,
+    borderRadius: 10,
     padding: SPACING.lg,
     gap: SPACING.sm,
     ...SHADOWS.md,
@@ -175,7 +175,7 @@ const styles = StyleSheet.create({
   },
   thumbnail: {
     width: "100%",
-    height: 180,
+    height: 156,
     borderRadius: 12,
     backgroundColor: "#E5E7EB",
   },

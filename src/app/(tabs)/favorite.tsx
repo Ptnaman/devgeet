@@ -182,7 +182,7 @@ const styles = StyleSheet.create({
   container: {
     flexGrow: 1,
     padding: SPACING.xl,
-    gap: SPACING.sm,
+    gap: SPACING.xl,
     backgroundColor: COLORS.background,
   },
   title: {
@@ -226,7 +226,7 @@ const styles = StyleSheet.create({
   },
   thumbnail: {
     width: "100%",
-    height: 180,
+    height: 156,
     borderRadius: 12,
     backgroundColor: "#E5E7EB",
   },

@@ -23,6 +23,18 @@ export default function TabsLayout() {
         headerStyle: { backgroundColor: COLORS.surface },
         headerTintColor: COLORS.text,
         headerShadowVisible: false,
+        headerRight: () =>
+          isAdmin ? (
+            <Pressable
+              style={({ pressed }) => [
+                styles.adminButton,
+                pressed && styles.adminButtonPressed,
+              ]}
+              onPress={() => router.push("/admin")}
+            >
+              <HugeiconsIcon icon={Login01Icon} size={18} color={COLORS.text} />
+            </Pressable>
+          ) : null,
         tabBarActiveTintColor: COLORS.tabActive,
         tabBarInactiveTintColor: COLORS.tabInactive,
       }}
@@ -31,18 +43,6 @@ export default function TabsLayout() {
         name="home"
         options={{
           title: "Home",
-          headerRight: () =>
-            isAdmin ? (
-              <Pressable
-                style={({ pressed }) => [
-                  styles.adminButton,
-                  pressed && styles.adminButtonPressed,
-                ]}
-                onPress={() => router.push("/admin")}
-              >
-                <HugeiconsIcon icon={Login01Icon} size={18} color={COLORS.text} />
-              </Pressable>
-            ) : null,
           tabBarIcon: ({ color, size }) => (
             <HugeiconsIcon icon={Home01Icon} color={color} size={size} />
           ),

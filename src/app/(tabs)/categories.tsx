@@ -17,7 +17,7 @@ import {
   View,
 } from "react-native";
 
-import { COLORS, FONT_SIZE, RADIUS, SPACING } from "@/constants/theme";
+import { COLORS, FONT_SIZE, RADIUS, SHADOWS, SPACING } from "@/constants/theme";
 import {
   CATEGORIES_COLLECTION,
   getPostCardThumbnailUrl,
@@ -239,17 +239,22 @@ export default function CategoriesScreen() {
                     style={styles.thumbnail}
                     resizeMode="cover"
                   />
-                ) : null}
-                <Text style={styles.postTitle} numberOfLines={3} ellipsizeMode="tail">
-                  {post.title}
-                </Text>
-                <Text
-                  style={styles.postPreview}
-                  numberOfLines={2}
-                  ellipsizeMode="tail"
-                >
-                  {post.content.trim() || "-"}
-                </Text>
+                ) : (
+                  <View style={styles.thumbnailPlaceholder} />
+                )}
+
+                <View style={styles.postContent}>
+                  <Text style={styles.postTitle} numberOfLines={2} ellipsizeMode="tail">
+                    {post.title}
+                  </Text>
+                  <Text
+                    style={styles.postPreview}
+                    numberOfLines={3}
+                    ellipsizeMode="tail"
+                  >
+                    {post.content.trim() || "-"}
+                  </Text>
+                </View>
               </Pressable>
             );
           })}
@@ -359,31 +364,44 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
   postCard: {
-    borderWidth: 1,
-    borderColor: COLORS.border,
     borderRadius: RADIUS.md,
     backgroundColor: COLORS.surface,
     padding: SPACING.md,
-    gap: SPACING.xs,
+    gap: SPACING.md,
+    flexDirection: "row",
+    alignItems: "center",
+    minHeight: 112,
+    ...SHADOWS.sm,
   },
   postCardPressed: {
-    opacity: 0.9,
+    opacity: 0.92,
   },
   thumbnail: {
-    width: "100%",
-    height: 150,
+    width: 108,
+    height: 84,
     borderRadius: 10,
     backgroundColor: "#E5E7EB",
+  },
+  thumbnailPlaceholder: {
+    width: 108,
+    height: 84,
+    borderRadius: 10,
+    backgroundColor: "#E5E7EB",
+  },
+  postContent: {
+    flex: 1,
+    justifyContent: "center",
+    gap: SPACING.xs,
   },
   postTitle: {
     color: COLORS.text,
     fontSize: 16,
     fontWeight: "700",
-    lineHeight: 22,
+    lineHeight: 21,
   },
   postPreview: {
     color: COLORS.mutedText,
     fontSize: FONT_SIZE.body,
-    lineHeight: 20,
+    lineHeight: 19,
   },
 });
