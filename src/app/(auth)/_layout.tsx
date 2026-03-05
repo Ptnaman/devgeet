@@ -20,9 +20,24 @@ export default function AuthLayout() {
   }
 
   return (
-    <Stack screenOptions={{ headerShown: true }}>
-      <Stack.Screen name="login" />
-      <Stack.Screen name="signup" />
+    <Stack
+      initialRouteName="auth-choice"
+      screenOptions={{
+        headerStyle: { backgroundColor: COLORS.surface },
+        headerTintColor: COLORS.text,
+        headerShadowVisible: false,
+        contentStyle: { backgroundColor: COLORS.background },
+      }}
+    >
+      <Stack.Screen name="auth-choice" options={{ headerShown: false }} />
+      <Stack.Screen
+        name="login"
+        options={{ title: "Log in", headerBackButtonDisplayMode: "minimal" }}
+      />
+      <Stack.Screen
+        name="signup"
+        options={{ title: "Sign up", headerBackButtonDisplayMode: "minimal" }}
+      />
     </Stack>
   );
 }

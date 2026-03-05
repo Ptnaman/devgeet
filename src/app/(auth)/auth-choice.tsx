@@ -1,0 +1,141 @@
+import { useState } from "react";
+import { useRouter } from "expo-router";
+import { StatusBar } from "expo-status-bar";
+import { Pressable, StyleSheet, Text, View } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+
+import { GoogleAuthButton } from "@/components/google-auth-button";
+import {
+  COLORS,
+  CONTROL_SIZE,
+  FONT_SIZE,
+  RADIUS,
+  SHADOWS,
+  SPACING,
+} from "@/constants/theme";
+
+export default function AuthChoiceScreen() {
+  const router = useRouter();
+  const [error, setError] = useState("");
+
+  return (
+    <SafeAreaView style={styles.safeArea} edges={["top", "bottom"]}>
+      <StatusBar style="dark" />
+      <View style={styles.container}>
+        <View style={styles.hero}>
+          <Text style={styles.heroTitle}>Let&apos;s get you in</Text>
+          <Text style={styles.heroSubtitle}>
+            Use Google for quick access, or continue with your email flow.
+          </Text>
+        </View>
+
+        <View style={styles.sheet}>
+          <Text style={styles.sectionTitle}>Continue with</Text>
+          <GoogleAuthButton label="Continue with Google" onError={setError} />
+
+          <Pressable
+            style={({ pressed }) => [styles.signupButton, pressed && styles.buttonPressed]}
+            onPress={() => router.push("/signup")}
+          >
+            <Text style={styles.signupButtonText}>Sign up</Text>
+          </Pressable>
+
+          <Pressable
+            style={({ pressed }) => [styles.loginButton, pressed && styles.buttonPressed]}
+            onPress={() => router.push("/login")}
+          >
+            <Text style={styles.loginButtonText}>Log in</Text>
+          </Pressable>
+
+          {error ? <Text style={styles.error}>{error}</Text> : null}
+        </View>
+      </View>
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: COLORS.background,
+  },
+  container: {
+    flex: 1,
+    backgroundColor: COLORS.background,
+    justifyContent: "space-between",
+    paddingHorizontal: SPACING.xl,
+    paddingBottom: SPACING.lg,
+  },
+  hero: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: SPACING.lg,
+    gap: SPACING.sm,
+  },
+  heroTitle: {
+    color: COLORS.text,
+    fontSize: FONT_SIZE.heroTitle + 4,
+    fontWeight: "800",
+    textAlign: "center",
+  },
+  heroSubtitle: {
+    color: COLORS.mutedText,
+    fontSize: FONT_SIZE.body + 1,
+    textAlign: "center",
+    lineHeight: 22,
+  },
+  sheet: {
+    backgroundColor: COLORS.surface,
+    borderRadius: RADIUS.lg + 4,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    paddingHorizontal: SPACING.lg,
+    paddingTop: SPACING.lg,
+    paddingBottom: SPACING.xl,
+    gap: SPACING.md,
+    ...SHADOWS.md,
+  },
+  sectionTitle: {
+    color: COLORS.mutedText,
+    fontSize: FONT_SIZE.body,
+    textAlign: "center",
+    fontWeight: "600",
+  },
+  signupButton: {
+    minHeight: CONTROL_SIZE.inputHeight,
+    borderRadius: RADIUS.md,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: COLORS.primary,
+  },
+  signupButtonText: {
+    color: COLORS.primaryText,
+    fontSize: FONT_SIZE.button,
+    fontWeight: "700",
+  },
+  loginButton: {
+    minHeight: CONTROL_SIZE.inputHeight,
+    borderRadius: RADIUS.md,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.surface,
+  },
+  loginButtonText: {
+    color: COLORS.text,
+    fontSize: FONT_SIZE.button,
+    fontWeight: "700",
+  },
+  error: {
+    textAlign: "center",
+    color: COLORS.danger,
+    fontSize: 13,
+    lineHeight: 18,
+    paddingHorizontal: SPACING.sm,
+  },
+  buttonPressed: {
+    opacity: 0.86,
+  },
+});

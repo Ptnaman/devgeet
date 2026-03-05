@@ -19,7 +19,7 @@ export default function IndexGate() {
     return <Redirect href="/home" />;
   }
 
-  return <Redirect href="/login" />;
+  return <Redirect href="/auth-choice" />;
 }
 
 const styles = StyleSheet.create({

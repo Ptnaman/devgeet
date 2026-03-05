@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Platform, Pressable, StyleSheet, Text } from "react-native";
 import Constants from "expo-constants";
 import { HugeiconsIcon } from "@hugeicons/react-native";
-import { ArrowRight01Icon, GoogleIcon } from "@hugeicons/core-free-icons";
+import { ArrowRight01Icon } from "@hugeicons/core-free-icons";
+import Svg, { Path } from "react-native-svg";
 
 import { COLORS, CONTROL_SIZE, FONT_SIZE, RADIUS, SPACING } from "@/constants/theme";
 import {
@@ -24,6 +25,29 @@ type GoogleSignInResponse = {
   } | null;
   idToken?: string | null;
 };
+
+function GoogleLogo({ size = 20 }: { size?: number }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 18 18" accessibilityRole="image">
+      <Path
+        fill="#EA4335"
+        d="M9 3.48c1.69 0 2.84.73 3.49 1.34l2.54-2.54C13.46.83 11.42 0 9 0 5.48 0 2.44 2.02.96 4.96l2.96 2.3C4.64 5.1 6.62 3.48 9 3.48z"
+      />
+      <Path
+        fill="#4285F4"
+        d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84c-.21 1.12-.84 2.07-1.8 2.71v2.26h2.92c1.71-1.57 2.68-3.89 2.68-6.61z"
+      />
+      <Path
+        fill="#FBBC05"
+        d="M3.92 10.74A5.41 5.41 0 0 1 3.62 9c0-.6.1-1.18.3-1.74V4.96H.96A8.98 8.98 0 0 0 0 9c0 1.45.35 2.82.96 4.04l2.96-2.3z"
+      />
+      <Path
+        fill="#34A853"
+        d="M9 18c2.42 0 4.46-.8 5.95-2.18l-2.92-2.26c-.8.54-1.84.86-3.03.86-2.38 0-4.4-1.61-5.12-3.78l-2.96 2.3C2.44 15.98 5.48 18 9 18z"
+      />
+    </Svg>
+  );
+}
 
 const resolveGoogleClientIds = () => {
   const extra = (Constants.expoConfig?.extra ?? {}) as Record<string, string | undefined>;
@@ -113,7 +137,7 @@ export function GoogleAuthButton({
     isGoogleConfigured,
   ]);
 
-  const runOneTapFlow = async () => {
+  const runOneTapFlow = useCallback(async () => {
     if (!googleSignInModule?.GoogleOneTapSignIn) {
       return null;
     }
@@ -163,7 +187,7 @@ export function GoogleAuthButton({
 
       throw error;
     }
-  };
+  }, [googleSignInModule]);
 
   const handlePress = useCallback(async () => {
     if (isWeb && !hasOneTapApi) {
@@ -258,6 +282,7 @@ export function GoogleAuthButton({
     isWeb,
     loginWithGoogleIdToken,
     onError,
+    runOneTapFlow,
   ]);
 
   useEffect(() => {
@@ -294,7 +319,7 @@ export function GoogleAuthButton({
       disabled={isSubmitting}
       onPress={handlePress}
     >
-      <HugeiconsIcon icon={GoogleIcon} size={20} color={COLORS.primary} />
+      <GoogleLogo size={20} />
       <Text style={styles.googleButtonText}>{label}</Text>
       {isSubmitting ? (
         <ActivityIndicator size="small" color={COLORS.primary} />

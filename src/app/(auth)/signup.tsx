@@ -12,7 +12,6 @@ import {
 import { HugeiconsIcon } from "@hugeicons/react-native";
 import { LockIcon, Mail01Icon } from "@hugeicons/core-free-icons";
 
-import { GoogleAuthButton } from "@/components/google-auth-button";
 import {
   COLORS,
   CONTROL_SIZE,
@@ -224,9 +223,6 @@ export default function SignupScreen() {
         )}
       </Pressable>
 
-      <Text style={styles.orText}>or continue with</Text>
-      <GoogleAuthButton label="Sign up with Google" onError={setError} />
-
       <Text style={styles.switchText}>
         Already have an account?{" "}
         <Link href="/login" style={styles.switchLink}>
@@ -311,11 +307,6 @@ const styles = StyleSheet.create({
     color: COLORS.primaryText,
     fontWeight: "700",
     fontSize: FONT_SIZE.button,
-  },
-  orText: {
-    textAlign: "center",
-    color: COLORS.mutedText,
-    fontSize: 13,
   },
   switchText: {
     textAlign: "center",
