@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, useRouter } from "expo-router";
+import { useRouter } from "expo-router";
 import {
   ActivityIndicator,
   Pressable,
@@ -10,12 +10,6 @@ import {
   View,
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { HugeiconsIcon } from "@hugeicons/react-native";
-import {
-  LockIcon,
-  Login03Icon,
-  UserIcon,
-} from "@hugeicons/core-free-icons";
 
 import { GoogleAuthButton } from "@/components/google-auth-button";
 import { COLORS, CONTROL_SIZE, FONT_SIZE, RADIUS, SPACING } from "@/constants/theme";
@@ -39,12 +33,13 @@ export default function LoginScreen() {
   const [isPasswordVisible, setIsPasswordVisible] = useState(false);
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isIdentifierFocused, setIsIdentifierFocused] = useState(false);
+  const [isPasswordFocused, setIsPasswordFocused] = useState(false);
 
   useEffect(() => {
     const hydrateScreenState = async () => {
       try {
         const savedIdentifier = await AsyncStorage.getItem(LAST_LOGIN_IDENTIFIER_KEY);
-
         if (savedIdentifier) {
           setIdentifier(savedIdentifier);
         }
@@ -67,15 +62,18 @@ export default function LoginScreen() {
       setError("");
       const normalizedIdentifier = identifier.trim();
       await loginWithEmailOrUsername(normalizedIdentifier, password);
-      await AsyncStorage.setItem(
-        LAST_LOGIN_IDENTIFIER_KEY,
-        normalizedIdentifier
-      );
+      await AsyncStorage.setItem(LAST_LOGIN_IDENTIFIER_KEY, normalizedIdentifier);
       router.replace("/home");
     } catch (loginError) {
       setError(getErrorMessage(loginError));
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const clearError = () => {
+    if (error) {
+      setError("");
     }
   };
 
@@ -86,100 +84,109 @@ export default function LoginScreen() {
       contentContainerStyle={styles.scroll}
       keyboardShouldPersistTaps="handled"
     >
-      <View style={styles.hero}>
-        <HugeiconsIcon icon={Login03Icon} size={28} color={COLORS.primary} />
-        <Text style={styles.title}>Sign In</Text>
-        <Text style={styles.subtitle}>Use your username or email to continue.</Text>
-      </View>
+      <View style={styles.mainContent}>
+        <View style={styles.hero}>
+          <Text style={styles.subtitle}>Welcome back to DevGeet.</Text>
+        </View>
 
-      <View style={styles.card}>
-        <View style={styles.field}>
-          <Text style={styles.label}>Username or Email</Text>
-          <View style={styles.inputWrap}>
-            <HugeiconsIcon icon={UserIcon} size={18} color={COLORS.tabInactive} />
+        <View style={styles.formCard}>
+          <View style={styles.field}>
+            <Text style={styles.label}>Email or Username</Text>
             <TextInput
               value={identifier}
               onChangeText={(value) => {
                 setIdentifier(value);
-                if (error) {
-                  setError("");
-                }
+                clearError();
               }}
-              placeholder="Enter username or email"
+              onFocus={() => setIsIdentifierFocused(true)}
+              onBlur={() => setIsIdentifierFocused(false)}
+              placeholder="Enter your email or username"
               placeholderTextColor={COLORS.mutedText}
               autoCapitalize="none"
               autoCorrect={false}
-              style={styles.input}
+              style={[styles.input, isIdentifierFocused && styles.inputFocused]}
             />
           </View>
-        </View>
 
-        <View style={styles.field}>
-          <Text style={styles.label}>Password</Text>
-          <View style={styles.inputWrap}>
-            <HugeiconsIcon icon={LockIcon} size={18} color={COLORS.tabInactive} />
-            <TextInput
-              value={password}
-              onChangeText={(value) => {
-                setPassword(value);
-                if (error) {
-                  setError("");
-                }
-              }}
-              placeholder="Enter password"
-              placeholderTextColor={COLORS.mutedText}
-              secureTextEntry={!isPasswordVisible}
-              autoCapitalize="none"
-              style={styles.input}
-              onSubmitEditing={() => {
-                if (!isLoginDisabled) {
-                  void handleLogin();
-                }
-              }}
-            />
-            <Pressable
-              onPress={() => setIsPasswordVisible((current) => !current)}
-              hitSlop={8}
+          <View style={styles.field}>
+            <Text style={styles.label}>Password</Text>
+            <View
+              style={[styles.inputWithAction, isPasswordFocused && styles.inputFocused]}
             >
-              <Text style={styles.toggleText}>
-                {isPasswordVisible ? "Hide" : "Show"}
-              </Text>
-            </Pressable>
+              <TextInput
+                value={password}
+                onChangeText={(value) => {
+                  setPassword(value);
+                  clearError();
+                }}
+                onFocus={() => setIsPasswordFocused(true)}
+                onBlur={() => setIsPasswordFocused(false)}
+                placeholder="Enter your password"
+                placeholderTextColor={COLORS.mutedText}
+                secureTextEntry={!isPasswordVisible}
+                autoCapitalize="none"
+                style={styles.inputWithActionText}
+                onSubmitEditing={() => {
+                  if (!isLoginDisabled) {
+                    void handleLogin();
+                  }
+                }}
+              />
+              <Pressable
+                style={styles.toggleButton}
+                onPress={() => setIsPasswordVisible((current) => !current)}
+                hitSlop={8}
+              >
+                <Text style={styles.toggleText}>
+                  {isPasswordVisible ? "Hide" : "Show"}
+                </Text>
+              </Pressable>
+            </View>
           </View>
+
+          {error ? <Text style={styles.error}>{error}</Text> : null}
+
+          <Pressable
+            style={({ pressed }) => [
+              styles.primaryButton,
+              isLoginDisabled && styles.primaryButtonDisabled,
+              pressed && !isLoginDisabled && styles.buttonPressed,
+            ]}
+            onPress={handleLogin}
+            disabled={isLoginDisabled}
+          >
+            {isSubmitting ? (
+              <ActivityIndicator size="small" color={COLORS.primaryText} />
+            ) : (
+              <Text
+                style={[
+                  styles.primaryButtonText,
+                  isLoginDisabled && styles.primaryButtonTextDisabled,
+                ]}
+              >
+                Continue
+              </Text>
+            )}
+          </Pressable>
+
+          <Pressable
+            style={({ pressed }) => [
+              styles.secondaryButton,
+              pressed && styles.buttonPressed,
+            ]}
+            onPress={() => setError("Forgot password flow will be available soon.")}
+          >
+            <Text style={styles.secondaryButtonText}>Forgot password?</Text>
+          </Pressable>
         </View>
 
-        {error ? <Text style={styles.error}>{error}</Text> : null}
+        <View style={styles.dividerRow}>
+          <View style={styles.dividerLine} />
+          <Text style={styles.dividerText}>OR</Text>
+          <View style={styles.dividerLine} />
+        </View>
 
-        <Pressable
-          style={({ pressed }) => [
-            styles.primaryButton,
-            pressed && styles.buttonPressed,
-            isLoginDisabled && styles.buttonDisabled,
-          ]}
-          onPress={handleLogin}
-          disabled={isLoginDisabled}
-        >
-          {isSubmitting ? (
-            <ActivityIndicator size="small" color={COLORS.primaryText} />
-          ) : (
-            <HugeiconsIcon icon={Login03Icon} size={20} color={COLORS.primaryText} />
-          )}
-          <Text style={styles.primaryButtonText}>Sign In</Text>
-        </Pressable>
-
-        <Text style={styles.orText}>or continue with</Text>
-
-        <GoogleAuthButton
-          label="Continue with Google"
-          onError={setError}
-        />
-
-        <Text style={styles.switchText}>
-          Don&apos;t have an account?{" "}
-          <Link href="/signup" style={styles.switchLink}>
-            Sign up
-          </Link>
-        </Text>
+        <GoogleAuthButton label="Continue with Google" onError={setError} />
       </View>
     </ScrollView>
   );
@@ -189,56 +196,78 @@ const styles = StyleSheet.create({
   scroll: {
     flexGrow: 1,
     justifyContent: "center",
-    padding: SPACING.xl,
-    gap: SPACING.md,
+    paddingHorizontal: SPACING.xl,
+    paddingVertical: SPACING.xl,
     backgroundColor: COLORS.background,
+  },
+  mainContent: {
+    gap: SPACING.lg,
+    width: "100%",
+    maxWidth: 440,
+    alignSelf: "center",
   },
   hero: {
     alignItems: "center",
     gap: SPACING.xs,
-    paddingHorizontal: SPACING.sm,
-  },
-  card: {
-    backgroundColor: COLORS.surface,
-    borderRadius: RADIUS.lg,
-    padding: SPACING.xl,
-    gap: SPACING.md,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-  },
-  title: {
-    fontSize: FONT_SIZE.title,
-    fontWeight: "700",
-    color: COLORS.text,
   },
   subtitle: {
     color: COLORS.mutedText,
-    fontSize: FONT_SIZE.body,
+    fontSize: FONT_SIZE.body + 1,
+    lineHeight: 20,
     textAlign: "center",
   },
+  formCard: {
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: RADIUS.lg,
+    padding: SPACING.lg,
+    gap: SPACING.md,
+  },
   field: {
-    gap: SPACING.sm,
+    gap: SPACING.xs,
   },
   label: {
     color: COLORS.text,
     fontSize: 13,
     fontWeight: "600",
   },
-  inputWrap: {
+  input: {
     minHeight: CONTROL_SIZE.inputHeight,
-    borderRadius: RADIUS.md,
     borderWidth: 1,
     borderColor: COLORS.border,
     backgroundColor: COLORS.surface,
+    borderRadius: RADIUS.md,
     paddingHorizontal: SPACING.md,
+    color: COLORS.text,
+    fontSize: FONT_SIZE.button,
+  },
+  inputWithAction: {
+    minHeight: CONTROL_SIZE.inputHeight,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.surface,
+    borderRadius: RADIUS.md,
+    paddingLeft: SPACING.md,
+    paddingRight: SPACING.xs,
     flexDirection: "row",
     alignItems: "center",
-    gap: SPACING.sm,
   },
-  input: {
+  inputWithActionText: {
     flex: 1,
     color: COLORS.text,
     fontSize: FONT_SIZE.button,
+  },
+  inputFocused: {
+    borderColor: COLORS.primary,
+  },
+  toggleButton: {
+    minWidth: 54,
+    height: 34,
+    borderRadius: RADIUS.pill,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: SPACING.sm,
   },
   toggleText: {
     color: COLORS.primary,
@@ -248,39 +277,58 @@ const styles = StyleSheet.create({
   error: {
     color: COLORS.danger,
     fontSize: 13,
+    textAlign: "center",
+    lineHeight: 18,
   },
   primaryButton: {
-    minHeight: CONTROL_SIZE.inputHeight,
-    borderRadius: RADIUS.md,
+    minHeight: CONTROL_SIZE.inputHeight + 2,
+    borderRadius: RADIUS.pill,
     backgroundColor: COLORS.primary,
     alignItems: "center",
     justifyContent: "center",
-    flexDirection: "row",
-    gap: SPACING.sm,
+  },
+  primaryButtonDisabled: {
+    backgroundColor: "#D8DCE3",
   },
   primaryButtonText: {
     color: COLORS.primaryText,
     fontWeight: "700",
-    fontSize: FONT_SIZE.button,
+    fontSize: FONT_SIZE.button + 2,
   },
-  orText: {
-    textAlign: "center",
-    color: COLORS.mutedText,
-    fontSize: 13,
+  primaryButtonTextDisabled: {
+    color: "#8A90A0",
   },
-  switchText: {
-    textAlign: "center",
-    color: COLORS.mutedText,
-    marginTop: 4,
+  secondaryButton: {
+    minHeight: CONTROL_SIZE.inputHeight + 2,
+    borderRadius: RADIUS.pill,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.surface,
+    alignItems: "center",
+    justifyContent: "center",
   },
-  switchLink: {
+  secondaryButtonText: {
     color: COLORS.text,
-    fontWeight: "700",
+    fontWeight: "600",
+    fontSize: FONT_SIZE.button + 1,
+  },
+  dividerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.sm,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: COLORS.border,
+  },
+  dividerText: {
+    textAlign: "center",
+    color: COLORS.mutedText,
+    fontSize: 12,
+    fontWeight: "600",
   },
   buttonPressed: {
-    opacity: 0.9,
-  },
-  buttonDisabled: {
-    opacity: 0.6,
+    opacity: 0.88,
   },
 });

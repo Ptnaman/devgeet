@@ -21,8 +21,15 @@ export const SPACING = {
 };
 
 export const RADIUS = {
+  xs: 8,
+  sm: 10,
+  inputSm: 5,
   md: 12,
   lg: 20,
+  xl: 26,
+  input: 14,
+  card: 24,
+  pill: 999,
 };
 
 export const FONT_SIZE = {

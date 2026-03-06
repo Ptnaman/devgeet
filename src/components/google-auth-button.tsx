@@ -336,7 +336,7 @@ const styles = StyleSheet.create({
     borderColor: COLORS.border,
     borderWidth: 1,
     backgroundColor: COLORS.surface,
-    borderRadius: RADIUS.md,
+    borderRadius: RADIUS.pill,
     minHeight: CONTROL_SIZE.inputHeight,
     paddingHorizontal: SPACING.md + 2,
     flexDirection: "row",
