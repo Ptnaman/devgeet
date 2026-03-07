@@ -160,16 +160,6 @@ export default function SettingsScreen() {
       onPress: () => openExternal(APP_LINKS.contact, "Contact Us"),
     },
     {
-      key: "email",
-      title: "Email Support",
-      subtitle: APP_LINKS.email,
-      onPress: () =>
-        openEmail({
-          label: "Email Support",
-          subject: `${appName} Support`,
-        }),
-    },
-    {
       key: "whatsapp",
       title: "Join WhatsApp",
       subtitle: "Community support and updates",

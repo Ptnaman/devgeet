@@ -15,8 +15,6 @@ export default function TabsLayout() {
       <Stack.Screen name="(main)" options={{ headerShown: false }} />
       <Stack.Screen name="profile" options={{ title: "Edit Profile" }} />
       <Stack.Screen name="post/[postId]" options={{ title: "Post Details" }} />
-      <Stack.Screen name="terms" options={{ title: "Terms & Conditions" }} />
-      <Stack.Screen name="privacy" options={{ title: "Privacy Policy" }} />
     </Stack>
   );
 }

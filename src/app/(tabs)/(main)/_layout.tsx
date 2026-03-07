@@ -1,3 +1,4 @@
+import Constants from "expo-constants";
 import { useCallback, useState } from "react";
 import { Tabs } from "expo-router";
 import { HugeiconsIcon } from "@hugeicons/react-native";
@@ -16,6 +17,7 @@ import { COLORS } from "@/constants/theme";
 
 export default function MainTabsLayout() {
   const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
+  const appName = Constants.expoConfig?.name ?? "DevGeet";
   const openAccountMenu = useCallback(() => {
     setIsAccountMenuOpen(true);
   }, []);
@@ -30,6 +32,7 @@ export default function MainTabsLayout() {
         screenOptions={{
           headerStyle: { backgroundColor: COLORS.surface },
           headerTintColor: COLORS.text,
+          headerTitle: appName,
           headerShadowVisible: false,
           headerRight: () => <HeaderProfileButton onPress={openAccountMenu} />,
           tabBarActiveTintColor: COLORS.tabActive,
@@ -37,12 +40,13 @@ export default function MainTabsLayout() {
           tabBarStyle: {
             backgroundColor: COLORS.surface,
             borderTopColor: COLORS.border,
-            height: 68,
+            height: 74,
             paddingTop: 8,
             paddingBottom: 8,
+            borderTopWidth: 1,
           },
           tabBarLabelStyle: {
-            fontSize: 12,
+            fontSize: 11,
             fontWeight: "600",
           },
         }}

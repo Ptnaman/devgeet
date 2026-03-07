@@ -8,7 +8,6 @@ import {
 } from "firebase/firestore";
 import { useEffect, useMemo, useState } from "react";
 import {
-  ActivityIndicator,
   Image,
   Pressable,
   ScrollView,
@@ -17,6 +16,7 @@ import {
   View,
 } from "react-native";
 
+import { SkeletonBlock } from "@/components/skeleton-block";
 import { COLORS, FONT_SIZE, RADIUS, SHADOWS, SPACING } from "@/constants/theme";
 import {
   CATEGORIES_COLLECTION,
@@ -31,6 +31,8 @@ import {
 import { firestore } from "@/lib/firebase";
 
 const normalizeCategoryKey = (value: string) => value.trim().toLowerCase();
+const CATEGORY_SKELETON_ITEMS = Array.from({ length: 4 }, (_, index) => index);
+const CATEGORY_POST_SKELETON_ITEMS = Array.from({ length: 2 }, (_, index) => index);
 
 export default function CategoriesScreen() {
   const router = useRouter();
@@ -147,7 +149,34 @@ export default function CategoriesScreen() {
       {error ? <Text style={styles.error}>{error}</Text> : null}
 
       {isLoading ? (
-        <ActivityIndicator size="large" color={COLORS.primary} style={styles.loader} />
+        <>
+          <View style={styles.grid}>
+            {CATEGORY_SKELETON_ITEMS.map((item) => (
+              <View key={item} style={styles.categoryCard}>
+                <SkeletonBlock width="72%" height={20} borderRadius={RADIUS.sm} />
+                <SkeletonBlock width="52%" height={14} borderRadius={RADIUS.sm} />
+                <SkeletonBlock width={70} height={16} borderRadius={RADIUS.sm} />
+              </View>
+            ))}
+          </View>
+
+          <View style={styles.resultsWrap}>
+            <SkeletonBlock width={164} height={24} borderRadius={RADIUS.sm} />
+            <SkeletonBlock width={86} height={16} borderRadius={RADIUS.sm} />
+
+            {CATEGORY_POST_SKELETON_ITEMS.map((item) => (
+              <View key={item} style={styles.postCard}>
+                <SkeletonBlock width={108} height={84} borderRadius={RADIUS.md} />
+
+                <View style={styles.postContent}>
+                  <SkeletonBlock width="86%" height={20} borderRadius={RADIUS.sm} />
+                  <SkeletonBlock width="100%" height={16} borderRadius={RADIUS.sm} />
+                  <SkeletonBlock width="70%" height={16} borderRadius={RADIUS.sm} />
+                </View>
+              </View>
+            ))}
+          </View>
+        </>
       ) : null}
 
       {!isLoading && !categories.length ? (
@@ -287,9 +316,6 @@ const styles = StyleSheet.create({
   subtitle: {
     fontSize: FONT_SIZE.body,
     color: COLORS.mutedText,
-  },
-  loader: {
-    marginVertical: SPACING.md,
   },
   error: {
     color: COLORS.danger,

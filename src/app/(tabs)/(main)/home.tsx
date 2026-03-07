@@ -9,7 +9,6 @@ import {
 } from "firebase/firestore";
 import { useEffect, useState } from "react";
 import {
-  ActivityIndicator,
   Image,
   Pressable,
   ScrollView,
@@ -19,6 +18,7 @@ import {
 } from "react-native";
 
 import { COLORS, FONT_SIZE, RADIUS, SHADOWS, SPACING } from "@/constants/theme";
+import { SkeletonBlock } from "@/components/skeleton-block";
 import { useFavorites } from "@/hooks/use-favorites";
 import {
   formatDate,
@@ -29,6 +29,8 @@ import {
   type PostRecord,
 } from "@/lib/content";
 import { firestore } from "@/lib/firebase";
+
+const HOME_SKELETON_ITEMS = Array.from({ length: 3 }, (_, index) => index);
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -72,82 +74,110 @@ export default function HomeScreen() {
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
-      {isLoading ? (
-        <ActivityIndicator
-          size="large"
-          color={COLORS.primary}
-          style={styles.loader}
-        />
-      ) : null}
+      {isLoading
+        ? HOME_SKELETON_ITEMS.map((item) => (
+            <View key={item} style={styles.card}>
+              <View style={styles.cardBody}>
+                <SkeletonBlock height={156} borderRadius={RADIUS.md} />
+                <View style={styles.cardTagRow}>
+                  <SkeletonBlock
+                    width={88}
+                    height={24}
+                    borderRadius={RADIUS.pill}
+                  />
+                </View>
+                <SkeletonBlock width="82%" height={24} />
+                <SkeletonBlock width="68%" height={24} />
+                <SkeletonBlock width="100%" height={16} borderRadius={RADIUS.sm} />
+                <SkeletonBlock width="76%" height={16} borderRadius={RADIUS.sm} />
+              </View>
+
+              <View style={styles.cardFooter}>
+                <SkeletonBlock width={92} height={16} borderRadius={RADIUS.sm} />
+                <SkeletonBlock
+                  width={86}
+                  height={34}
+                  borderRadius={RADIUS.pill}
+                />
+              </View>
+            </View>
+          ))
+        : null}
 
       {!isLoading && error ? <Text style={styles.errorText}>{error}</Text> : null}
 
-      {posts.map((post) => {
-        const thumbnailUrl = getPostCardThumbnailUrl(post);
-        const favorite = isFavorite(post.id);
-        const updatedLabel = formatDate(post.uploadDate || post.createDate);
-        const categoryLabel = (post.category.trim() || "general")
-          .split(/[\s-]+/)
-          .filter(Boolean)
-          .map((word) => `${word.charAt(0).toUpperCase()}${word.slice(1)}`)
-          .join(" ");
+      {!isLoading
+        ? posts.map((post) => {
+            const thumbnailUrl = getPostCardThumbnailUrl(post);
+            const favorite = isFavorite(post.id);
+            const updatedLabel = formatDate(post.uploadDate || post.createDate);
+            const categoryLabel = (post.category.trim() || "general")
+              .split(/[\s-]+/)
+              .filter(Boolean)
+              .map((word) => `${word.charAt(0).toUpperCase()}${word.slice(1)}`)
+              .join(" ");
 
-        return (
-          <View key={post.id} style={styles.card}>
-            <Pressable
-              style={({ pressed }) => [
-                styles.cardBody,
-                pressed && styles.cardBodyPressed,
-              ]}
-              onPress={() => openPost(post.id)}
-            >
-              {thumbnailUrl ? (
-                <Image
-                  source={{ uri: thumbnailUrl }}
-                  style={styles.thumbnail}
-                  resizeMode="cover"
-                />
-              ) : null}
-              <View style={styles.cardTagRow}>
-                <Text style={styles.categoryBadge}>{categoryLabel}</Text>
-              </View>
-              <Text style={styles.cardTitle} numberOfLines={3} ellipsizeMode="tail">
-                {post.title}
-              </Text>
-              <Text style={styles.cardPreview} numberOfLines={2} ellipsizeMode="tail">
-                {post.content.trim() || "-"}
-              </Text>
-            </Pressable>
-
-            <View style={styles.cardFooter}>
-              <Text style={styles.meta}>Updated {updatedLabel}</Text>
-              <Pressable
-                style={[
-                  styles.favoriteButton,
-                  favorite ? styles.favoriteButtonActive : undefined,
-                ]}
-                onPress={() => {
-                  void handleToggleFavorite(post);
-                }}
-              >
-                  <HugeiconsIcon
-                    icon={FavouriteIcon}
-                    size={16}
-                    color={favorite ? COLORS.danger : COLORS.mutedText}
-                  />
-                <Text
-                  style={[
-                    styles.favoriteButtonText,
-                    favorite ? styles.favoriteButtonTextActive : undefined,
+            return (
+              <View key={post.id} style={styles.card}>
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.cardBody,
+                    pressed && styles.cardBodyPressed,
                   ]}
+                  onPress={() => openPost(post.id)}
                 >
-                  {favorite ? "Saved" : "Save"}
-                </Text>
-              </Pressable>
-            </View>
-          </View>
-        );
-      })}
+                  {thumbnailUrl ? (
+                    <Image
+                      source={{ uri: thumbnailUrl }}
+                      style={styles.thumbnail}
+                      resizeMode="cover"
+                    />
+                  ) : null}
+                  <View style={styles.cardTagRow}>
+                    <Text style={styles.categoryBadge}>{categoryLabel}</Text>
+                  </View>
+                  <Text style={styles.cardTitle} numberOfLines={3} ellipsizeMode="tail">
+                    {post.title}
+                  </Text>
+                  <Text
+                    style={styles.cardPreview}
+                    numberOfLines={2}
+                    ellipsizeMode="tail"
+                  >
+                    {post.content.trim() || "-"}
+                  </Text>
+                </Pressable>
+
+                <View style={styles.cardFooter}>
+                  <Text style={styles.meta}>Updated {updatedLabel}</Text>
+                  <Pressable
+                    style={[
+                      styles.favoriteButton,
+                      favorite ? styles.favoriteButtonActive : undefined,
+                    ]}
+                    onPress={() => {
+                      void handleToggleFavorite(post);
+                    }}
+                  >
+                    <HugeiconsIcon
+                      icon={FavouriteIcon}
+                      size={16}
+                      color={favorite ? COLORS.danger : COLORS.mutedText}
+                    />
+                    <Text
+                      style={[
+                        styles.favoriteButtonText,
+                        favorite ? styles.favoriteButtonTextActive : undefined,
+                      ]}
+                    >
+                      {favorite ? "Saved" : "Save"}
+                    </Text>
+                  </Pressable>
+                </View>
+              </View>
+            );
+          })
+        : null}
     </ScrollView>
   );
 }
@@ -158,9 +188,6 @@ const styles = StyleSheet.create({
     padding: SPACING.xxl,
     gap: SPACING.xl,
     backgroundColor: COLORS.background,
-  },
-  loader: {
-    marginVertical: SPACING.md,
   },
   card: {
     backgroundColor: COLORS.surface,
