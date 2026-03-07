@@ -17,6 +17,7 @@ import {
   CONTROL_SIZE,
   FONT_SIZE,
   RADIUS,
+  SHADOWS,
   SPACING,
 } from "@/constants/theme";
 import { useAuth } from "@/providers/auth-provider";
@@ -94,141 +95,147 @@ export default function SignupScreen() {
       contentContainerStyle={styles.scroll}
       keyboardShouldPersistTaps="handled"
     >
-      <Text style={styles.title}>Create Your Account</Text>
-      <Text style={styles.subtitle}>Simple signup for all users.</Text>
-
-      <View style={styles.field}>
-        <Text style={styles.label}>First Name</Text>
-        <TextInput
-          value={firstName}
-          onChangeText={(value) => {
-            setFirstName(value);
-            clearError();
-          }}
-          placeholder="First name"
-          placeholderTextColor={COLORS.mutedText}
-          autoCapitalize="words"
-          style={styles.input}
-        />
-      </View>
-
-      <View style={styles.field}>
-        <Text style={styles.label}>Last Name</Text>
-        <TextInput
-          value={lastName}
-          onChangeText={(value) => {
-            setLastName(value);
-            clearError();
-          }}
-          placeholder="Last name"
-          placeholderTextColor={COLORS.mutedText}
-          autoCapitalize="words"
-          style={styles.input}
-        />
-      </View>
-
-      <View style={styles.field}>
-        <Text style={styles.label}>Email Address</Text>
-        <View style={styles.inputWithIcon}>
-          <HugeiconsIcon icon={Mail01Icon} size={18} color={COLORS.tabInactive} />
-          <TextInput
-            value={email}
-            onChangeText={(value) => {
-              setEmail(value);
-              clearError();
-            }}
-            placeholder="you@example.com"
-            placeholderTextColor={COLORS.mutedText}
-            keyboardType="email-address"
-            autoCapitalize="none"
-            autoCorrect={false}
-            style={styles.inputWithIconText}
-          />
+      <View style={styles.mainContent}>
+        <View style={styles.hero}>
+          <Text style={styles.title}>Create your account</Text>
+          <Text style={styles.subtitle}>Simple signup for all users.</Text>
         </View>
-        {isEmailError ? <Text style={styles.error}>{error}</Text> : null}
-      </View>
 
-      <View style={styles.field}>
-        <Text style={styles.label}>Password</Text>
-        <View style={styles.inputWithIcon}>
-          <HugeiconsIcon icon={LockIcon} size={18} color={COLORS.tabInactive} />
-          <TextInput
-            value={password}
-            onChangeText={(value) => {
-              setPassword(value);
-              clearError();
-            }}
-            placeholder="Create a strong password"
-            placeholderTextColor={COLORS.mutedText}
-            secureTextEntry={!isPasswordVisible}
-            autoCapitalize="none"
-            style={styles.inputWithIconText}
-          />
+        <View style={styles.formCard}>
+          <View style={styles.field}>
+            <Text style={styles.label}>First Name</Text>
+            <TextInput
+              value={firstName}
+              onChangeText={(value) => {
+                setFirstName(value);
+                clearError();
+              }}
+              placeholder="First name"
+              placeholderTextColor={COLORS.mutedText}
+              autoCapitalize="words"
+              style={styles.input}
+            />
+          </View>
+
+          <View style={styles.field}>
+            <Text style={styles.label}>Last Name</Text>
+            <TextInput
+              value={lastName}
+              onChangeText={(value) => {
+                setLastName(value);
+                clearError();
+              }}
+              placeholder="Last name"
+              placeholderTextColor={COLORS.mutedText}
+              autoCapitalize="words"
+              style={styles.input}
+            />
+          </View>
+
+          <View style={styles.field}>
+            <Text style={styles.label}>Email Address</Text>
+            <View style={styles.inputWithIcon}>
+              <HugeiconsIcon icon={Mail01Icon} size={18} color={COLORS.subtleText} />
+              <TextInput
+                value={email}
+                onChangeText={(value) => {
+                  setEmail(value);
+                  clearError();
+                }}
+                placeholder="you@example.com"
+                placeholderTextColor={COLORS.mutedText}
+                keyboardType="email-address"
+                autoCapitalize="none"
+                autoCorrect={false}
+                style={styles.inputWithIconText}
+              />
+            </View>
+            {isEmailError ? <Text style={styles.error}>{error}</Text> : null}
+          </View>
+
+          <View style={styles.field}>
+            <Text style={styles.label}>Password</Text>
+            <View style={styles.inputWithIcon}>
+              <HugeiconsIcon icon={LockIcon} size={18} color={COLORS.subtleText} />
+              <TextInput
+                value={password}
+                onChangeText={(value) => {
+                  setPassword(value);
+                  clearError();
+                }}
+                placeholder="Create a strong password"
+                placeholderTextColor={COLORS.mutedText}
+                secureTextEntry={!isPasswordVisible}
+                autoCapitalize="none"
+                style={styles.inputWithIconText}
+              />
+              <Pressable
+                onPress={() => setIsPasswordVisible((current) => !current)}
+                hitSlop={8}
+              >
+                <Text style={styles.toggleText}>{isPasswordVisible ? "Hide" : "Show"}</Text>
+              </Pressable>
+            </View>
+          </View>
+
+          <View style={styles.field}>
+            <Text style={styles.label}>Confirm Password</Text>
+            <View style={styles.inputWithIcon}>
+              <HugeiconsIcon icon={LockIcon} size={18} color={COLORS.subtleText} />
+              <TextInput
+                value={confirmPassword}
+                onChangeText={(value) => {
+                  setConfirmPassword(value);
+                  clearError();
+                }}
+                placeholder="Re-enter your password"
+                placeholderTextColor={COLORS.mutedText}
+                secureTextEntry={!isConfirmPasswordVisible}
+                autoCapitalize="none"
+                style={styles.inputWithIconText}
+                onSubmitEditing={() => {
+                  if (!isSignupDisabled) {
+                    void handleSignup();
+                  }
+                }}
+              />
+              <Pressable
+                onPress={() => setIsConfirmPasswordVisible((current) => !current)}
+                hitSlop={8}
+              >
+                <Text style={styles.toggleText}>
+                  {isConfirmPasswordVisible ? "Hide" : "Show"}
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+
+          {!isEmailError && error ? <Text style={styles.error}>{error}</Text> : null}
+
           <Pressable
-            onPress={() => setIsPasswordVisible((current) => !current)}
-            hitSlop={8}
+            style={({ pressed }) => [
+              styles.primaryButton,
+              pressed && styles.buttonPressed,
+              isSignupDisabled && styles.buttonDisabled,
+            ]}
+            onPress={handleSignup}
+            disabled={isSignupDisabled}
           >
-            <Text style={styles.toggleText}>{isPasswordVisible ? "Hide" : "Show"}</Text>
+            {isSubmitting ? (
+              <ActivityIndicator size="small" color={COLORS.primaryText} />
+            ) : (
+              <Text style={styles.primaryButtonText}>Create Account</Text>
+            )}
           </Pressable>
         </View>
+
+        <Text style={styles.switchText}>
+          Already have an account?{" "}
+          <Link href="/login" style={styles.switchLink}>
+            Login
+          </Link>
+        </Text>
       </View>
-
-      <View style={styles.field}>
-        <Text style={styles.label}>Confirm Password</Text>
-        <View style={styles.inputWithIcon}>
-          <HugeiconsIcon icon={LockIcon} size={18} color={COLORS.tabInactive} />
-          <TextInput
-            value={confirmPassword}
-            onChangeText={(value) => {
-              setConfirmPassword(value);
-              clearError();
-            }}
-            placeholder="Re-enter your password"
-            placeholderTextColor={COLORS.mutedText}
-            secureTextEntry={!isConfirmPasswordVisible}
-            autoCapitalize="none"
-            style={styles.inputWithIconText}
-            onSubmitEditing={() => {
-              if (!isSignupDisabled) {
-                void handleSignup();
-              }
-            }}
-          />
-          <Pressable
-            onPress={() => setIsConfirmPasswordVisible((current) => !current)}
-            hitSlop={8}
-          >
-            <Text style={styles.toggleText}>
-              {isConfirmPasswordVisible ? "Hide" : "Show"}
-            </Text>
-          </Pressable>
-        </View>
-      </View>
-
-      {!isEmailError && error ? <Text style={styles.error}>{error}</Text> : null}
-
-      <Pressable
-        style={({ pressed }) => [
-          styles.primaryButton,
-          pressed && styles.buttonPressed,
-          isSignupDisabled && styles.buttonDisabled,
-        ]}
-        onPress={handleSignup}
-        disabled={isSignupDisabled}
-      >
-        {isSubmitting ? (
-          <ActivityIndicator size="small" color={COLORS.primaryText} />
-        ) : (
-          <Text style={styles.primaryButtonText}>Create Account</Text>
-        )}
-      </Pressable>
-
-      <Text style={styles.switchText}>
-        Already have an account?{" "}
-        <Link href="/login" style={styles.switchLink}>
-          Login
-        </Link>
-      </Text>
     </ScrollView>
   );
 }
@@ -236,12 +243,21 @@ export default function SignupScreen() {
 const styles = StyleSheet.create({
   scroll: {
     flexGrow: 1,
+    justifyContent: "center",
     padding: SPACING.xl,
-    gap: SPACING.md,
     backgroundColor: COLORS.background,
   },
+  mainContent: {
+    width: "100%",
+    maxWidth: 460,
+    alignSelf: "center",
+    gap: SPACING.lg,
+  },
+  hero: {
+    alignItems: "center",
+    gap: SPACING.xs,
+  },
   title: {
-    marginTop: SPACING.md,
     fontSize: FONT_SIZE.title,
     fontWeight: "700",
     color: COLORS.text,
@@ -251,7 +267,15 @@ const styles = StyleSheet.create({
     color: COLORS.mutedText,
     fontSize: FONT_SIZE.body,
     textAlign: "center",
-    marginBottom: SPACING.sm,
+  },
+  formCard: {
+    borderRadius: RADIUS.card,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.surface,
+    padding: SPACING.lg,
+    gap: SPACING.md,
+    ...SHADOWS.sm,
   },
   field: {
     gap: SPACING.sm,
@@ -266,7 +290,7 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.md,
     borderWidth: 1,
     borderColor: COLORS.border,
-    backgroundColor: COLORS.surface,
+    backgroundColor: COLORS.surfaceMuted,
     paddingHorizontal: SPACING.md,
     color: COLORS.text,
     fontSize: FONT_SIZE.button,
@@ -276,7 +300,7 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.md,
     borderWidth: 1,
     borderColor: COLORS.border,
-    backgroundColor: COLORS.surface,
+    backgroundColor: COLORS.surfaceMuted,
     paddingHorizontal: SPACING.md,
     flexDirection: "row",
     alignItems: "center",
@@ -298,7 +322,7 @@ const styles = StyleSheet.create({
   },
   primaryButton: {
     minHeight: CONTROL_SIZE.inputHeight,
-    borderRadius: RADIUS.md,
+    borderRadius: RADIUS.pill,
     backgroundColor: COLORS.primary,
     alignItems: "center",
     justifyContent: "center",
@@ -311,7 +335,6 @@ const styles = StyleSheet.create({
   switchText: {
     textAlign: "center",
     color: COLORS.mutedText,
-    marginTop: 4,
   },
   switchLink: {
     color: COLORS.text,

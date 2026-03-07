@@ -324,7 +324,7 @@ export function GoogleAuthButton({
       {isSubmitting ? (
         <ActivityIndicator size="small" color={COLORS.primary} />
       ) : (
-        <HugeiconsIcon icon={ArrowRight01Icon} size={18} color={COLORS.primary} />
+        <HugeiconsIcon icon={ArrowRight01Icon} size={18} color={COLORS.text} />
       )}
     </Pressable>
   );
@@ -335,7 +335,7 @@ const styles = StyleSheet.create({
     width: "100%",
     borderColor: COLORS.border,
     borderWidth: 1,
-    backgroundColor: COLORS.surface,
+    backgroundColor: COLORS.surfaceMuted,
     borderRadius: RADIUS.pill,
     minHeight: CONTROL_SIZE.inputHeight,
     paddingHorizontal: SPACING.md + 2,
@@ -344,7 +344,7 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
   },
   googleButtonText: {
-    color: COLORS.primary,
+    color: COLORS.text,
     fontSize: FONT_SIZE.button,
     fontWeight: "600",
     flex: 1,

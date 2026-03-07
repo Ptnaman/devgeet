@@ -239,7 +239,7 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.md,
     borderWidth: 1,
     borderColor: COLORS.border,
-    backgroundColor: COLORS.surface,
+    backgroundColor: COLORS.surfaceMuted,
     paddingHorizontal: SPACING.md,
     color: COLORS.text,
     fontSize: FONT_SIZE.button,
@@ -249,7 +249,7 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.md,
     borderWidth: 1,
     borderColor: COLORS.border,
-    backgroundColor: COLORS.background,
+    backgroundColor: COLORS.surfaceMuted,
     paddingHorizontal: SPACING.md,
     justifyContent: "center",
   },
@@ -268,7 +268,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
   },
   success: {
-    color: "#166534",
+    color: COLORS.success,
     fontSize: 13,
   },
   primaryButton: {

@@ -18,7 +18,7 @@ import {
   View,
 } from "react-native";
 
-import { COLORS, FONT_SIZE, SHADOWS, SPACING } from "@/constants/theme";
+import { COLORS, FONT_SIZE, RADIUS, SHADOWS, SPACING } from "@/constants/theme";
 import { useFavorites } from "@/hooks/use-favorites";
 import {
   formatDate,
@@ -80,6 +80,8 @@ export default function HomeScreen() {
         />
       ) : null}
 
+      {!isLoading && error ? <Text style={styles.errorText}>{error}</Text> : null}
+
       {posts.map((post) => {
         const thumbnailUrl = getPostCardThumbnailUrl(post);
         const favorite = isFavorite(post.id);
@@ -128,11 +130,11 @@ export default function HomeScreen() {
                   void handleToggleFavorite(post);
                 }}
               >
-                <HugeiconsIcon
-                  icon={FavouriteIcon}
-                  size={16}
-                  color={favorite ? "#B91C1C" : COLORS.mutedText}
-                />
+                  <HugeiconsIcon
+                    icon={FavouriteIcon}
+                    size={16}
+                    color={favorite ? COLORS.danger : COLORS.mutedText}
+                  />
                 <Text
                   style={[
                     styles.favoriteButtonText,
@@ -162,10 +164,12 @@ const styles = StyleSheet.create({
   },
   card: {
     backgroundColor: COLORS.surface,
-    borderRadius: 10,
+    borderRadius: RADIUS.lg,
+    borderWidth: 1,
+    borderColor: COLORS.border,
     padding: SPACING.lg,
     gap: SPACING.sm,
-    ...SHADOWS.md,
+    ...SHADOWS.sm,
   },
   cardBody: {
     gap: SPACING.sm,
@@ -176,8 +180,8 @@ const styles = StyleSheet.create({
   thumbnail: {
     width: "100%",
     height: 156,
-    borderRadius: 12,
-    backgroundColor: "#E5E7EB",
+    borderRadius: RADIUS.md,
+    backgroundColor: COLORS.surfaceSoft,
   },
   cardTagRow: {
     flexDirection: "row",
@@ -187,12 +191,12 @@ const styles = StyleSheet.create({
   categoryBadge: {
     alignSelf: "flex-start",
     borderWidth: 1,
-    borderColor: "#BFDBFE",
+    borderColor: COLORS.accentBorder,
     borderRadius: 999,
     paddingHorizontal: SPACING.sm,
     paddingVertical: 3,
-    backgroundColor: "#EFF6FF",
-    color: "#1D4ED8",
+    backgroundColor: COLORS.accentSoft,
+    color: COLORS.accent,
     fontSize: 11,
     fontWeight: "700",
   },
@@ -204,7 +208,7 @@ const styles = StyleSheet.create({
   },
   cardPreview: {
     fontSize: FONT_SIZE.body,
-    color: "#334155",
+    color: COLORS.mutedText,
     lineHeight: 21,
   },
   cardFooter: {
@@ -223,19 +227,23 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     paddingHorizontal: 10,
     paddingVertical: 5,
-    backgroundColor: "#F8FAFC",
+    backgroundColor: COLORS.surfaceMuted,
   },
   favoriteButtonActive: {
-    borderColor: "#FECACA",
-    backgroundColor: "#FEF2F2",
+    borderColor: COLORS.dangerBorder,
+    backgroundColor: COLORS.dangerSoft,
   },
   favoriteButtonText: {
-    color: "#334155",
+    color: COLORS.text,
     fontSize: 12,
     fontWeight: "700",
   },
   favoriteButtonTextActive: {
-    color: "#B91C1C",
+    color: COLORS.danger,
+  },
+  errorText: {
+    color: COLORS.danger,
+    fontSize: 13,
   },
   meta: {
     fontSize: 12,

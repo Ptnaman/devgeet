@@ -12,7 +12,14 @@ import {
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { GoogleAuthButton } from "@/components/google-auth-button";
-import { COLORS, CONTROL_SIZE, FONT_SIZE, RADIUS, SPACING } from "@/constants/theme";
+import {
+  COLORS,
+  CONTROL_SIZE,
+  FONT_SIZE,
+  RADIUS,
+  SHADOWS,
+  SPACING,
+} from "@/constants/theme";
 import { useAuth } from "@/providers/auth-provider";
 
 const LAST_LOGIN_IDENTIFIER_KEY = "auth:last_login_identifier";
@@ -86,6 +93,7 @@ export default function LoginScreen() {
     >
       <View style={styles.mainContent}>
         <View style={styles.hero}>
+          <Text style={styles.title}>Login to DevGeet</Text>
           <Text style={styles.subtitle}>Welcome back to DevGeet.</Text>
         </View>
 
@@ -210,6 +218,12 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: SPACING.xs,
   },
+  title: {
+    color: COLORS.text,
+    fontSize: FONT_SIZE.title,
+    fontWeight: "700",
+    textAlign: "center",
+  },
   subtitle: {
     color: COLORS.mutedText,
     fontSize: FONT_SIZE.body + 1,
@@ -220,9 +234,10 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.surface,
     borderWidth: 1,
     borderColor: COLORS.border,
-    borderRadius: RADIUS.lg,
+    borderRadius: RADIUS.card,
     padding: SPACING.lg,
     gap: SPACING.md,
+    ...SHADOWS.sm,
   },
   field: {
     gap: SPACING.xs,
@@ -236,7 +251,7 @@ const styles = StyleSheet.create({
     minHeight: CONTROL_SIZE.inputHeight,
     borderWidth: 1,
     borderColor: COLORS.border,
-    backgroundColor: COLORS.surface,
+    backgroundColor: COLORS.surfaceMuted,
     borderRadius: RADIUS.md,
     paddingHorizontal: SPACING.md,
     color: COLORS.text,
@@ -246,7 +261,7 @@ const styles = StyleSheet.create({
     minHeight: CONTROL_SIZE.inputHeight,
     borderWidth: 1,
     borderColor: COLORS.border,
-    backgroundColor: COLORS.surface,
+    backgroundColor: COLORS.surfaceMuted,
     borderRadius: RADIUS.md,
     paddingLeft: SPACING.md,
     paddingRight: SPACING.xs,
@@ -288,7 +303,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   primaryButtonDisabled: {
-    backgroundColor: "#D8DCE3",
+    backgroundColor: COLORS.surfaceSoft,
   },
   primaryButtonText: {
     color: COLORS.primaryText,
@@ -296,14 +311,14 @@ const styles = StyleSheet.create({
     fontSize: FONT_SIZE.button + 2,
   },
   primaryButtonTextDisabled: {
-    color: "#8A90A0",
+    color: COLORS.subtleText,
   },
   secondaryButton: {
     minHeight: CONTROL_SIZE.inputHeight + 2,
     borderRadius: RADIUS.pill,
     borderWidth: 1,
     borderColor: COLORS.border,
-    backgroundColor: COLORS.surface,
+    backgroundColor: COLORS.surfaceMuted,
     alignItems: "center",
     justifyContent: "center",
   },

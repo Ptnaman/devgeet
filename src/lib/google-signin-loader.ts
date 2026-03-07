@@ -38,6 +38,8 @@ export const loadGoogleSignInModule = () => {
   }
 
   try {
+    // The native module is loaded lazily so web and Expo Go can fail gracefully.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
     cachedModule = require(
       "@react-native-google-signin/google-signin"
     ) as GoogleSignInModuleLike;
@@ -47,4 +49,3 @@ export const loadGoogleSignInModule = () => {
     return cachedModule;
   }
 };
-

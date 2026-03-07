@@ -180,7 +180,7 @@ export default function FavoriteScreen() {
                       <HugeiconsIcon
                         icon={FavouriteIcon}
                         size={16}
-                        color={favorite ? "#B91C1C" : COLORS.mutedText}
+                        color={favorite ? COLORS.danger : COLORS.mutedText}
                       />
                       <Text
                         style={[
@@ -244,13 +244,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.md,
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: "#BFDBFE",
-    backgroundColor: "#EFF6FF",
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.surfaceMuted,
     alignItems: "center",
     justifyContent: "center",
   },
   countPillText: {
-    color: "#1D4ED8",
+    color: COLORS.text,
     fontSize: 13,
     fontWeight: "700",
   },
@@ -278,7 +278,7 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#F8FAFC",
+    backgroundColor: COLORS.surfaceMuted,
     borderWidth: 1,
     borderColor: COLORS.border,
   },
@@ -316,13 +316,13 @@ const styles = StyleSheet.create({
     width: 96,
     height: 108,
     borderRadius: RADIUS.md,
-    backgroundColor: "#E5E7EB",
+    backgroundColor: COLORS.surfaceSoft,
   },
   thumbnailFallback: {
     width: 96,
     height: 108,
     borderRadius: RADIUS.md,
-    backgroundColor: "#F8FAFC",
+    backgroundColor: COLORS.surfaceMuted,
     borderWidth: 1,
     borderColor: COLORS.border,
     alignItems: "center",
@@ -343,12 +343,12 @@ const styles = StyleSheet.create({
   categoryBadge: {
     alignSelf: "flex-start",
     borderWidth: 1,
-    borderColor: "#BFDBFE",
+    borderColor: COLORS.accentBorder,
     borderRadius: 999,
     paddingHorizontal: SPACING.sm,
     paddingVertical: 3,
-    backgroundColor: "#EFF6FF",
-    color: "#1D4ED8",
+    backgroundColor: COLORS.accentSoft,
+    color: COLORS.accent,
     fontSize: 11,
     fontWeight: "700",
   },
@@ -366,7 +366,7 @@ const styles = StyleSheet.create({
   },
   cardPreview: {
     fontSize: 13,
-    color: "#334155",
+    color: COLORS.mutedText,
     lineHeight: 19,
   },
   favoriteButton: {
@@ -378,19 +378,19 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     paddingHorizontal: 12,
     paddingVertical: 7,
-    backgroundColor: "#F8FAFC",
+    backgroundColor: COLORS.surfaceMuted,
   },
   favoriteButtonActive: {
-    borderColor: "#FECACA",
-    backgroundColor: "#FEF2F2",
+    borderColor: COLORS.dangerBorder,
+    backgroundColor: COLORS.dangerSoft,
   },
   favoriteButtonText: {
-    color: "#334155",
+    color: COLORS.text,
     fontSize: 12,
     fontWeight: "700",
   },
   favoriteButtonTextActive: {
-    color: "#B91C1C",
+    color: COLORS.danger,
   },
   meta: {
     fontSize: 12,

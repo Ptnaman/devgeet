@@ -1,97 +1,94 @@
-import { Tabs, useRouter } from "expo-router";
+import { useCallback, useState } from "react";
+import { Tabs } from "expo-router";
 import { HugeiconsIcon } from "@hugeicons/react-native";
 import {
   Add01Icon,
   FavouriteIcon,
   Home01Icon,
-  Login01Icon,
   Settings01Icon,
 } from "@hugeicons/core-free-icons";
-import { Pressable, StyleSheet } from "react-native";
 
+import {
+  HeaderProfileButton,
+  HeaderProfileMenu,
+} from "@/components/header-profile-button";
 import { COLORS } from "@/constants/theme";
-import { useAuth } from "@/providers/auth-provider";
 
 export default function MainTabsLayout() {
-  const router = useRouter();
-  const { isAdmin } = useAuth();
+  const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
+  const openAccountMenu = useCallback(() => {
+    setIsAccountMenuOpen(true);
+  }, []);
+  const closeAccountMenu = useCallback(() => {
+    setIsAccountMenuOpen(false);
+  }, []);
 
   return (
-    <Tabs
-      initialRouteName="home"
-      screenOptions={{
-        headerStyle: { backgroundColor: COLORS.surface },
-        headerTintColor: COLORS.text,
-        headerShadowVisible: false,
-        headerRight: () =>
-          isAdmin ? (
-            <Pressable
-              style={({ pressed }) => [
-                styles.adminButton,
-                pressed && styles.adminButtonPressed,
-              ]}
-              onPress={() => router.push("/admin")}
-            >
-              <HugeiconsIcon icon={Login01Icon} size={18} color={COLORS.text} />
-            </Pressable>
-          ) : null,
-        tabBarActiveTintColor: COLORS.tabActive,
-        tabBarInactiveTintColor: COLORS.tabInactive,
-      }}
-    >
-      <Tabs.Screen
-        name="home"
-        options={{
-          title: "Home",
-          tabBarIcon: ({ color, size }) => (
-            <HugeiconsIcon icon={Home01Icon} color={color} size={size} />
-          ),
+    <>
+      <Tabs
+        initialRouteName="home"
+        screenOptions={{
+          headerStyle: { backgroundColor: COLORS.surface },
+          headerTintColor: COLORS.text,
+          headerShadowVisible: false,
+          headerRight: () => <HeaderProfileButton onPress={openAccountMenu} />,
+          tabBarActiveTintColor: COLORS.tabActive,
+          tabBarInactiveTintColor: COLORS.tabInactive,
+          tabBarStyle: {
+            backgroundColor: COLORS.surface,
+            borderTopColor: COLORS.border,
+            height: 68,
+            paddingTop: 8,
+            paddingBottom: 8,
+          },
+          tabBarLabelStyle: {
+            fontSize: 12,
+            fontWeight: "600",
+          },
         }}
+      >
+        <Tabs.Screen
+          name="home"
+          options={{
+            title: "Home",
+            tabBarIcon: ({ color, size }) => (
+              <HugeiconsIcon icon={Home01Icon} color={color} size={size} />
+            ),
+          }}
+        />
+        <Tabs.Screen
+          name="categories"
+          options={{
+            title: "Categories",
+            tabBarIcon: ({ color, size }) => (
+              <HugeiconsIcon icon={Add01Icon} color={color} size={size} />
+            ),
+          }}
+        />
+        <Tabs.Screen
+          name="favorite"
+          options={{
+            title: "Favorite",
+            tabBarIcon: ({ color, size }) => (
+              <HugeiconsIcon icon={FavouriteIcon} color={color} size={size} />
+            ),
+          }}
+        />
+        <Tabs.Screen
+          name="settings"
+          options={{
+            title: "Settings",
+            tabBarIcon: ({ color, size }) => (
+              <HugeiconsIcon icon={Settings01Icon} color={color} size={size} />
+            ),
+          }}
+        />
+      </Tabs>
+
+      <HeaderProfileMenu
+        visible={isAccountMenuOpen}
+        onClose={closeAccountMenu}
       />
-      <Tabs.Screen
-        name="categories"
-        options={{
-          title: "Categories",
-          tabBarIcon: ({ color, size }) => (
-            <HugeiconsIcon icon={Add01Icon} color={color} size={size} />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="favorite"
-        options={{
-          title: "Favorite",
-          tabBarIcon: ({ color, size }) => (
-            <HugeiconsIcon icon={FavouriteIcon} color={color} size={size} />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="settings"
-        options={{
-          title: "Settings",
-          tabBarIcon: ({ color, size }) => (
-            <HugeiconsIcon icon={Settings01Icon} color={color} size={size} />
-          ),
-        }}
-      />
-    </Tabs>
+    </>
   );
 }
-
-const styles = StyleSheet.create({
-  adminButton: {
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    borderRadius: 999,
-    backgroundColor: COLORS.surface,
-    width: 34,
-    height: 34,
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: 8,
-  },
-  adminButtonPressed: {
-    opacity: 0.85,
-  },
-});

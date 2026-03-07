@@ -87,7 +87,7 @@ const styles = StyleSheet.create({
   },
   sheet: {
     backgroundColor: COLORS.surface,
-    borderRadius: RADIUS.lg + 4,
+    borderRadius: RADIUS.card,
     borderWidth: 1,
     borderColor: COLORS.border,
     paddingHorizontal: SPACING.lg,
@@ -121,7 +121,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     borderWidth: 1,
     borderColor: COLORS.border,
-    backgroundColor: COLORS.surface,
+    backgroundColor: COLORS.surfaceMuted,
   },
   loginButtonText: {
     color: COLORS.text,

@@ -317,15 +317,16 @@ const styles = StyleSheet.create({
     minHeight: 120,
     borderWidth: 1,
     borderColor: COLORS.border,
-    borderRadius: RADIUS.md,
+    borderRadius: RADIUS.lg,
     backgroundColor: COLORS.surface,
     padding: SPACING.md,
     gap: SPACING.xs,
     justifyContent: "space-between",
+    ...SHADOWS.sm,
   },
   categoryCardActive: {
-    borderColor: COLORS.primary,
-    backgroundColor: "#EEF2FF",
+    borderColor: COLORS.accentBorder,
+    backgroundColor: COLORS.accentSoft,
   },
   categoryName: {
     color: COLORS.text,
@@ -333,14 +334,14 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
   categoryNameActive: {
-    color: COLORS.primary,
+    color: COLORS.accent,
   },
   categorySlug: {
     color: COLORS.mutedText,
     fontSize: 12,
   },
   categorySlugActive: {
-    color: "#4338CA",
+    color: COLORS.accent,
   },
   categoryCount: {
     color: COLORS.text,
@@ -348,7 +349,7 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   categoryCountActive: {
-    color: COLORS.primary,
+    color: COLORS.accent,
   },
   resultsWrap: {
     marginTop: SPACING.sm,
@@ -364,8 +365,10 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
   postCard: {
-    borderRadius: RADIUS.md,
+    borderRadius: RADIUS.lg,
     backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.border,
     padding: SPACING.md,
     gap: SPACING.md,
     flexDirection: "row",
@@ -379,14 +382,14 @@ const styles = StyleSheet.create({
   thumbnail: {
     width: 108,
     height: 84,
-    borderRadius: 10,
-    backgroundColor: "#E5E7EB",
+    borderRadius: RADIUS.md,
+    backgroundColor: COLORS.surfaceSoft,
   },
   thumbnailPlaceholder: {
     width: 108,
     height: 84,
-    borderRadius: 10,
-    backgroundColor: "#E5E7EB",
+    borderRadius: RADIUS.md,
+    backgroundColor: COLORS.surfaceSoft,
   },
   postContent: {
     flex: 1,

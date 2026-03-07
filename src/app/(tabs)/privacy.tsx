@@ -59,8 +59,10 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
   section: {
-    borderRadius: RADIUS.md,
+    borderRadius: RADIUS.lg,
     backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.border,
     padding: SPACING.md,
     gap: SPACING.xs,
     ...SHADOWS.sm,

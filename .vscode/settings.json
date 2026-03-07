@@ -2,9 +2,7 @@
   "json.schemaDownload.enable": false,
   "json.schemas": [
     {
-      "fileMatch": [
-        "/package.json"
-      ],
+      "fileMatch": ["/package.json"],
       "url": "vscode://schemas/package"
     }
   ],
@@ -12,5 +10,6 @@
     "source.fixAll": "explicit",
     "source.organizeImports": "explicit",
     "source.sortMembers": "explicit"
-  }
+  },
+  "git.ignoreLimitWarning": true
 }

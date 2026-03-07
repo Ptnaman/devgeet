@@ -156,7 +156,7 @@ export default function PostDetailsScreen() {
         <HugeiconsIcon
           icon={FavouriteIcon}
           size={18}
-          color={favorite ? "#B91C1C" : COLORS.mutedText}
+          color={favorite ? COLORS.danger : COLORS.mutedText}
         />
         <Text
           style={[
@@ -287,7 +287,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: COLORS.border,
     borderRadius: RADIUS.md,
-    backgroundColor: COLORS.surface,
+    backgroundColor: COLORS.surfaceMuted,
     paddingHorizontal: SPACING.lg,
     paddingVertical: SPACING.sm,
   },
@@ -322,12 +322,12 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     paddingHorizontal: SPACING.md,
     paddingVertical: 6,
-    backgroundColor: COLORS.surface,
+    backgroundColor: COLORS.surfaceMuted,
     marginTop: SPACING.xs,
   },
   favoriteButtonActive: {
-    borderColor: "#FCA5A5",
-    backgroundColor: "#FEF2F2",
+    borderColor: COLORS.dangerBorder,
+    backgroundColor: COLORS.dangerSoft,
   },
   favoriteButtonText: {
     color: COLORS.text,
@@ -335,7 +335,7 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   favoriteButtonTextActive: {
-    color: "#B91C1C",
+    color: COLORS.danger,
   },
   fontControlsRow: {
     marginTop: SPACING.sm,
@@ -359,7 +359,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: COLORS.border,
     borderRadius: RADIUS.md,
-    backgroundColor: COLORS.surface,
+    backgroundColor: COLORS.surfaceMuted,
     paddingHorizontal: SPACING.sm,
     paddingVertical: SPACING.xs,
     alignItems: "center",
@@ -387,7 +387,7 @@ const styles = StyleSheet.create({
     marginTop: SPACING.sm,
     borderWidth: 1,
     borderColor: COLORS.border,
-    borderRadius: RADIUS.md,
+    borderRadius: RADIUS.lg,
     backgroundColor: COLORS.surface,
     padding: SPACING.lg,
   },
@@ -406,7 +406,7 @@ const styles = StyleSheet.create({
   videoFrame: {
     borderWidth: 1,
     borderColor: COLORS.border,
-    borderRadius: RADIUS.md,
+    borderRadius: RADIUS.lg,
     backgroundColor: COLORS.surface,
     overflow: "hidden",
     width: "100%",
@@ -429,7 +429,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: COLORS.border,
     borderRadius: RADIUS.md,
-    backgroundColor: COLORS.surface,
+    backgroundColor: COLORS.surfaceMuted,
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.xs,
   },
