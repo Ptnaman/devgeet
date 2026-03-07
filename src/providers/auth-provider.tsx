@@ -19,6 +19,8 @@ import { Platform } from "react-native";
 import {
   doc,
   getDoc,
+  onSnapshot,
+  runTransaction,
   serverTimestamp,
   setDoc,
   type DocumentData,
@@ -31,8 +33,22 @@ import { loadGoogleSignInModule } from "@/lib/google-signin-loader";
 const USERNAMES_COLLECTION = "usernames";
 const USERS_COLLECTION = "users";
 
+type UserProfile = {
+  uid: string;
+  username: string;
+  usernameLower: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  role: string;
+  provider: string;
+  displayName: string;
+  photoURL: string;
+};
+
 type AuthContextType = {
   user: User | null;
+  profile: UserProfile | null;
   isAdmin: boolean;
   isBootstrapping: boolean;
   loginWithEmailOrUsername: (identifier: string, password: string) => Promise<void>;
@@ -41,6 +57,11 @@ type AuthContextType = {
     lastName: string;
     email: string;
     password: string;
+  }) => Promise<void>;
+  updateCurrentUserProfile: (payload: {
+    firstName: string;
+    lastName: string;
+    username: string;
   }) => Promise<void>;
   loginWithGoogleIdToken: (idToken: string) => Promise<void>;
   logout: () => Promise<void>;
@@ -125,6 +146,87 @@ const getNameParts = (displayName: string | null) => {
   };
 };
 
+const resolveProvider = (currentUser: User | null | undefined) =>
+  currentUser?.providerData.some((item) => item.providerId === "google.com")
+    ? "google"
+    : "password";
+
+const buildUserProfileRecord = (payload: {
+  uid: string;
+  username: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  role: string;
+  provider: string;
+  displayName?: string | null;
+  photoURL?: string | null;
+}): UserProfile => {
+  const normalizedUsername = payload.username.trim();
+  const usernameLower = normalizeUsername(normalizedUsername);
+  const normalizedFirstName = normalizeName(payload.firstName);
+  const normalizedLastName = normalizeName(payload.lastName);
+  const normalizedEmail = normalizeEmail(payload.email);
+  const normalizedRole = normalizeRole(payload.role);
+  const normalizedProvider = payload.provider.trim().toLowerCase() || "password";
+  const normalizedDisplayName =
+    normalizeName(payload.displayName ?? `${normalizedFirstName} ${normalizedLastName}`) ||
+    normalizedUsername;
+
+  return {
+    uid: payload.uid,
+    username: normalizedUsername,
+    usernameLower,
+    firstName: normalizedFirstName,
+    lastName: normalizedLastName,
+    email: normalizedEmail,
+    role: normalizedRole,
+    provider: normalizedProvider,
+    displayName: normalizedDisplayName,
+    photoURL: normalizePhotoUrl(payload.photoURL),
+  };
+};
+
+const createFallbackUserProfile = (currentUser: User): UserProfile => {
+  const normalizedEmail = normalizeEmail(currentUser.email ?? "");
+  const fallbackUsername = getFallbackUsername(normalizedEmail || null, currentUser.uid);
+  const { firstName, lastName } = getNameParts(currentUser.displayName);
+  const effectiveFirstName = normalizeName(firstName || fallbackUsername);
+  const effectiveLastName = normalizeName(lastName);
+
+  return buildUserProfileRecord({
+    uid: currentUser.uid,
+    username: fallbackUsername,
+    firstName: effectiveFirstName,
+    lastName: effectiveLastName,
+    email: normalizedEmail,
+    role: isAdminEmail(normalizedEmail) ? "admin" : "user",
+    provider: resolveProvider(currentUser),
+    displayName: currentUser.displayName,
+    photoURL: currentUser.photoURL,
+  });
+};
+
+const mapUserProfile = (uid: string, data: DocumentData): UserProfile => {
+  const normalizedEmail = normalizeEmail(readStringValue(data?.email));
+  const fallbackUsername = getFallbackUsername(normalizedEmail || null, uid);
+  const username = readStringValue(data?.username) || fallbackUsername;
+  const firstName = readStringValue(data?.firstName) || username;
+  const lastName = readStringValue(data?.lastName);
+
+  return buildUserProfileRecord({
+    uid,
+    username,
+    firstName,
+    lastName,
+    email: normalizedEmail,
+    role: readStringValue(data?.role) || "user",
+    provider: readStringValue(data?.provider) || "password",
+    displayName: readStringValue(data?.displayName),
+    photoURL: readStringValue(data?.photoURL),
+  });
+};
+
 const isUsernameTakenError = (error: unknown) =>
   error instanceof Error && error.message.toLowerCase().includes("already taken");
 
@@ -159,77 +261,79 @@ const writeUserProfile = async (payload: {
   displayName?: string | null;
   photoURL?: string | null;
 }) => {
-  const { uid, username, firstName, lastName, email, role, provider, displayName, photoURL } =
-    payload;
-  const usernameLower = normalizeUsername(username);
-  const normalizedFirstName = normalizeName(firstName);
-  const normalizedLastName = normalizeName(lastName);
-  const normalizedRole = normalizeRole(role);
-  const normalizedDisplayName =
-    normalizeName(displayName ?? `${normalizedFirstName} ${normalizedLastName}`) || username;
-  const normalizedPhotoURL = normalizePhotoUrl(photoURL);
-  const usernameRef = doc(firestore, USERNAMES_COLLECTION, usernameLower);
+  const profileRecord = buildUserProfileRecord(payload);
+  const usernameRef = doc(firestore, USERNAMES_COLLECTION, profileRecord.usernameLower);
   const usernameSnapshot = await getDoc(usernameRef);
 
   if (usernameSnapshot.exists()) {
     const existingUid = (usernameSnapshot.data() as DocumentData)?.uid;
-    if (existingUid && existingUid !== uid) {
+    if (existingUid && existingUid !== profileRecord.uid) {
       throw new Error("Username is already taken.");
     }
   }
 
+  const persistedProfile = {
+    ...profileRecord,
+    photoURL: profileRecord.photoURL || null,
+    updatedAt: serverTimestamp(),
+    lastLoginAt: serverTimestamp(),
+  };
+
   await setDoc(
     usernameRef,
-    {
-      uid,
-      username,
-      usernameLower,
-      firstName: normalizedFirstName,
-      lastName: normalizedLastName,
-      email,
-      role: normalizedRole,
-      provider,
-      displayName: normalizedDisplayName,
-      photoURL: normalizedPhotoURL || null,
-      updatedAt: serverTimestamp(),
-      lastLoginAt: serverTimestamp(),
-    },
+    persistedProfile,
     { merge: true }
   );
 
   await setDoc(
-    doc(firestore, USERS_COLLECTION, uid),
-    {
-      uid,
-      username,
-      usernameLower,
-      firstName: normalizedFirstName,
-      lastName: normalizedLastName,
-      email,
-      role: normalizedRole,
-      provider,
-      displayName: normalizedDisplayName,
-      photoURL: normalizedPhotoURL || null,
-      updatedAt: serverTimestamp(),
-      lastLoginAt: serverTimestamp(),
-    },
+    doc(firestore, USERS_COLLECTION, profileRecord.uid),
+    persistedProfile,
     { merge: true }
   );
 };
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
+  const [profile, setProfile] = useState<UserProfile | null>(null);
   const [authReady, setAuthReady] = useState(false);
   const isAdmin = isAdminEmail(user?.email);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (nextUser) => {
       setUser(nextUser);
+      if (!nextUser) {
+        setProfile(null);
+      }
       setAuthReady(true);
     });
 
     return unsubscribe;
   }, []);
+
+  useEffect(() => {
+    if (!user) {
+      setProfile(null);
+      return;
+    }
+
+    const profileRef = doc(firestore, USERS_COLLECTION, user.uid);
+    const unsubscribe = onSnapshot(
+      profileRef,
+      (snapshot) => {
+        if (snapshot.exists()) {
+          setProfile(mapUserProfile(user.uid, snapshot.data() as DocumentData));
+          return;
+        }
+
+        setProfile(createFallbackUserProfile(user));
+      },
+      () => {
+        setProfile(createFallbackUserProfile(user));
+      }
+    );
+
+    return unsubscribe;
+  }, [user]);
 
   const loginWithEmailOrUsername = async (identifier: string, password: string) => {
     const normalizedIdentifier = identifier.trim();
@@ -280,6 +384,86 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch (error) {
       throw mapEmailSignupError(error);
     }
+  };
+
+  const updateCurrentUserProfile = async (payload: {
+    firstName: string;
+    lastName: string;
+    username: string;
+  }) => {
+    const currentUser = auth.currentUser;
+
+    if (!currentUser) {
+      throw new Error("You must be logged in to update your profile.");
+    }
+
+    validateName("First name", payload.firstName);
+    validateName("Last name", payload.lastName);
+    validateUsername(payload.username);
+
+    const existingProfile = profile ?? createFallbackUserProfile(currentUser);
+    const normalizedEmail = normalizeEmail(existingProfile.email || currentUser.email || "");
+
+    if (!normalizedEmail) {
+      throw new Error("Unable to determine your account email.");
+    }
+
+    const nextProfile = buildUserProfileRecord({
+      uid: currentUser.uid,
+      username: payload.username,
+      firstName: payload.firstName,
+      lastName: payload.lastName,
+      email: normalizedEmail,
+      role: existingProfile.role || (isAdminEmail(normalizedEmail) ? "admin" : "user"),
+      provider: existingProfile.provider || resolveProvider(currentUser),
+      displayName: `${payload.firstName.trim()} ${payload.lastName.trim()}`.trim(),
+      photoURL: currentUser.photoURL ?? existingProfile.photoURL,
+    });
+
+    await runTransaction(firestore, async (transaction) => {
+      const userRef = doc(firestore, USERS_COLLECTION, currentUser.uid);
+      const nextUsernameRef = doc(
+        firestore,
+        USERNAMES_COLLECTION,
+        nextProfile.usernameLower
+      );
+      const userSnapshot = await transaction.get(userRef);
+      const nextUsernameSnapshot = await transaction.get(nextUsernameRef);
+      const dbProfile = userSnapshot.exists()
+        ? mapUserProfile(currentUser.uid, userSnapshot.data() as DocumentData)
+        : existingProfile;
+      const existingUsernameLower =
+        dbProfile.usernameLower || normalizeUsername(dbProfile.username);
+      const lastLoginAt =
+        (userSnapshot.exists() ? (userSnapshot.data() as DocumentData)?.lastLoginAt : null) ??
+        serverTimestamp();
+
+      if (nextUsernameSnapshot.exists()) {
+        const existingUid = (nextUsernameSnapshot.data() as DocumentData)?.uid;
+        if (existingUid && existingUid !== currentUser.uid) {
+          throw new Error("Username is already taken.");
+        }
+      }
+
+      const persistedProfile = {
+        ...nextProfile,
+        photoURL: nextProfile.photoURL || null,
+        updatedAt: serverTimestamp(),
+        lastLoginAt,
+      };
+
+      transaction.set(userRef, persistedProfile, { merge: true });
+      transaction.set(nextUsernameRef, persistedProfile, { merge: true });
+
+      if (existingUsernameLower && existingUsernameLower !== nextProfile.usernameLower) {
+        transaction.delete(doc(firestore, USERNAMES_COLLECTION, existingUsernameLower));
+      }
+    });
+
+    await updateProfile(currentUser, {
+      displayName: nextProfile.displayName,
+    });
+    setProfile(nextProfile);
   };
 
   const persistGoogleUserProfile = async (googleUser: User) => {
@@ -375,10 +559,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const value: AuthContextType = {
     user,
+    profile,
     isAdmin,
     isBootstrapping: !authReady,
     loginWithEmailOrUsername,
     signupWithEmail,
+    updateCurrentUserProfile,
     loginWithGoogleIdToken,
     logout,
   };
