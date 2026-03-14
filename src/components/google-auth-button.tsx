@@ -26,6 +26,8 @@ type GoogleSignInResponse = {
   idToken?: string | null;
 };
 
+type OneTapFlowMode = "auto" | "explicit";
+
 function GoogleLogo({ size = 20 }: { size?: number }) {
   return (
     <Svg width={size} height={size} viewBox="0 0 18 18" accessibilityRole="image">
@@ -137,7 +139,7 @@ export function GoogleAuthButton({
     isGoogleConfigured,
   ]);
 
-  const runOneTapFlow = useCallback(async () => {
+  const runOneTapFlow = useCallback(async (mode: OneTapFlowMode) => {
     if (!googleSignInModule?.GoogleOneTapSignIn) {
       return null;
     }
@@ -153,6 +155,11 @@ export function GoogleAuthButton({
       await GoogleOneTapSignIn.checkPlayServices(true);
     } else {
       await GoogleOneTapSignIn.checkPlayServices();
+    }
+
+    if (mode === "explicit") {
+      const explicitResponse = await GoogleOneTapSignIn.presentExplicitSignIn();
+      return isSuccessResponse(explicitResponse as never) ? explicitResponse : null;
     }
 
     try {
@@ -189,7 +196,7 @@ export function GoogleAuthButton({
     }
   }, [googleSignInModule]);
 
-  const handlePress = useCallback(async () => {
+  const startGoogleSignIn = useCallback(async (mode: OneTapFlowMode) => {
     if (isWeb && !hasOneTapApi) {
       onError(
         "One Tap requires Universal Sign-In package. Configure private registry and reinstall."
@@ -217,7 +224,7 @@ export function GoogleAuthButton({
       onError("");
 
       if (hasOneTapApi) {
-        const oneTapResponse = await runOneTapFlow();
+        const oneTapResponse = await runOneTapFlow(mode);
         if (!oneTapResponse) {
           return;
         }
@@ -285,6 +292,10 @@ export function GoogleAuthButton({
     runOneTapFlow,
   ]);
 
+  const handlePress = useCallback(() => {
+    void startGoogleSignIn("explicit");
+  }, [startGoogleSignIn]);
+
   useEffect(() => {
     if (!autoPrompt || hasAutoPromptedRef.current) {
       return;
@@ -299,14 +310,14 @@ export function GoogleAuthButton({
     }
 
     hasAutoPromptedRef.current = true;
-    void handlePress();
+    void startGoogleSignIn("auto");
   }, [
     autoPrompt,
-    handlePress,
     hasNativeGoogleSignIn,
     hasOneTapApi,
     isGoogleConfigured,
     isWeb,
+    startGoogleSignIn,
   ]);
 
   return (

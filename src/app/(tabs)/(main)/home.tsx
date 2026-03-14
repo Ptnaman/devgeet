@@ -79,13 +79,6 @@ export default function HomeScreen() {
             <View key={item} style={styles.card}>
               <View style={styles.cardBody}>
                 <SkeletonBlock height={156} borderRadius={RADIUS.md} />
-                <View style={styles.cardTagRow}>
-                  <SkeletonBlock
-                    width={88}
-                    height={24}
-                    borderRadius={RADIUS.pill}
-                  />
-                </View>
                 <SkeletonBlock width="82%" height={24} />
                 <SkeletonBlock width="68%" height={24} />
                 <SkeletonBlock width="100%" height={16} borderRadius={RADIUS.sm} />
@@ -111,11 +104,6 @@ export default function HomeScreen() {
             const thumbnailUrl = getPostCardThumbnailUrl(post);
             const favorite = isFavorite(post.id);
             const updatedLabel = formatDate(post.uploadDate || post.createDate);
-            const categoryLabel = (post.category.trim() || "general")
-              .split(/[\s-]+/)
-              .filter(Boolean)
-              .map((word) => `${word.charAt(0).toUpperCase()}${word.slice(1)}`)
-              .join(" ");
 
             return (
               <View key={post.id} style={styles.card}>
@@ -133,9 +121,6 @@ export default function HomeScreen() {
                       resizeMode="cover"
                     />
                   ) : null}
-                  <View style={styles.cardTagRow}>
-                    <Text style={styles.categoryBadge}>{categoryLabel}</Text>
-                  </View>
                   <Text style={styles.cardTitle} numberOfLines={3} ellipsizeMode="tail">
                     {post.title}
                   </Text>
@@ -209,23 +194,6 @@ const styles = StyleSheet.create({
     height: 156,
     borderRadius: RADIUS.md,
     backgroundColor: COLORS.surfaceSoft,
-  },
-  cardTagRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  categoryBadge: {
-    alignSelf: "flex-start",
-    borderWidth: 1,
-    borderColor: COLORS.accentBorder,
-    borderRadius: 999,
-    paddingHorizontal: SPACING.sm,
-    paddingVertical: 3,
-    backgroundColor: COLORS.accentSoft,
-    color: COLORS.accent,
-    fontSize: 11,
-    fontWeight: "700",
   },
   cardTitle: {
     fontSize: 17,

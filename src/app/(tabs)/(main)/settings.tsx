@@ -1,8 +1,8 @@
+import { ArrowRight01Icon } from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react-native";
 import Constants from "expo-constants";
 import { useRouter } from "expo-router";
 import { useState } from "react";
-import { HugeiconsIcon } from "@hugeicons/react-native";
-import { ArrowRight01Icon } from "@hugeicons/core-free-icons";
 import {
   Alert,
   Image,
@@ -22,7 +22,7 @@ const APP_LINKS = {
   terms: "https://devgeet.com/terms/",
   disclaimer: "https://devgeet.com/disclaimer/",
   contact: "https://devgeet.com/contact/",
-  privacy: "https://devgeet.com/privacy-policy/",
+  privacy: "https://devgeet.com/privacy/",
   whatsapp: "https://chat.whatsapp.com/DHaKK4v5UOJLTCI5JuMwY1",
   email: "naman@devgeet.com",
 } as const;
@@ -37,7 +37,13 @@ type SettingItem = {
   disabled?: boolean;
 };
 
-function SettingRow({ item, isLast = false }: { item: SettingItem; isLast?: boolean }) {
+function SettingRow({
+  item,
+  isLast = false,
+}: {
+  item: SettingItem;
+  isLast?: boolean;
+}) {
   return (
     <Pressable
       style={({ pressed }) => [
@@ -51,7 +57,12 @@ function SettingRow({ item, isLast = false }: { item: SettingItem; isLast?: bool
     >
       <View style={styles.rowContent}>
         <View style={styles.rowTextWrap}>
-          <Text style={[styles.rowTitle, item.destructive && styles.rowTitleDestructive]}>
+          <Text
+            style={[
+              styles.rowTitle,
+              item.destructive && styles.rowTitleDestructive,
+            ]}
+          >
             {item.title}
           </Text>
           {item.subtitle ? (
@@ -67,7 +78,11 @@ function SettingRow({ item, isLast = false }: { item: SettingItem; isLast?: bool
               {item.value}
             </Text>
           ) : null}
-          <HugeiconsIcon icon={ArrowRight01Icon} size={20} color={COLORS.subtleText} />
+          <HugeiconsIcon
+            icon={ArrowRight01Icon}
+            size={20}
+            color={COLORS.subtleText}
+          />
         </View>
       </View>
     </Pressable>
@@ -81,8 +96,8 @@ export default function SettingsScreen() {
 
   const appName = Constants.expoConfig?.name ?? "DevGeet";
   const appVersion = Constants.expoConfig?.version ?? "1.0.0";
-  const accountName = profile?.displayName || user?.displayName || user?.email || "User";
-  const accountEmail = profile?.email || user?.email || APP_LINKS.email;
+  const accountName =
+    profile?.displayName || user?.displayName || user?.email || "User";
   const accountInitials =
     accountName
       .split(/\s+/)
@@ -91,7 +106,6 @@ export default function SettingsScreen() {
       .map((part) => part.charAt(0).toUpperCase())
       .join("") || "U";
   const avatarUri = profile?.photoURL || user?.photoURL || "";
-  const usernameLabel = profile?.username ? `@${profile.username}` : accountEmail;
 
   const openExternal = async (url: string, label: string) => {
     try {
@@ -117,7 +131,10 @@ export default function SettingsScreen() {
     try {
       await Linking.openURL(mailtoUrl);
     } catch {
-      Alert.alert(label, `Mail app not available. Please write to ${APP_LINKS.email}.`);
+      Alert.alert(
+        label,
+        `Mail app not available. Please write to ${APP_LINKS.email}.`,
+      );
     }
   };
 
@@ -135,19 +152,16 @@ export default function SettingsScreen() {
     {
       key: "privacy",
       title: "Privacy Policy",
-      subtitle: "https://devgeet.com/privacy-policy/",
       onPress: () => openExternal(APP_LINKS.privacy, "Privacy Policy"),
     },
     {
       key: "terms",
       title: "Terms & Conditions",
-      subtitle: "https://devgeet.com/terms/",
       onPress: () => openExternal(APP_LINKS.terms, "Terms & Conditions"),
     },
     {
       key: "disclaimer",
       title: "Disclaimer",
-      subtitle: "https://devgeet.com/disclaimer/",
       onPress: () => openExternal(APP_LINKS.disclaimer, "Disclaimer"),
     },
   ];
@@ -156,7 +170,6 @@ export default function SettingsScreen() {
     {
       key: "contact-page",
       title: "Contact Us",
-      subtitle: "https://devgeet.com/contact/",
       onPress: () => openExternal(APP_LINKS.contact, "Contact Us"),
     },
     {
@@ -184,7 +197,10 @@ export default function SettingsScreen() {
       showsVerticalScrollIndicator={false}
     >
       <Pressable
-        style={({ pressed }) => [styles.profileCard, pressed && styles.cardPressed]}
+        style={({ pressed }) => [
+          styles.profileCard,
+          pressed && styles.cardPressed,
+        ]}
         onPress={() => router.push("/profile")}
       >
         <View style={styles.avatarWrap}>
@@ -200,26 +216,16 @@ export default function SettingsScreen() {
             {accountName}
           </Text>
           <Text style={styles.profileSubtitle} numberOfLines={1}>
-            {usernameLabel}
+            Edit Profile
           </Text>
         </View>
 
-        <HugeiconsIcon icon={ArrowRight01Icon} size={22} color={COLORS.subtleText} />
-      </Pressable>
-
-      <View style={styles.groupCard}>
-        <SettingRow
-          item={{
-            key: "language",
-            title: "Language",
-            value: "English",
-            subtitle: "App display language",
-            onPress: () =>
-              Alert.alert("Language", "English is currently the only language available."),
-          }}
-          isLast
+        <HugeiconsIcon
+          icon={ArrowRight01Icon}
+          size={22}
+          color={COLORS.subtleText}
         />
-      </View>
+      </Pressable>
 
       <Text style={styles.sectionLabel}>Legal</Text>
       <View style={styles.groupCard}>
@@ -249,7 +255,6 @@ export default function SettingsScreen() {
           item={{
             key: "about",
             title: `About ${appName}`,
-            subtitle: APP_LINKS.home,
             value: `v${appVersion}`,
             onPress: () => openExternal(APP_LINKS.home, `About ${appName}`),
           }}
@@ -262,7 +267,6 @@ export default function SettingsScreen() {
           item={{
             key: "logout",
             title: isSubmitting ? "Logging out..." : "Logout",
-            subtitle: accountEmail,
             onPress: handleLogout,
             destructive: true,
             disabled: isSubmitting,
@@ -276,17 +280,17 @@ export default function SettingsScreen() {
 
 const styles = StyleSheet.create({
   container: {
-    padding: SPACING.xl,
+    padding: SPACING.xxl,
     paddingBottom: SPACING.xxl * 2,
-    gap: SPACING.lg,
+    gap: SPACING.md,
     backgroundColor: COLORS.background,
   },
   profileCard: {
     flexDirection: "row",
     alignItems: "center",
-    gap: SPACING.md,
-    paddingHorizontal: SPACING.lg,
-    paddingVertical: SPACING.lg,
+    gap: SPACING.sm,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.md,
     borderRadius: RADIUS.card,
     backgroundColor: COLORS.surface,
     borderWidth: 1,
@@ -297,9 +301,9 @@ const styles = StyleSheet.create({
     opacity: 0.92,
   },
   avatarWrap: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     backgroundColor: COLORS.surfaceSoft,
     alignItems: "center",
     justifyContent: "center",
@@ -311,30 +315,30 @@ const styles = StyleSheet.create({
   },
   avatarText: {
     color: COLORS.text,
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: "700",
   },
   profileTextWrap: {
     flex: 1,
-    gap: 4,
+    gap: 2,
   },
   profileName: {
     color: COLORS.text,
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: "700",
   },
   profileSubtitle: {
     color: COLORS.mutedText,
-    fontSize: 13,
+    fontSize: 12,
   },
   sectionLabel: {
-    paddingHorizontal: SPACING.sm,
+    paddingHorizontal: 2,
     color: COLORS.mutedText,
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: "500",
   },
   groupCard: {
-    borderRadius: RADIUS.card,
+    borderRadius: RADIUS.md,
     backgroundColor: COLORS.surface,
     borderWidth: 1,
     borderColor: COLORS.border,
@@ -364,11 +368,11 @@ const styles = StyleSheet.create({
   },
   rowTextWrap: {
     flex: 1,
-    gap: 4,
+    gap: 2,
   },
   rowTitle: {
     color: COLORS.text,
-    fontSize: 17,
+    fontSize: 16,
     fontWeight: "600",
   },
   rowTitleDestructive: {
@@ -376,8 +380,8 @@ const styles = StyleSheet.create({
   },
   rowSubtitle: {
     color: COLORS.mutedText,
-    fontSize: 13,
-    lineHeight: 18,
+    fontSize: 12,
+    lineHeight: 16,
   },
   rowRight: {
     flexDirection: "row",
@@ -387,6 +391,6 @@ const styles = StyleSheet.create({
   },
   rowValue: {
     color: COLORS.subtleText,
-    fontSize: 16,
+    fontSize: 15,
   },
 });

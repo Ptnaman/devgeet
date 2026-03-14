@@ -39,7 +39,7 @@ export const RADIUS = {
   lg: 26,
   xl: 30,
   input: 18,
-  card: 26,
+  card: 16,
   pill: 999,
 };
 

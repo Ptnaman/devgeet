@@ -541,11 +541,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try {
         const googleSignInModule = loadGoogleSignInModule();
         if (googleSignInModule) {
+          const signOutOperations = [googleSignInModule.GoogleSignin.signOut()];
+
           if (googleSignInModule.GoogleOneTapSignIn) {
-            await googleSignInModule.GoogleOneTapSignIn.signOut();
-          } else {
-            await googleSignInModule.GoogleSignin.signOut();
+            signOutOperations.push(googleSignInModule.GoogleOneTapSignIn.signOut());
           }
+
+          await Promise.allSettled(signOutOperations);
         }
       } catch {
         // Ignore if Google sign-in is not active on this device/session.

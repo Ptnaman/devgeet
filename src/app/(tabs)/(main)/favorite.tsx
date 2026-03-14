@@ -20,7 +20,6 @@ import {
 
 import { COLORS, FONT_SIZE, RADIUS, SHADOWS, SPACING } from "@/constants/theme";
 import {
-  formatDate,
   getPostCardThumbnailUrl,
   mapPostRecord,
   POSTS_COLLECTION,
@@ -128,12 +127,6 @@ export default function FavoriteScreen() {
       {favoritePosts.map((post) => {
         const thumbnailUrl = getPostCardThumbnailUrl(post);
         const favorite = isFavorite(post.id);
-        const updatedLabel = formatDate(post.uploadDate || post.createDate);
-        const categoryLabel = (post.category.trim() || "general")
-          .split(/[\s-]+/)
-          .filter(Boolean)
-          .map((word) => `${word.charAt(0).toUpperCase()}${word.slice(1)}`)
-          .join(" ");
 
         return (
           <View key={post.id} style={styles.card}>
@@ -155,11 +148,6 @@ export default function FavoriteScreen() {
                 )}
 
                 <View style={styles.cardContent}>
-                  <View style={styles.cardHeaderRow}>
-                    <Text style={styles.categoryBadge}>{categoryLabel}</Text>
-                    <Text style={styles.meta}>Updated {updatedLabel}</Text>
-                  </View>
-
                   <Text style={styles.cardTitle} numberOfLines={2} ellipsizeMode="tail">
                     {post.title}
                   </Text>
@@ -212,7 +200,6 @@ const styles = StyleSheet.create({
   },
   headerCard: {
     backgroundColor: COLORS.surface,
-    borderRadius: RADIUS.lg,
     padding: SPACING.lg,
     borderWidth: 1,
     borderColor: COLORS.border,
@@ -295,7 +282,7 @@ const styles = StyleSheet.create({
   },
   card: {
     backgroundColor: COLORS.surface,
-    borderRadius: RADIUS.lg,
+    borderRadius: RADIUS.xs,
     padding: SPACING.md,
     borderWidth: 1,
     borderColor: COLORS.border,
@@ -315,7 +302,7 @@ const styles = StyleSheet.create({
   thumbnail: {
     width: 96,
     height: 108,
-    borderRadius: RADIUS.md,
+    borderRadius: RADIUS.xs,
     backgroundColor: COLORS.surfaceSoft,
   },
   thumbnailFallback: {
@@ -333,24 +320,6 @@ const styles = StyleSheet.create({
     minHeight: 108,
     justifyContent: "space-between",
     gap: SPACING.sm,
-  },
-  cardHeaderRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: SPACING.sm,
-  },
-  categoryBadge: {
-    alignSelf: "flex-start",
-    borderWidth: 1,
-    borderColor: COLORS.accentBorder,
-    borderRadius: 999,
-    paddingHorizontal: SPACING.sm,
-    paddingVertical: 3,
-    backgroundColor: COLORS.accentSoft,
-    color: COLORS.accent,
-    fontSize: 11,
-    fontWeight: "700",
   },
   cardFooterRow: {
     flexDirection: "row",
@@ -391,11 +360,5 @@ const styles = StyleSheet.create({
   },
   favoriteButtonTextActive: {
     color: COLORS.danger,
-  },
-  meta: {
-    fontSize: 12,
-    color: COLORS.mutedText,
-    flexShrink: 1,
-    textAlign: "right",
   },
 });

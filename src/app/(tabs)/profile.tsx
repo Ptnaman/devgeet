@@ -196,7 +196,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.background,
   },
   heroCard: {
-    borderRadius: RADIUS.lg,
+    borderRadius: RADIUS.xs,
     backgroundColor: COLORS.surface,
     padding: SPACING.lg,
     gap: SPACING.xs,

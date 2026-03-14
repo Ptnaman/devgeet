@@ -343,7 +343,7 @@ const styles = StyleSheet.create({
     minHeight: 120,
     borderWidth: 1,
     borderColor: COLORS.border,
-    borderRadius: RADIUS.lg,
+    borderRadius: RADIUS.xs,
     backgroundColor: COLORS.surface,
     padding: SPACING.md,
     gap: SPACING.xs,
@@ -391,7 +391,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
   postCard: {
-    borderRadius: RADIUS.lg,
+    borderRadius: RADIUS.sm,
     backgroundColor: COLORS.surface,
     borderWidth: 1,
     borderColor: COLORS.border,
@@ -408,7 +408,7 @@ const styles = StyleSheet.create({
   thumbnail: {
     width: 108,
     height: 84,
-    borderRadius: RADIUS.md,
+    borderRadius: RADIUS.xs,
     backgroundColor: COLORS.surfaceSoft,
   },
   thumbnailPlaceholder: {

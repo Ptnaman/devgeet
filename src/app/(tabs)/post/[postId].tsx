@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
+  Image,
   Linking,
   Pressable,
   ScrollView,
@@ -17,6 +18,7 @@ import YoutubePlayer from "react-native-youtube-iframe";
 import { COLORS, FONT_SIZE, RADIUS, SPACING } from "@/constants/theme";
 import {
   formatDate,
+  getPostCardThumbnailUrl,
   getYouTubeVideoId,
   mapPostRecord,
   POSTS_COLLECTION,
@@ -28,8 +30,9 @@ import { firestore } from "@/lib/firebase";
 const resolvePostId = (value: string | string[] | undefined) =>
   typeof value === "string" ? value : "";
 const MIN_LYRICS_FONT_SIZE = 14;
-const MAX_LYRICS_FONT_SIZE = 30;
-const DEFAULT_LYRICS_FONT_SIZE = FONT_SIZE.body;
+const MAX_LYRICS_FONT_SIZE = 18;
+const DEFAULT_LYRICS_FONT_SIZE = 16;
+const LYRICS_FONT_STEP = 1;
 
 export default function PostDetailsScreen() {
   const router = useRouter();
@@ -97,11 +100,11 @@ export default function PostDetailsScreen() {
   };
 
   const handleDecreaseLyricsFontSize = () => {
-    setLyricsFontSize((value) => Math.max(MIN_LYRICS_FONT_SIZE, value - 1));
+    setLyricsFontSize((value) => Math.max(MIN_LYRICS_FONT_SIZE, value - LYRICS_FONT_STEP));
   };
 
   const handleIncreaseLyricsFontSize = () => {
-    setLyricsFontSize((value) => Math.min(MAX_LYRICS_FONT_SIZE, value + 1));
+    setLyricsFontSize((value) => Math.min(MAX_LYRICS_FONT_SIZE, value + LYRICS_FONT_STEP));
   };
 
   const updateLabel = useMemo(() => {
@@ -109,6 +112,23 @@ export default function PostDetailsScreen() {
       return "-";
     }
     return formatDate(post.uploadDate || post.createDate);
+  }, [post]);
+
+  const categoryLabel = useMemo(() => {
+    const value = post?.category.trim() || "general";
+    return value
+      .split(/[\s-]+/)
+      .filter(Boolean)
+      .map((word) => `${word.charAt(0).toUpperCase()}${word.slice(1)}`)
+      .join(" ");
+  }, [post?.category]);
+
+  const thumbnailUrl = useMemo(() => {
+    if (!post) {
+      return "";
+    }
+
+    return getPostCardThumbnailUrl(post);
   }, [post]);
 
   if (isLoading) {
@@ -139,77 +159,88 @@ export default function PostDetailsScreen() {
   const canIncreaseLyricsSize = lyricsFontSize < MAX_LYRICS_FONT_SIZE;
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
+    <ScrollView
+      contentContainerStyle={styles.container}
+      showsVerticalScrollIndicator={false}
+    >
+      {thumbnailUrl ? (
+        <Image source={{ uri: thumbnailUrl }} style={styles.thumbnail} resizeMode="cover" />
+      ) : null}
+
       <Text style={styles.title}>{post.title}</Text>
-      <Text style={styles.meta}>Last update: {updateLabel}</Text>
-      <Text style={styles.meta}>Category: {post.category}</Text>
+      <Text style={styles.meta}>
+        {categoryLabel} · {updateLabel}
+      </Text>
 
-      <Pressable
-        style={[
-          styles.favoriteButton,
-          favorite ? styles.favoriteButtonActive : undefined,
-        ]}
-        onPress={() => {
-          void handleToggleFavorite();
-        }}
-      >
-        <HugeiconsIcon
-          icon={FavouriteIcon}
-          size={18}
-          color={favorite ? COLORS.danger : COLORS.mutedText}
-        />
-        <Text
+      <View style={styles.actionRow}>
+        <Pressable
           style={[
-            styles.favoriteButtonText,
-            favorite ? styles.favoriteButtonTextActive : undefined,
+            styles.favoriteButton,
+            favorite ? styles.favoriteButtonActive : undefined,
           ]}
+          onPress={() => {
+            void handleToggleFavorite();
+          }}
         >
-          {favorite ? "Unfav" : "Add to Fav"}
-        </Text>
-      </Pressable>
+          <HugeiconsIcon
+            icon={FavouriteIcon}
+            size={18}
+            color={favorite ? COLORS.danger : COLORS.mutedText}
+          />
+          <Text
+            style={[
+              styles.favoriteButtonText,
+              favorite ? styles.favoriteButtonTextActive : undefined,
+            ]}
+          >
+            {favorite ? "Saved" : "Save"}
+          </Text>
+        </Pressable>
 
-      <View style={styles.fontControlsRow}>
-        <Text style={styles.fontControlsLabel}>Lyrics Size</Text>
-        <View style={styles.fontControlsActions}>
-          <Pressable
-            style={[
-              styles.fontButton,
-              !canDecreaseLyricsSize && styles.fontButtonDisabled,
-            ]}
-            onPress={handleDecreaseLyricsFontSize}
-            disabled={!canDecreaseLyricsSize}
-          >
-            <Text
-              style={[
-                styles.fontButtonText,
-                !canDecreaseLyricsSize && styles.fontButtonTextDisabled,
+        <View style={styles.fontControlsWrap}>
+          <View style={styles.fontControlsActions}>
+            <Pressable
+              style={({ pressed }) => [
+                styles.fontButton,
+                pressed && styles.fontButtonPressed,
+                !canDecreaseLyricsSize && styles.fontButtonDisabled,
               ]}
+              onPress={handleDecreaseLyricsFontSize}
+              disabled={!canDecreaseLyricsSize}
             >
-              A-
-            </Text>
-          </Pressable>
-          <Text style={styles.fontValue}>{Math.round(lyricsFontSize)}</Text>
-          <Pressable
-            style={[
-              styles.fontButton,
-              !canIncreaseLyricsSize && styles.fontButtonDisabled,
-            ]}
-            onPress={handleIncreaseLyricsFontSize}
-            disabled={!canIncreaseLyricsSize}
-          >
-            <Text
-              style={[
-                styles.fontButtonText,
-                !canIncreaseLyricsSize && styles.fontButtonTextDisabled,
+              <Text
+                style={[
+                  styles.fontButtonText,
+                  !canDecreaseLyricsSize && styles.fontButtonTextDisabled,
+                ]}
+              >
+                A-
+              </Text>
+            </Pressable>
+            <Text style={styles.fontValue}>{Math.round(lyricsFontSize)}</Text>
+            <Pressable
+              style={({ pressed }) => [
+                styles.fontButton,
+                pressed && styles.fontButtonPressed,
+                !canIncreaseLyricsSize && styles.fontButtonDisabled,
               ]}
+              onPress={handleIncreaseLyricsFontSize}
+              disabled={!canIncreaseLyricsSize}
             >
-              A+
-            </Text>
-          </Pressable>
+              <Text
+                style={[
+                  styles.fontButtonText,
+                  !canIncreaseLyricsSize && styles.fontButtonTextDisabled,
+                ]}
+              >
+                A+
+              </Text>
+            </Pressable>
+          </View>
         </View>
       </View>
 
-      <View style={styles.contentWrap}>
+      <View style={styles.contentCard}>
         <Text
           style={[
             styles.content,
@@ -219,13 +250,13 @@ export default function PostDetailsScreen() {
             },
           ]}
         >
-          {post.content}
+          {post.content.trim() || "Lyrics are not available for this post yet."}
         </Text>
       </View>
 
       {youtubeVideoId ? (
-        <View style={styles.videoSection}>
-          <Text style={styles.videoTitle}>YouTube Video</Text>
+        <View style={styles.videoCard}>
+          <Text style={styles.videoTitle}>Video</Text>
           <View style={styles.videoFrame}>
             <YoutubePlayer
               height={220}
@@ -238,24 +269,23 @@ export default function PostDetailsScreen() {
               }}
             />
           </View>
-          {youtubePlayerError ? (
-            <View style={styles.videoErrorWrap}>
-              <Text style={styles.videoErrorText}>
-                Inline player error: {youtubePlayerError}
-              </Text>
-              <Pressable
-                style={({ pressed }) => [
-                  styles.openYoutubeButton,
-                  pressed && styles.openYoutubeButtonPressed,
-                ]}
-                onPress={() => {
-                  void handleOpenInYouTube(post.youtubeVideoUrl);
-                }}
-              >
-                <Text style={styles.openYoutubeButtonText}>Open in YouTube</Text>
-              </Pressable>
-            </View>
-          ) : null}
+
+          <View style={styles.videoErrorWrap}>
+            {youtubePlayerError ? (
+              <Text style={styles.videoErrorText}>Video not playing here.</Text>
+            ) : null}
+            <Pressable
+              style={({ pressed }) => [
+                styles.openYoutubeButton,
+                pressed && styles.openYoutubeButtonPressed,
+              ]}
+              onPress={() => {
+                void handleOpenInYouTube(post.youtubeVideoUrl);
+              }}
+            >
+              <Text style={styles.openYoutubeButtonText}>Open in YouTube</Text>
+            </Pressable>
+          </View>
         </View>
       ) : null}
     </ScrollView>
@@ -300,17 +330,41 @@ const styles = StyleSheet.create({
   },
   container: {
     padding: SPACING.xl,
-    gap: SPACING.sm,
+    paddingBottom: SPACING.xxl * 2,
+    gap: SPACING.md,
     backgroundColor: COLORS.background,
   },
+  thumbnail: {
+    width: "100%",
+    aspectRatio: 16 / 9,
+    borderRadius: 4,
+    overflow: "hidden",
+    backgroundColor: COLORS.surfaceSoft,
+  },
   title: {
-    fontSize: FONT_SIZE.title,
+    fontSize: 22,
     fontWeight: "700",
     color: COLORS.text,
+    lineHeight: 30,
   },
   meta: {
-    fontSize: 12,
     color: COLORS.mutedText,
+    fontSize: 12,
+  },
+  actionRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: SPACING.sm,
+    flexWrap: "wrap",
+  },
+  contentCard: {
+    borderRadius: RADIUS.sm,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.surface,
+    padding: SPACING.md,
+    gap: SPACING.md,
   },
   favoriteButton: {
     alignSelf: "flex-start",
@@ -321,9 +375,8 @@ const styles = StyleSheet.create({
     borderColor: COLORS.border,
     borderRadius: 999,
     paddingHorizontal: SPACING.md,
-    paddingVertical: 6,
+    paddingVertical: 8,
     backgroundColor: COLORS.surfaceMuted,
-    marginTop: SPACING.xs,
   },
   favoriteButtonActive: {
     borderColor: COLORS.dangerBorder,
@@ -337,40 +390,33 @@ const styles = StyleSheet.create({
   favoriteButtonTextActive: {
     color: COLORS.danger,
   },
-  fontControlsRow: {
-    marginTop: SPACING.sm,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: SPACING.sm,
-  },
-  fontControlsLabel: {
-    color: COLORS.text,
-    fontSize: 13,
-    fontWeight: "600",
+  fontControlsWrap: {
+    marginLeft: "auto",
+    alignItems: "flex-end",
   },
   fontControlsActions: {
     flexDirection: "row",
     alignItems: "center",
     gap: SPACING.xs,
+    paddingHorizontal: SPACING.xs,
+    paddingVertical: 2,
   },
   fontButton: {
-    minWidth: 36,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    borderRadius: RADIUS.md,
-    backgroundColor: COLORS.surfaceMuted,
-    paddingHorizontal: SPACING.sm,
-    paddingVertical: SPACING.xs,
+    minWidth: 30,
+    minHeight: 28,
+    paddingHorizontal: SPACING.xs,
     alignItems: "center",
     justifyContent: "center",
   },
+  fontButtonPressed: {
+    opacity: 0.7,
+  },
   fontButtonDisabled: {
-    opacity: 0.45,
+    opacity: 0.35,
   },
   fontButtonText: {
     color: COLORS.text,
-    fontSize: 12,
+    fontSize: 16,
     fontWeight: "700",
   },
   fontButtonTextDisabled: {
@@ -380,27 +426,23 @@ const styles = StyleSheet.create({
     minWidth: 24,
     textAlign: "center",
     color: COLORS.text,
-    fontSize: 12,
-    fontWeight: "600",
-  },
-  contentWrap: {
-    marginTop: SPACING.sm,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    borderRadius: RADIUS.lg,
-    backgroundColor: COLORS.surface,
-    padding: SPACING.lg,
+    fontSize: 13,
+    fontWeight: "700",
   },
   content: {
     color: COLORS.text,
   },
-  videoSection: {
-    marginTop: SPACING.sm,
-    gap: SPACING.xs,
+  videoCard: {
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.surface,
+    padding: SPACING.md,
+    gap: SPACING.sm,
   },
   videoTitle: {
     color: COLORS.text,
-    fontSize: FONT_SIZE.body,
+    fontSize: 16,
     fontWeight: "700",
   },
   videoFrame: {
@@ -428,16 +470,16 @@ const styles = StyleSheet.create({
     alignSelf: "flex-start",
     borderWidth: 1,
     borderColor: COLORS.border,
-    borderRadius: RADIUS.md,
+    borderRadius: 999,
     backgroundColor: COLORS.surfaceMuted,
     paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.xs,
+    paddingVertical: SPACING.sm,
   },
   openYoutubeButtonPressed: {
     opacity: 0.85,
   },
   openYoutubeButtonText: {
-    color: COLORS.primary,
+    color: COLORS.text,
     fontSize: 12,
     fontWeight: "700",
   },
