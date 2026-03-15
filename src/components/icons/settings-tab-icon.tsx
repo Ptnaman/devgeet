@@ -1,6 +1,6 @@
 import Svg, { Path } from "react-native-svg";
 
-import { COLORS } from "@/constants/theme";
+import { useAppTheme } from "@/providers/theme-provider";
 
 type SettingsTabIconProps = {
   color: string;
@@ -13,6 +13,8 @@ export function SettingsTabIcon({
   filled = false,
   size,
 }: SettingsTabIconProps) {
+  const { colors } = useAppTheme();
+
   if (filled) {
     return (
       <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
@@ -22,7 +24,7 @@ export function SettingsTabIcon({
         />
         <Path
           d="M15.5195 12C15.5195 13.933 13.9525 15.5 12.0195 15.5C10.0865 15.5 8.51953 13.933 8.51953 12C8.51953 10.067 10.0865 8.5 12.0195 8.5C13.9525 8.5 15.5195 10.067 15.5195 12Z"
-          fill={COLORS.surface}
+          fill={colors.surface}
         />
       </Svg>
     );

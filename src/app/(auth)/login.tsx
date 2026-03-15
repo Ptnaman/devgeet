@@ -13,14 +13,15 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { GoogleAuthButton } from "@/components/google-auth-button";
 import {
-  COLORS,
   CONTROL_SIZE,
   FONT_SIZE,
   RADIUS,
   SHADOWS,
   SPACING,
+  type ThemeColors,
 } from "@/constants/theme";
 import { useAuth } from "@/providers/auth-provider";
+import { useAppTheme } from "@/providers/theme-provider";
 
 const LAST_LOGIN_IDENTIFIER_KEY = "auth:last_login_identifier";
 
@@ -35,8 +36,10 @@ const getErrorMessage = (
 };
 
 export default function LoginScreen() {
+  const { colors } = useAppTheme();
   const router = useRouter();
   const { loginWithEmailOrUsername, requestPasswordReset } = useAuth();
+  const styles = createStyles(colors);
 
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
@@ -145,7 +148,7 @@ export default function LoginScreen() {
               onFocus={() => setIsIdentifierFocused(true)}
               onBlur={() => setIsIdentifierFocused(false)}
               placeholder="Enter your email or username"
-              placeholderTextColor={COLORS.mutedText}
+              placeholderTextColor={colors.mutedText}
               autoCapitalize="none"
               autoCorrect={false}
               style={[styles.input, isIdentifierFocused && styles.inputFocused]}
@@ -166,7 +169,7 @@ export default function LoginScreen() {
                 onFocus={() => setIsPasswordFocused(true)}
                 onBlur={() => setIsPasswordFocused(false)}
                 placeholder="Enter your password"
-                placeholderTextColor={COLORS.mutedText}
+                placeholderTextColor={colors.mutedText}
                 secureTextEntry={!isPasswordVisible}
                 autoCapitalize="none"
                 style={styles.inputWithActionText}
@@ -201,7 +204,7 @@ export default function LoginScreen() {
             disabled={isLoginDisabled}
           >
             {isSubmitting ? (
-              <ActivityIndicator size="small" color={COLORS.primaryText} />
+              <ActivityIndicator size="small" color={colors.primaryText} />
             ) : (
               <Text
                 style={[
@@ -224,7 +227,7 @@ export default function LoginScreen() {
             disabled={isPasswordResetDisabled}
           >
             {isResettingPassword ? (
-              <ActivityIndicator size="small" color={COLORS.text} />
+              <ActivityIndicator size="small" color={colors.text} />
             ) : (
               <Text style={styles.secondaryButtonText}>Forgot password?</Text>
             )}
@@ -243,13 +246,13 @@ export default function LoginScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
   scroll: {
     flexGrow: 1,
     justifyContent: "center",
     paddingHorizontal: SPACING.xl,
     paddingVertical: SPACING.xl,
-    backgroundColor: COLORS.background,
+    backgroundColor: colors.background,
   },
   mainContent: {
     gap: SPACING.lg,
@@ -262,21 +265,21 @@ const styles = StyleSheet.create({
     gap: SPACING.xs,
   },
   title: {
-    color: COLORS.text,
+    color: colors.text,
     fontSize: FONT_SIZE.title,
     fontWeight: "700",
     textAlign: "center",
   },
   subtitle: {
-    color: COLORS.mutedText,
+    color: colors.mutedText,
     fontSize: FONT_SIZE.body + 1,
     lineHeight: 20,
     textAlign: "center",
   },
   formCard: {
-    backgroundColor: COLORS.surface,
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: colors.border,
     borderRadius: RADIUS.card,
     padding: SPACING.lg,
     gap: SPACING.md,
@@ -286,25 +289,25 @@ const styles = StyleSheet.create({
     gap: SPACING.xs,
   },
   label: {
-    color: COLORS.text,
+    color: colors.text,
     fontSize: 13,
     fontWeight: "600",
   },
   input: {
     minHeight: CONTROL_SIZE.inputHeight,
     borderWidth: 1,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.surfaceMuted,
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceMuted,
     borderRadius: RADIUS.md,
     paddingHorizontal: SPACING.md,
-    color: COLORS.text,
+    color: colors.text,
     fontSize: FONT_SIZE.button,
   },
   inputWithAction: {
     minHeight: CONTROL_SIZE.inputHeight,
     borderWidth: 1,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.surfaceMuted,
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceMuted,
     borderRadius: RADIUS.md,
     paddingLeft: SPACING.md,
     paddingRight: SPACING.xs,
@@ -313,11 +316,11 @@ const styles = StyleSheet.create({
   },
   inputWithActionText: {
     flex: 1,
-    color: COLORS.text,
+    color: colors.text,
     fontSize: FONT_SIZE.button,
   },
   inputFocused: {
-    borderColor: COLORS.primary,
+    borderColor: colors.primary,
   },
   toggleButton: {
     minWidth: 54,
@@ -328,18 +331,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.sm,
   },
   toggleText: {
-    color: COLORS.primary,
+    color: colors.primary,
     fontSize: 13,
     fontWeight: "700",
   },
   error: {
-    color: COLORS.danger,
+    color: colors.danger,
     fontSize: 13,
     textAlign: "center",
     lineHeight: 18,
   },
   success: {
-    color: COLORS.success,
+    color: colors.success,
     fontSize: 13,
     textAlign: "center",
     lineHeight: 18,
@@ -347,32 +350,32 @@ const styles = StyleSheet.create({
   primaryButton: {
     minHeight: CONTROL_SIZE.inputHeight + 2,
     borderRadius: RADIUS.pill,
-    backgroundColor: COLORS.primary,
+    backgroundColor: colors.primary,
     alignItems: "center",
     justifyContent: "center",
   },
   primaryButtonDisabled: {
-    backgroundColor: COLORS.surfaceSoft,
+    backgroundColor: colors.surfaceSoft,
   },
   primaryButtonText: {
-    color: COLORS.primaryText,
+    color: colors.primaryText,
     fontWeight: "700",
     fontSize: FONT_SIZE.button + 2,
   },
   primaryButtonTextDisabled: {
-    color: COLORS.subtleText,
+    color: colors.subtleText,
   },
   secondaryButton: {
     minHeight: CONTROL_SIZE.inputHeight + 2,
     borderRadius: RADIUS.pill,
     borderWidth: 1,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.surfaceMuted,
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceMuted,
     alignItems: "center",
     justifyContent: "center",
   },
   secondaryButtonText: {
-    color: COLORS.text,
+    color: colors.text,
     fontWeight: "600",
     fontSize: FONT_SIZE.button + 1,
   },
@@ -387,11 +390,11 @@ const styles = StyleSheet.create({
   dividerLine: {
     flex: 1,
     height: 1,
-    backgroundColor: COLORS.border,
+    backgroundColor: colors.border,
   },
   dividerText: {
     textAlign: "center",
-    color: COLORS.mutedText,
+    color: colors.mutedText,
     fontSize: 12,
     fontWeight: "600",
   },

@@ -1,16 +1,19 @@
 import { Redirect } from "expo-router";
 import { ActivityIndicator, StyleSheet, View } from "react-native";
 
-import { COLORS } from "@/constants/theme";
 import { useAuth } from "@/providers/auth-provider";
+import { type ThemeColors } from "@/constants/theme";
+import { useAppTheme } from "@/providers/theme-provider";
 
 export default function IndexGate() {
+  const { colors } = useAppTheme();
   const { user, isBootstrapping } = useAuth();
+  const styles = createStyles(colors);
 
   if (isBootstrapping) {
     return (
       <View style={styles.container}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
+        <ActivityIndicator size="large" color={colors.primary} />
       </View>
     );
   }
@@ -22,10 +25,11 @@ export default function IndexGate() {
   return <Redirect href="/auth-choice" />;
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
   container: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
+    backgroundColor: colors.background,
   },
 });

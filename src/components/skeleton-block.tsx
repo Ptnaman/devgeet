@@ -7,7 +7,8 @@ import {
   type ViewStyle,
 } from "react-native";
 
-import { COLORS, RADIUS } from "@/constants/theme";
+import { RADIUS, type ThemeColors } from "@/constants/theme";
+import { useAppTheme } from "@/providers/theme-provider";
 
 type SkeletonBlockProps = {
   width?: number | `${number}%` | "100%";
@@ -22,7 +23,9 @@ export function SkeletonBlock({
   borderRadius = RADIUS.md,
   style,
 }: SkeletonBlockProps) {
+  const { colors } = useAppTheme();
   const opacity = useRef(new Animated.Value(0.5)).current;
+  const styles = createStyles(colors);
 
   useEffect(() => {
     const animation = Animated.loop(
@@ -65,8 +68,8 @@ export function SkeletonBlock({
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
   block: {
-    backgroundColor: COLORS.divider,
+    backgroundColor: colors.divider,
   },
 });

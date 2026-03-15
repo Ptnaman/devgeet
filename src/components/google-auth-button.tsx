@@ -5,12 +5,19 @@ import { HugeiconsIcon } from "@hugeicons/react-native";
 import { ArrowRight01Icon } from "@hugeicons/core-free-icons";
 import Svg, { Path } from "react-native-svg";
 
-import { COLORS, CONTROL_SIZE, FONT_SIZE, RADIUS, SPACING } from "@/constants/theme";
+import {
+  CONTROL_SIZE,
+  FONT_SIZE,
+  RADIUS,
+  SPACING,
+  type ThemeColors,
+} from "@/constants/theme";
 import {
   loadGoogleSignInModule,
   type GoogleSignInModuleLike,
 } from "@/lib/google-signin-loader";
 import { useAuth } from "@/providers/auth-provider";
+import { useAppTheme } from "@/providers/theme-provider";
 
 type GoogleAuthButtonProps = {
   label: string;
@@ -101,9 +108,11 @@ export function GoogleAuthButton({
   onError,
   autoPrompt = false,
 }: GoogleAuthButtonProps) {
+  const { colors } = useAppTheme();
   const { loginWithGoogleIdToken } = useAuth();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const hasAutoPromptedRef = useRef(false);
+  const styles = createStyles(colors);
 
   const googleClientIds = useMemo(() => resolveGoogleClientIds(), []);
   const isWeb = Platform.OS === "web";
@@ -333,20 +342,20 @@ export function GoogleAuthButton({
       <GoogleLogo size={20} />
       <Text style={styles.googleButtonText}>{label}</Text>
       {isSubmitting ? (
-        <ActivityIndicator size="small" color={COLORS.primary} />
+        <ActivityIndicator size="small" color={colors.primary} />
       ) : (
-        <HugeiconsIcon icon={ArrowRight01Icon} size={18} color={COLORS.text} />
+        <HugeiconsIcon icon={ArrowRight01Icon} size={18} color={colors.text} />
       )}
     </Pressable>
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
   googleButton: {
     width: "100%",
-    borderColor: COLORS.border,
+    borderColor: colors.border,
     borderWidth: 1,
-    backgroundColor: COLORS.surfaceMuted,
+    backgroundColor: colors.surfaceMuted,
     borderRadius: RADIUS.pill,
     minHeight: CONTROL_SIZE.inputHeight,
     paddingHorizontal: SPACING.md + 2,
@@ -355,7 +364,7 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
   },
   googleButtonText: {
-    color: COLORS.text,
+    color: colors.text,
     fontSize: FONT_SIZE.button,
     fontWeight: "600",
     flex: 1,

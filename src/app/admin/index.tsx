@@ -16,7 +16,13 @@ import {
   type DocumentData,
 } from "firebase/firestore";
 
-import { COLORS, CONTROL_SIZE, FONT_SIZE, RADIUS, SPACING } from "@/constants/theme";
+import {
+  CONTROL_SIZE,
+  FONT_SIZE,
+  RADIUS,
+  SPACING,
+  type ThemeColors,
+} from "@/constants/theme";
 import {
   CATEGORIES_COLLECTION,
   POSTS_COLLECTION,
@@ -27,9 +33,12 @@ import {
   type PostRecord,
 } from "@/lib/content";
 import { firestore } from "@/lib/firebase";
+import { useAppTheme } from "@/providers/theme-provider";
 
 export default function AdminOverviewScreen() {
+  const { colors } = useAppTheme();
   const router = useRouter();
+  const styles = createStyles(colors);
   const [categories, setCategories] = useState<CategoryRecord[]>([]);
   const [posts, setPosts] = useState<PostRecord[]>([]);
   const [isLoadingCategories, setIsLoadingCategories] = useState(true);
@@ -107,7 +116,7 @@ export default function AdminOverviewScreen() {
       </Text>
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
-      {isLoading ? <ActivityIndicator size="small" color={COLORS.primary} /> : null}
+      {isLoading ? <ActivityIndicator size="small" color={colors.primary} /> : null}
 
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Overview</Text>
@@ -163,29 +172,29 @@ export default function AdminOverviewScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
   container: {
     padding: SPACING.xl,
     gap: SPACING.md,
-    backgroundColor: COLORS.background,
+    backgroundColor: colors.background,
   },
   title: {
     fontSize: FONT_SIZE.title,
     fontWeight: "700",
-    color: COLORS.text,
+    color: colors.text,
   },
   subtitle: {
-    color: COLORS.mutedText,
+    color: colors.mutedText,
     fontSize: FONT_SIZE.body,
   },
   error: {
-    color: COLORS.danger,
+    color: colors.danger,
     fontSize: 13,
   },
   section: {
-    backgroundColor: COLORS.surface,
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: colors.border,
     borderRadius: RADIUS.lg,
     padding: SPACING.lg,
     gap: SPACING.sm,
@@ -193,7 +202,7 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 18,
     fontWeight: "700",
-    color: COLORS.text,
+    color: colors.text,
   },
   statsGrid: {
     flexDirection: "row",
@@ -203,20 +212,20 @@ const styles = StyleSheet.create({
   statCard: {
     width: "48%",
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: colors.border,
     borderRadius: RADIUS.md,
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.md,
-    backgroundColor: COLORS.surface,
+    backgroundColor: colors.surface,
   },
   statLabel: {
     fontSize: 12,
-    color: COLORS.mutedText,
+    color: colors.mutedText,
   },
   statValue: {
     fontSize: 20,
     fontWeight: "700",
-    color: COLORS.text,
+    color: colors.text,
     marginTop: 2,
   },
   quickGrid: {
@@ -225,15 +234,15 @@ const styles = StyleSheet.create({
   quickCardPrimary: {
     minHeight: CONTROL_SIZE.inputHeight,
     borderRadius: RADIUS.md,
-    backgroundColor: COLORS.primary,
+    backgroundColor: colors.primary,
     borderWidth: 1,
-    borderColor: COLORS.primary,
+    borderColor: colors.primary,
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.md,
     gap: 2,
   },
   quickCardTitlePrimary: {
-    color: COLORS.primaryText,
+    color: colors.primaryText,
     fontSize: 15,
     fontWeight: "700",
   },
@@ -245,19 +254,19 @@ const styles = StyleSheet.create({
     minHeight: CONTROL_SIZE.inputHeight,
     borderRadius: RADIUS.md,
     borderWidth: 1,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.surface,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.md,
     gap: 2,
   },
   quickCardTitle: {
-    color: COLORS.text,
+    color: colors.text,
     fontSize: 15,
     fontWeight: "700",
   },
   quickCardMeta: {
-    color: COLORS.mutedText,
+    color: colors.mutedText,
     fontSize: 12,
   },
   buttonPressed: {

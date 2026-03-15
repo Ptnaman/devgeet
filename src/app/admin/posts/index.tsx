@@ -23,7 +23,13 @@ import {
   type DocumentData,
 } from "firebase/firestore";
 
-import { COLORS, CONTROL_SIZE, FONT_SIZE, RADIUS, SPACING } from "@/constants/theme";
+import {
+  CONTROL_SIZE,
+  FONT_SIZE,
+  RADIUS,
+  SPACING,
+  type ThemeColors,
+} from "@/constants/theme";
 import {
   CATEGORIES_COLLECTION,
   POSTS_COLLECTION,
@@ -37,13 +43,16 @@ import {
   type PostStatus,
 } from "@/lib/content";
 import { firestore } from "@/lib/firebase";
+import { useAppTheme } from "@/providers/theme-provider";
 
 const POST_STATUSES: PostStatus[] = ["draft", "published"];
 type PostStatusFilter = "all" | PostStatus;
 const DEFAULT_CATEGORY = "general";
 
 export default function AdminPostsListScreen() {
+  const { colors } = useAppTheme();
   const router = useRouter();
+  const styles = createStyles(colors);
   const [categories, setCategories] = useState<CategoryRecord[]>([]);
   const [posts, setPosts] = useState<PostRecord[]>([]);
   const [isLoadingCategories, setIsLoadingCategories] = useState(true);
@@ -224,14 +233,14 @@ export default function AdminPostsListScreen() {
             <Text style={styles.resetInlineButtonText}>Reset</Text>
           </Pressable>
         </View>
-        {isLoadingData ? <ActivityIndicator size="small" color={COLORS.primary} /> : null}
+        {isLoadingData ? <ActivityIndicator size="small" color={colors.primary} /> : null}
 
         <View style={styles.inputWrap}>
           <TextInput
             value={searchTerm}
             onChangeText={setSearchTerm}
             placeholder="Search by title, slug, content, category"
-            placeholderTextColor={COLORS.mutedText}
+            placeholderTextColor={colors.mutedText}
             autoCapitalize="none"
             style={styles.input}
           />
@@ -432,23 +441,23 @@ export default function AdminPostsListScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
   container: {
     padding: SPACING.xl,
-    backgroundColor: COLORS.background,
+    backgroundColor: colors.background,
     gap: SPACING.md,
   },
   title: {
     fontSize: FONT_SIZE.title,
     fontWeight: "700",
-    color: COLORS.text,
+    color: colors.text,
   },
   subtitle: {
-    color: COLORS.mutedText,
+    color: colors.mutedText,
     fontSize: FONT_SIZE.body,
   },
   error: {
-    color: COLORS.danger,
+    color: colors.danger,
     fontSize: 13,
   },
   success: {
@@ -456,9 +465,9 @@ const styles = StyleSheet.create({
     fontSize: 13,
   },
   section: {
-    backgroundColor: COLORS.surface,
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: colors.border,
     borderRadius: RADIUS.lg,
     padding: SPACING.lg,
     gap: SPACING.sm,
@@ -466,7 +475,7 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 18,
     fontWeight: "700",
-    color: COLORS.text,
+    color: colors.text,
   },
   filterHeader: {
     flexDirection: "row",
@@ -478,20 +487,20 @@ const styles = StyleSheet.create({
     minHeight: CONTROL_SIZE.inputHeight,
     borderRadius: RADIUS.md,
     borderWidth: 1,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.surface,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
     paddingHorizontal: SPACING.md,
     justifyContent: "center",
   },
   input: {
-    color: COLORS.text,
+    color: colors.text,
     fontSize: FONT_SIZE.button,
   },
   compactFilterRow: {
     gap: SPACING.xs,
   },
   compactFilterLabel: {
-    color: COLORS.mutedText,
+    color: colors.mutedText,
     fontSize: 12,
     fontWeight: "700",
     textTransform: "uppercase",
@@ -505,34 +514,34 @@ const styles = StyleSheet.create({
   },
   chip: {
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: colors.border,
     borderRadius: 999,
     paddingHorizontal: SPACING.sm,
     paddingVertical: 5,
-    backgroundColor: COLORS.surface,
+    backgroundColor: colors.surface,
   },
   chipActive: {
-    backgroundColor: COLORS.primary,
-    borderColor: COLORS.primary,
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
   },
   chipText: {
-    color: COLORS.text,
+    color: colors.text,
     fontSize: 12,
     fontWeight: "600",
   },
   chipTextActive: {
-    color: COLORS.primaryText,
+    color: colors.primaryText,
   },
   resetInlineButton: {
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: colors.border,
     borderRadius: 999,
     paddingHorizontal: SPACING.sm,
     paddingVertical: 5,
-    backgroundColor: COLORS.surface,
+    backgroundColor: colors.surface,
   },
   resetInlineButtonText: {
-    color: COLORS.text,
+    color: colors.text,
     fontSize: 12,
     fontWeight: "700",
   },
@@ -548,14 +557,14 @@ const styles = StyleSheet.create({
     minHeight: CONTROL_SIZE.inputHeight,
     borderRadius: RADIUS.md,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: colors.border,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: COLORS.surface,
+    backgroundColor: colors.surface,
     paddingHorizontal: SPACING.sm,
   },
   secondaryButtonText: {
-    color: COLORS.text,
+    color: colors.text,
     fontSize: 14,
     fontWeight: "600",
     textAlign: "center",
@@ -583,19 +592,19 @@ const styles = StyleSheet.create({
     opacity: 0.55,
   },
   resultText: {
-    color: COLORS.mutedText,
+    color: colors.mutedText,
     fontSize: 13,
   },
   emptyText: {
-    color: COLORS.mutedText,
+    color: colors.mutedText,
     fontSize: FONT_SIZE.body,
   },
   postCard: {
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: colors.border,
     borderRadius: RADIUS.md,
     padding: SPACING.md,
-    backgroundColor: COLORS.surface,
+    backgroundColor: colors.surface,
     gap: SPACING.xs,
   },
   thumbnail: {
@@ -623,13 +632,13 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
   postTitle: {
-    color: COLORS.text,
+    color: colors.text,
     fontSize: 16,
     fontWeight: "700",
     flex: 1,
   },
   postBody: {
-    color: COLORS.text,
+    color: colors.text,
     fontSize: FONT_SIZE.body,
   },
   metaRow: {
@@ -639,7 +648,7 @@ const styles = StyleSheet.create({
     gap: SPACING.sm,
   },
   postMeta: {
-    color: COLORS.mutedText,
+    color: colors.mutedText,
     fontSize: 12,
   },
   statusBadge: {

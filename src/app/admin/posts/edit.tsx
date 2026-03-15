@@ -22,11 +22,11 @@ import {
 } from "react-native";
 
 import {
-  COLORS,
   CONTROL_SIZE,
   FONT_SIZE,
   RADIUS,
   SPACING,
+  type ThemeColors,
 } from "@/constants/theme";
 import {
   CATEGORIES_COLLECTION,
@@ -43,6 +43,7 @@ import {
 } from "@/lib/content";
 import { firestore } from "@/lib/firebase";
 import { useAuth } from "@/providers/auth-provider";
+import { useAppTheme } from "@/providers/theme-provider";
 
 const POST_STATUSES: PostStatus[] = ["draft", "published"];
 const HTML_TAG_PATTERN = /<\/?[a-z][\s\S]*>/i;
@@ -84,9 +85,11 @@ const extractPlainText = (value: string) =>
     .trim();
 
 export default function AdminPostEditScreen() {
+  const { colors } = useAppTheme();
   const router = useRouter();
   const { postId: postIdParam } = useLocalSearchParams<{ postId?: string }>();
   const { user } = useAuth();
+  const styles = createStyles(colors);
 
   const postId = resolvePostId(postIdParam);
   const isEditing = Boolean(postId);
@@ -426,7 +429,7 @@ export default function AdminPostEditScreen() {
   if (isLoadingInitial) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
+        <ActivityIndicator size="large" color={colors.primary} />
       </View>
     );
   }
@@ -452,7 +455,7 @@ export default function AdminPostEditScreen() {
             value={title}
             onChangeText={handleTitleChange}
             placeholder="Enter title"
-            placeholderTextColor={COLORS.mutedText}
+            placeholderTextColor={colors.mutedText}
             style={styles.input}
           />
         </View>
@@ -468,7 +471,7 @@ export default function AdminPostEditScreen() {
             value={slugInput}
             onChangeText={handleSlugChange}
             placeholder="Auto-generated from title"
-            placeholderTextColor={COLORS.mutedText}
+            placeholderTextColor={colors.mutedText}
             autoCapitalize="none"
             style={styles.input}
           />
@@ -484,7 +487,7 @@ export default function AdminPostEditScreen() {
             value={contentPlainText}
             onChangeText={handleContentChange}
             placeholder="Write your blog post here..."
-            placeholderTextColor={COLORS.mutedText}
+            placeholderTextColor={colors.mutedText}
             style={[styles.input, styles.contentInput]}
             multiline
             textAlignVertical="top"
@@ -500,7 +503,7 @@ export default function AdminPostEditScreen() {
             value={featureImageUrl}
             onChangeText={handleFeatureImageUrlChange}
             placeholder="https://example.com/post-image.jpg"
-            placeholderTextColor={COLORS.mutedText}
+            placeholderTextColor={colors.mutedText}
             autoCapitalize="none"
             autoCorrect={false}
             style={styles.input}
@@ -516,7 +519,7 @@ export default function AdminPostEditScreen() {
             value={youtubeVideoUrl}
             onChangeText={handleYoutubeVideoUrlChange}
             placeholder="https://www.youtube.com/watch?v=..."
-            placeholderTextColor={COLORS.mutedText}
+            placeholderTextColor={colors.mutedText}
             autoCapitalize="none"
             autoCorrect={false}
             style={styles.input}
@@ -628,7 +631,7 @@ export default function AdminPostEditScreen() {
             disabled={isSubmitting}
           >
             {isSubmitting ? (
-              <ActivityIndicator size="small" color={COLORS.primaryText} />
+              <ActivityIndicator size="small" color={colors.primaryText} />
             ) : (
               <Text style={styles.primaryButtonText}>
                 {isEditing ? "Update Post" : "Create Post"}
@@ -652,29 +655,29 @@ export default function AdminPostEditScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
   loadingContainer: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: COLORS.background,
+    backgroundColor: colors.background,
   },
   container: {
     padding: SPACING.xl,
-    backgroundColor: COLORS.background,
+    backgroundColor: colors.background,
     gap: SPACING.md,
   },
   title: {
     fontSize: FONT_SIZE.title,
     fontWeight: "700",
-    color: COLORS.text,
+    color: colors.text,
   },
   subtitle: {
-    color: COLORS.mutedText,
+    color: colors.mutedText,
     fontSize: FONT_SIZE.body,
   },
   error: {
-    color: COLORS.danger,
+    color: colors.danger,
     fontSize: 13,
   },
   success: {
@@ -682,9 +685,9 @@ const styles = StyleSheet.create({
     fontSize: 13,
   },
   section: {
-    backgroundColor: COLORS.surface,
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: colors.border,
     borderRadius: RADIUS.lg,
     padding: SPACING.lg,
     gap: SPACING.sm,
@@ -692,7 +695,7 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 18,
     fontWeight: "700",
-    color: COLORS.text,
+    color: colors.text,
   },
   inlineRow: {
     flexDirection: "row",
@@ -701,11 +704,11 @@ const styles = StyleSheet.create({
     gap: SPACING.sm,
   },
   helperText: {
-    color: COLORS.mutedText,
+    color: colors.mutedText,
     fontSize: 12,
   },
   linkText: {
-    color: COLORS.primary,
+    color: colors.primary,
     fontSize: 12,
     fontWeight: "600",
   },
@@ -713,13 +716,13 @@ const styles = StyleSheet.create({
     minHeight: CONTROL_SIZE.inputHeight,
     borderRadius: RADIUS.md,
     borderWidth: 1,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.surface,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
     paddingHorizontal: SPACING.md,
     justifyContent: "center",
   },
   input: {
-    color: COLORS.text,
+    color: colors.text,
     fontSize: FONT_SIZE.button,
   },
   contentInput: {
@@ -727,7 +730,7 @@ const styles = StyleSheet.create({
     paddingVertical: SPACING.md,
   },
   label: {
-    color: COLORS.text,
+    color: colors.text,
     fontWeight: "600",
   },
   chipRow: {
@@ -737,23 +740,23 @@ const styles = StyleSheet.create({
   },
   chip: {
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: colors.border,
     borderRadius: 999,
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.xs,
-    backgroundColor: COLORS.surface,
+    backgroundColor: colors.surface,
   },
   chipActive: {
-    backgroundColor: COLORS.primary,
-    borderColor: COLORS.primary,
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
   },
   chipText: {
-    color: COLORS.text,
+    color: colors.text,
     fontSize: 13,
     fontWeight: "600",
   },
   chipTextActive: {
-    color: COLORS.primaryText,
+    color: colors.primaryText,
   },
   dropdownWrap: {
     position: "relative",
@@ -765,8 +768,8 @@ const styles = StyleSheet.create({
     minHeight: CONTROL_SIZE.inputHeight,
     borderRadius: RADIUS.md,
     borderWidth: 1,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.surface,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
     paddingHorizontal: SPACING.md,
     flexDirection: "row",
     alignItems: "center",
@@ -777,15 +780,15 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
   dropdownValue: {
-    color: COLORS.text,
+    color: colors.text,
     fontSize: FONT_SIZE.button,
     flex: 1,
   },
   dropdownPlaceholder: {
-    color: COLORS.mutedText,
+    color: colors.mutedText,
   },
   dropdownIcon: {
-    color: COLORS.mutedText,
+    color: colors.mutedText,
     fontSize: 12,
     fontWeight: "700",
   },
@@ -793,8 +796,8 @@ const styles = StyleSheet.create({
     marginTop: SPACING.xs,
     borderRadius: RADIUS.md,
     borderWidth: 1,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.surface,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
   },
   dropdownList: {
     maxHeight: 180,
@@ -803,22 +806,22 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.sm,
     borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
+    borderBottomColor: colors.border,
     gap: 2,
   },
   dropdownOptionActive: {
     backgroundColor: "#EFF6FF",
   },
   dropdownOptionTitle: {
-    color: COLORS.text,
+    color: colors.text,
     fontSize: 14,
     fontWeight: "600",
   },
   dropdownOptionTitleActive: {
-    color: COLORS.primary,
+    color: colors.primary,
   },
   dropdownOptionMeta: {
-    color: COLORS.mutedText,
+    color: colors.mutedText,
     fontSize: 12,
   },
   buttonRow: {
@@ -830,13 +833,13 @@ const styles = StyleSheet.create({
     flex: 1,
     minHeight: CONTROL_SIZE.inputHeight,
     borderRadius: RADIUS.md,
-    backgroundColor: COLORS.primary,
+    backgroundColor: colors.primary,
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: SPACING.md,
   },
   primaryButtonText: {
-    color: COLORS.primaryText,
+    color: colors.primaryText,
     fontSize: FONT_SIZE.button,
     fontWeight: "700",
   },
@@ -845,14 +848,14 @@ const styles = StyleSheet.create({
     minHeight: CONTROL_SIZE.inputHeight,
     borderRadius: RADIUS.md,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: colors.border,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: COLORS.surface,
+    backgroundColor: colors.surface,
     paddingHorizontal: SPACING.md,
   },
   secondaryButtonText: {
-    color: COLORS.text,
+    color: colors.text,
     fontSize: 14,
     fontWeight: "600",
     textAlign: "center",

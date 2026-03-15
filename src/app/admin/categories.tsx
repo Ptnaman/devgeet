@@ -20,7 +20,13 @@ import {
   type DocumentData,
 } from "firebase/firestore";
 
-import { COLORS, CONTROL_SIZE, FONT_SIZE, RADIUS, SPACING } from "@/constants/theme";
+import {
+  CONTROL_SIZE,
+  FONT_SIZE,
+  RADIUS,
+  SPACING,
+  type ThemeColors,
+} from "@/constants/theme";
 import {
   CATEGORIES_COLLECTION,
   createSlug,
@@ -30,9 +36,12 @@ import {
 } from "@/lib/content";
 import { firestore } from "@/lib/firebase";
 import { useAuth } from "@/providers/auth-provider";
+import { useAppTheme } from "@/providers/theme-provider";
 
 export default function AdminCategoriesScreen() {
+  const { colors } = useAppTheme();
   const { user } = useAuth();
+  const styles = createStyles(colors);
   const [categories, setCategories] = useState<CategoryRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -141,7 +150,7 @@ export default function AdminCategoriesScreen() {
             value={categoryName}
             onChangeText={setCategoryName}
             placeholder="Category name"
-            placeholderTextColor={COLORS.mutedText}
+            placeholderTextColor={colors.mutedText}
             style={styles.input}
           />
         </View>
@@ -155,7 +164,7 @@ export default function AdminCategoriesScreen() {
           disabled={isSaving}
         >
           {isSaving ? (
-            <ActivityIndicator size="small" color={COLORS.primaryText} />
+            <ActivityIndicator size="small" color={colors.primaryText} />
           ) : (
             <Text style={styles.primaryButtonText}>Add Category</Text>
           )}
@@ -164,7 +173,7 @@ export default function AdminCategoriesScreen() {
 
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>All Categories ({categories.length})</Text>
-        {isLoading ? <ActivityIndicator size="small" color={COLORS.primary} /> : null}
+        {isLoading ? <ActivityIndicator size="small" color={colors.primary} /> : null}
         {!isLoading && !categories.length ? (
           <Text style={styles.emptyText}>No categories yet.</Text>
         ) : null}
@@ -181,23 +190,23 @@ export default function AdminCategoriesScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
   container: {
     padding: SPACING.xl,
     gap: SPACING.md,
-    backgroundColor: COLORS.background,
+    backgroundColor: colors.background,
   },
   title: {
     fontSize: FONT_SIZE.title,
     fontWeight: "700",
-    color: COLORS.text,
+    color: colors.text,
   },
   subtitle: {
-    color: COLORS.mutedText,
+    color: colors.mutedText,
     fontSize: FONT_SIZE.body,
   },
   error: {
-    color: COLORS.danger,
+    color: colors.danger,
     fontSize: 13,
   },
   success: {
@@ -205,9 +214,9 @@ const styles = StyleSheet.create({
     fontSize: 13,
   },
   section: {
-    backgroundColor: COLORS.surface,
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: colors.border,
     borderRadius: RADIUS.lg,
     padding: SPACING.lg,
     gap: SPACING.sm,
@@ -215,31 +224,31 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 18,
     fontWeight: "700",
-    color: COLORS.text,
+    color: colors.text,
   },
   inputWrap: {
     minHeight: CONTROL_SIZE.inputHeight,
     borderRadius: RADIUS.md,
     borderWidth: 1,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.surface,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
     paddingHorizontal: SPACING.md,
     justifyContent: "center",
   },
   input: {
-    color: COLORS.text,
+    color: colors.text,
     fontSize: FONT_SIZE.button,
   },
   primaryButton: {
     minHeight: CONTROL_SIZE.inputHeight,
     borderRadius: RADIUS.md,
-    backgroundColor: COLORS.primary,
+    backgroundColor: colors.primary,
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: SPACING.md,
   },
   primaryButtonText: {
-    color: COLORS.primaryText,
+    color: colors.primaryText,
     fontSize: FONT_SIZE.button,
     fontWeight: "700",
   },
@@ -250,24 +259,24 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
   emptyText: {
-    color: COLORS.mutedText,
+    color: colors.mutedText,
     fontSize: FONT_SIZE.body,
   },
   card: {
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: colors.border,
     borderRadius: RADIUS.md,
     padding: SPACING.md,
-    backgroundColor: COLORS.surface,
+    backgroundColor: colors.surface,
     gap: SPACING.xs,
   },
   cardTitle: {
-    color: COLORS.text,
+    color: colors.text,
     fontSize: 16,
     fontWeight: "700",
   },
   cardMeta: {
-    color: COLORS.mutedText,
+    color: colors.mutedText,
     fontSize: 12,
   },
 });

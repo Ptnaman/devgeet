@@ -6,21 +6,24 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { GoogleAuthButton } from "@/components/google-auth-button";
 import {
-  COLORS,
   CONTROL_SIZE,
   FONT_SIZE,
   RADIUS,
   SHADOWS,
   SPACING,
+  type ThemeColors,
 } from "@/constants/theme";
+import { useAppTheme } from "@/providers/theme-provider";
 
 export default function AuthChoiceScreen() {
+  const { colors, resolvedTheme } = useAppTheme();
   const router = useRouter();
   const [error, setError] = useState("");
+  const styles = createStyles(colors);
 
   return (
     <SafeAreaView style={styles.safeArea} edges={["top", "bottom"]}>
-      <StatusBar style="dark" />
+      <StatusBar style={resolvedTheme === "dark" ? "light" : "dark"} />
       <View style={styles.container}>
         <View style={styles.hero}>
           <Text style={styles.heroTitle}>Let&apos;s get you in</Text>
@@ -54,14 +57,14 @@ export default function AuthChoiceScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: COLORS.background,
+    backgroundColor: colors.background,
   },
   container: {
     flex: 1,
-    backgroundColor: COLORS.background,
+    backgroundColor: colors.background,
     justifyContent: "space-between",
     paddingHorizontal: SPACING.xl,
     paddingBottom: SPACING.lg,
@@ -74,22 +77,22 @@ const styles = StyleSheet.create({
     gap: SPACING.sm,
   },
   heroTitle: {
-    color: COLORS.text,
+    color: colors.text,
     fontSize: FONT_SIZE.heroTitle + 4,
     fontWeight: "800",
     textAlign: "center",
   },
   heroSubtitle: {
-    color: COLORS.mutedText,
+    color: colors.mutedText,
     fontSize: FONT_SIZE.body + 1,
     textAlign: "center",
     lineHeight: 22,
   },
   sheet: {
-    backgroundColor: COLORS.surface,
+    backgroundColor: colors.surface,
     borderRadius: RADIUS.card,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: colors.border,
     paddingHorizontal: SPACING.lg,
     paddingTop: SPACING.lg,
     paddingBottom: SPACING.xl,
@@ -97,7 +100,7 @@ const styles = StyleSheet.create({
     ...SHADOWS.md,
   },
   sectionTitle: {
-    color: COLORS.mutedText,
+    color: colors.mutedText,
     fontSize: FONT_SIZE.body,
     textAlign: "center",
     fontWeight: "600",
@@ -107,10 +110,10 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.md,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: COLORS.primary,
+    backgroundColor: colors.primary,
   },
   signupButtonText: {
-    color: COLORS.primaryText,
+    color: colors.primaryText,
     fontSize: FONT_SIZE.button,
     fontWeight: "700",
   },
@@ -120,17 +123,17 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 1,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.surfaceMuted,
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceMuted,
   },
   loginButtonText: {
-    color: COLORS.text,
+    color: colors.text,
     fontSize: FONT_SIZE.button,
     fontWeight: "700",
   },
   error: {
     textAlign: "center",
-    color: COLORS.danger,
+    color: colors.danger,
     fontSize: 13,
     lineHeight: 18,
     paddingHorizontal: SPACING.sm,

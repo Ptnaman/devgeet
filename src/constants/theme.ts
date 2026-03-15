@@ -1,11 +1,25 @@
+const withOpacity = (hex: string, opacity: number) => {
+  const boundedOpacity = Math.max(0, Math.min(opacity, 1));
+  const alpha = Math.round(boundedOpacity * 255)
+    .toString(16)
+    .padStart(2, "0")
+    .toUpperCase();
+
+  return `${hex}${alpha}`;
+};
+
+const LIGHT_TEXT = "#111827";
+const DARK_TEXT = "#FFFDFC";
+
 export const LIGHT_COLORS = {
   background: "#EEF0F3",
   surface: "#FFFFFF",
   surfaceMuted: "#F8FAFC",
   surfaceSoft: "#F5F7FA",
-  text: "#111827",
-  mutedText: "#7B8494",
-  subtleText: "#9AA1AD",
+  activeSurface: "#EFF6FF",
+  text: LIGHT_TEXT,
+  mutedText: withOpacity(LIGHT_TEXT, 0.8),
+  subtleText: withOpacity(LIGHT_TEXT, 0.7),
   border: "#ECEFF3",
   divider: "#EEF2F6",
   primary: "#111827",
@@ -18,20 +32,21 @@ export const LIGHT_COLORS = {
   danger: "#C62828",
   dangerSoft: "#FEF2F2",
   dangerBorder: "#F6C9CF",
-  tabActive: "#111827",
-  tabInactive: "#9AA1AD",
+  tabActive: withOpacity(LIGHT_TEXT, 0.9),
+  tabInactive: withOpacity(LIGHT_TEXT, 0.68),
 } as const;
 
 export const DARK_COLORS = {
-  background: "#0B1220",
-  surface: "#111827",
-  surfaceMuted: "#172033",
+  background: "#1E1E1E",
+  surface: "#2D2D30",
+  surfaceMuted: "#fffdfd1a",
   surfaceSoft: "#1E293B",
-  text: "#E5E7EB",
-  mutedText: "#94A3B8",
-  subtleText: "#64748B",
-  border: "#233047",
-  divider: "#1A2437",
+  activeSurface: "#0000001A",
+  text: DARK_TEXT,
+  mutedText: withOpacity(DARK_TEXT, 0.8),
+  subtleText: withOpacity(DARK_TEXT, 0.7),
+  border: "transparent",
+  divider: "#FFFFFF1A",
   primary: "#E2E8F0",
   primaryText: "#0F172A",
   accent: "#60A5FA",
@@ -42,8 +57,8 @@ export const DARK_COLORS = {
   danger: "#F87171",
   dangerSoft: "#341316",
   dangerBorder: "#7F1D1D",
-  tabActive: "#F8FAFC",
-  tabInactive: "#64748B",
+  tabActive: withOpacity(DARK_TEXT, 0.9),
+  tabInactive: withOpacity(DARK_TEXT, 0.72),
 } as const;
 
 export const COLORS = LIGHT_COLORS;
@@ -54,7 +69,7 @@ export const THEME_COLORS = {
 } as const;
 
 export type ThemeMode = keyof typeof THEME_COLORS;
-export type ThemeColors = typeof LIGHT_COLORS;
+export type ThemeColors = Record<keyof typeof LIGHT_COLORS, string>;
 
 export const getThemeColors = (mode: ThemeMode | null | undefined) =>
   mode === "dark" ? DARK_COLORS : LIGHT_COLORS;

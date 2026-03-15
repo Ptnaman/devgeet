@@ -3,17 +3,35 @@ import { StatusBar } from "expo-status-bar";
 import "@/lib/firebase";
 import "@/global.css";
 import { AuthProvider } from "@/providers/auth-provider";
+import { ThemeProvider, useAppTheme } from "@/providers/theme-provider";
 
-export default function RootLayout() {
+function AppShell() {
+  const { colors, resolvedTheme } = useAppTheme();
+
   return (
-    <AuthProvider>
-      <StatusBar style="dark" />
-      <Stack screenOptions={{ headerShown: false }}>
+    <>
+      <StatusBar style={resolvedTheme === "dark" ? "light" : "dark"} />
+      <Stack
+        screenOptions={{
+          headerShown: false,
+          contentStyle: { backgroundColor: colors.background },
+        }}
+      >
         <Stack.Screen name="index" />
         <Stack.Screen name="(auth)" />
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="admin" />
       </Stack>
-    </AuthProvider>
+    </>
+  );
+}
+
+export default function RootLayout() {
+  return (
+    <ThemeProvider>
+      <AuthProvider>
+        <AppShell />
+      </AuthProvider>
+    </ThemeProvider>
   );
 }

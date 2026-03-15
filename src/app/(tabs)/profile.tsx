@@ -10,14 +10,15 @@ import {
 } from "react-native";
 
 import {
-  COLORS,
   CONTROL_SIZE,
   FONT_SIZE,
   RADIUS,
   SHADOWS,
   SPACING,
+  type ThemeColors,
 } from "@/constants/theme";
 import { useAuth } from "@/providers/auth-provider";
+import { useAppTheme } from "@/providers/theme-provider";
 
 const getErrorMessage = (error: unknown) => {
   if (error instanceof Error && error.message) {
@@ -28,7 +29,9 @@ const getErrorMessage = (error: unknown) => {
 };
 
 export default function ProfileScreen() {
+  const { colors } = useAppTheme();
   const { user, profile, updateCurrentUserProfile } = useAuth();
+  const styles = createStyles(colors);
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [username, setUsername] = useState("");
@@ -55,7 +58,7 @@ export default function ProfileScreen() {
   if (user && !profile) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
+        <ActivityIndicator size="large" color={colors.primary} />
       </View>
     );
   }
@@ -113,7 +116,7 @@ export default function ProfileScreen() {
               clearMessages();
             }}
             placeholder="First name"
-            placeholderTextColor={COLORS.mutedText}
+            placeholderTextColor={colors.mutedText}
             autoCapitalize="words"
             style={styles.input}
           />
@@ -128,7 +131,7 @@ export default function ProfileScreen() {
               clearMessages();
             }}
             placeholder="Last name"
-            placeholderTextColor={COLORS.mutedText}
+            placeholderTextColor={colors.mutedText}
             autoCapitalize="words"
             style={styles.input}
           />
@@ -143,7 +146,7 @@ export default function ProfileScreen() {
               clearMessages();
             }}
             placeholder="your.username"
-            placeholderTextColor={COLORS.mutedText}
+            placeholderTextColor={colors.mutedText}
             autoCapitalize="none"
             autoCorrect={false}
             style={styles.input}
@@ -173,7 +176,7 @@ export default function ProfileScreen() {
           disabled={isSaveDisabled}
         >
           {isSaving ? (
-            <ActivityIndicator size="small" color={COLORS.primaryText} />
+            <ActivityIndicator size="small" color={colors.primaryText} />
           ) : (
             <Text style={styles.primaryButtonText}>Save Changes</Text>
           )}
@@ -183,45 +186,45 @@ export default function ProfileScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
   container: {
     padding: SPACING.xl,
     gap: SPACING.md,
-    backgroundColor: COLORS.background,
+    backgroundColor: colors.background,
   },
   loadingContainer: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: COLORS.background,
+    backgroundColor: colors.background,
   },
   heroCard: {
     borderRadius: RADIUS.xs,
-    backgroundColor: COLORS.surface,
+    backgroundColor: colors.surface,
     padding: SPACING.lg,
     gap: SPACING.xs,
     ...SHADOWS.sm,
   },
   eyebrow: {
-    color: COLORS.primary,
+    color: colors.primary,
     fontSize: 12,
     fontWeight: "700",
     textTransform: "uppercase",
     letterSpacing: 0.6,
   },
   title: {
-    color: COLORS.text,
+    color: colors.text,
     fontSize: FONT_SIZE.title,
     fontWeight: "700",
   },
   subtitle: {
-    color: COLORS.mutedText,
+    color: colors.mutedText,
     fontSize: FONT_SIZE.body,
     lineHeight: 20,
   },
   sectionCard: {
     borderRadius: RADIUS.md,
-    backgroundColor: COLORS.surface,
+    backgroundColor: colors.surface,
     padding: SPACING.md,
     gap: SPACING.md,
     ...SHADOWS.sm,
@@ -230,7 +233,7 @@ const styles = StyleSheet.create({
     gap: SPACING.sm,
   },
   label: {
-    color: COLORS.text,
+    color: colors.text,
     fontSize: 13,
     fontWeight: "600",
   },
@@ -238,49 +241,49 @@ const styles = StyleSheet.create({
     minHeight: CONTROL_SIZE.inputHeight,
     borderRadius: RADIUS.md,
     borderWidth: 1,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.surfaceMuted,
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceMuted,
     paddingHorizontal: SPACING.md,
-    color: COLORS.text,
+    color: colors.text,
     fontSize: FONT_SIZE.button,
   },
   readonlyCard: {
     minHeight: CONTROL_SIZE.inputHeight,
     borderRadius: RADIUS.md,
     borderWidth: 1,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.surfaceMuted,
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceMuted,
     paddingHorizontal: SPACING.md,
     justifyContent: "center",
   },
   readonlyValue: {
-    color: COLORS.text,
+    color: colors.text,
     fontSize: FONT_SIZE.button,
     fontWeight: "500",
   },
   helperText: {
-    color: COLORS.mutedText,
+    color: colors.mutedText,
     fontSize: 12,
     lineHeight: 18,
   },
   error: {
-    color: COLORS.danger,
+    color: colors.danger,
     fontSize: 13,
   },
   success: {
-    color: COLORS.success,
+    color: colors.success,
     fontSize: 13,
   },
   primaryButton: {
     minHeight: CONTROL_SIZE.inputHeight,
     borderRadius: RADIUS.md,
-    backgroundColor: COLORS.primary,
+    backgroundColor: colors.primary,
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: SPACING.md,
   },
   primaryButtonText: {
-    color: COLORS.primaryText,
+    color: colors.primaryText,
     fontSize: FONT_SIZE.button,
     fontWeight: "700",
   },

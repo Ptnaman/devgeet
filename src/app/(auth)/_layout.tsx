@@ -1,16 +1,19 @@
 import { Redirect, Stack } from "expo-router";
 import { ActivityIndicator, StyleSheet, View } from "react-native";
 
-import { COLORS } from "@/constants/theme";
+import { type ThemeColors } from "@/constants/theme";
 import { useAuth } from "@/providers/auth-provider";
+import { useAppTheme } from "@/providers/theme-provider";
 
 export default function AuthLayout() {
+  const { colors } = useAppTheme();
   const { user, isBootstrapping } = useAuth();
+  const styles = createStyles(colors);
 
   if (isBootstrapping) {
     return (
       <View style={styles.container}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
+        <ActivityIndicator size="large" color={colors.primary} />
       </View>
     );
   }
@@ -23,10 +26,10 @@ export default function AuthLayout() {
     <Stack
       initialRouteName="auth-choice"
       screenOptions={{
-        headerStyle: { backgroundColor: COLORS.surface },
-        headerTintColor: COLORS.text,
+        headerStyle: { backgroundColor: colors.surface },
+        headerTintColor: colors.text,
         headerShadowVisible: false,
-        contentStyle: { backgroundColor: COLORS.background },
+        contentStyle: { backgroundColor: colors.background },
       }}
     >
       <Stack.Screen name="auth-choice" options={{ headerShown: false }} />
@@ -42,10 +45,11 @@ export default function AuthLayout() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
   container: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
+    backgroundColor: colors.background,
   },
 });

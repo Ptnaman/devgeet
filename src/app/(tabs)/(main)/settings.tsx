@@ -13,9 +13,11 @@ import {
   Text,
   View,
 } from "react-native";
+import Svg, { Circle, Path } from "react-native-svg";
 
-import { COLORS, RADIUS, SHADOWS, SPACING } from "@/constants/theme";
+import { RADIUS, SHADOWS, SPACING, type ThemeColors } from "@/constants/theme";
 import { useAuth } from "@/providers/auth-provider";
+import { useAppTheme, type ThemePreference } from "@/providers/theme-provider";
 
 const APP_LINKS = {
   terms: "https://devgeet.com/terms/",
@@ -25,6 +27,72 @@ const APP_LINKS = {
   whatsapp: "https://chat.whatsapp.com/DHaKK4v5UOJLTCI5JuMwY1",
   email: "naman@devgeet.com",
 } as const;
+
+const THEME_OPTIONS: {
+  key: ThemePreference;
+  label: string;
+}[] = [
+  {
+    key: "system",
+    label: "Automatic",
+  },
+  {
+    key: "dark",
+    label: "Dark",
+  },
+  {
+    key: "light",
+    label: "Light",
+  },
+];
+
+function ThemeOptionIcon({
+  color,
+  option,
+}: {
+  color: string;
+  option: ThemePreference;
+}) {
+  if (option === "system") {
+    return (
+      <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
+        <Path
+          d="M12 3V6M12 18V21M4.92969 4.92969L7.05078 7.05078M16.9492 16.9492L19.0703 19.0703M3 12H6M18 12H21M4.92969 19.0703L7.05078 16.9492M16.9492 7.05078L19.0703 4.92969"
+          stroke={color}
+          strokeLinecap="round"
+          strokeWidth={1.8}
+        />
+        <Circle cx="12" cy="12" r="4" stroke={color} strokeWidth={1.8} />
+      </Svg>
+    );
+  }
+
+  if (option === "dark") {
+    return (
+      <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
+        <Path
+          d="M20.5 14.5C19.7 14.8 18.84 15 17.94 15C13.83 15 10.5 11.67 10.5 7.56C10.5 6.66 10.7 5.8 11 5C7.5 5.62 5 8.68 5 12.25C5 16.28 8.22 19.5 12.25 19.5C15.82 19.5 18.88 17 19.5 13.5C19.82 13.83 20.15 14.16 20.5 14.5Z"
+          stroke={color}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth={1.8}
+        />
+      </Svg>
+    );
+  }
+
+  return (
+    <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
+      <Circle cx="12" cy="12" r="4" stroke={color} strokeWidth={1.8} />
+      <Path
+        d="M12 2.75V5.25M12 18.75V21.25M4.75 12H2.75M21.25 12H19.25M5.96289 5.96289L7.73066 7.73066M18.0371 18.0371L16.2693 16.2693M18.0371 5.96289L16.2693 7.73066M5.96289 18.0371L7.73066 16.2693"
+        stroke={color}
+        strokeLinecap="round"
+        strokeWidth={1.8}
+      />
+    </Svg>
+  );
+}
 
 type SettingItem = {
   key: string;
@@ -44,6 +112,8 @@ function SettingRow({
   item: SettingItem;
   isLast?: boolean;
 }) {
+  const { colors } = useAppTheme();
+  const styles = createStyles(colors);
   const isInteractive = Boolean(item.onPress) && !item.disabled;
 
   return (
@@ -81,22 +151,24 @@ function SettingRow({
             </Text>
           ) : null}
           {item.showChevron !== false ? (
-            <HugeiconsIcon
-              icon={ArrowRight01Icon}
-              size={20}
-              color={COLORS.subtleText}
-            />
-          ) : null}
-        </View>
+              <HugeiconsIcon
+                icon={ArrowRight01Icon}
+                size={20}
+                color={colors.subtleText}
+              />
+            ) : null}
+          </View>
       </View>
     </Pressable>
   );
 }
 
 export default function SettingsScreen() {
+  const { colors, themePreference, setThemePreference } = useAppTheme();
   const router = useRouter();
   const { user, profile, logout } = useAuth();
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const styles = createStyles(colors);
 
   const appName = Constants.expoConfig?.name ?? "DevGeet";
   const appVersion = Constants.expoConfig?.version ?? "1.0.0";
@@ -227,9 +299,48 @@ export default function SettingsScreen() {
         <HugeiconsIcon
           icon={ArrowRight01Icon}
           size={22}
-          color={COLORS.subtleText}
+          color={colors.subtleText}
         />
       </Pressable>
+
+      <Text style={styles.sectionLabel}>Appearance</Text>
+      <View style={styles.groupCard}>
+        {THEME_OPTIONS.map((option, index) => {
+          const isSelected = option.key === themePreference;
+
+          return (
+            <Pressable
+              key={option.key}
+              style={({ pressed }) => [
+                styles.themeOption,
+                index > 0 && styles.themeOptionDivider,
+                isSelected && styles.themeOptionSelected,
+                pressed && styles.rowPressed,
+              ]}
+              onPress={() => {
+                void setThemePreference(option.key);
+              }}
+            >
+              <View style={styles.themeOptionMain}>
+                <View style={styles.themeOptionIconWrap}>
+                  <ThemeOptionIcon
+                    option={option.key}
+                    color={isSelected ? colors.accent : colors.subtleText}
+                  />
+                </View>
+
+                <View style={styles.rowTextWrap}>
+                <Text style={styles.rowTitle}>{option.label}</Text>
+                </View>
+              </View>
+
+              <View style={[styles.themeRadio, isSelected && styles.themeRadioSelected]}>
+                {isSelected ? <View style={styles.themeRadioDot} /> : null}
+              </View>
+            </Pressable>
+          );
+        })}
+      </View>
 
       <Text style={styles.sectionLabel}>Legal</Text>
       <View style={styles.groupCard}>
@@ -282,12 +393,12 @@ export default function SettingsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
   container: {
     padding: SPACING.xxl,
     paddingBottom: SPACING.xxl * 2,
     gap: SPACING.md,
-    backgroundColor: COLORS.background,
+    backgroundColor: colors.background,
   },
   profileCard: {
     flexDirection: "row",
@@ -296,9 +407,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.md,
     borderRadius: RADIUS.card,
-    backgroundColor: COLORS.surface,
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: colors.border,
     ...SHADOWS.sm,
   },
   cardPressed: {
@@ -308,7 +419,7 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: COLORS.surfaceSoft,
+    backgroundColor: colors.surfaceSoft,
     alignItems: "center",
     justifyContent: "center",
     overflow: "hidden",
@@ -318,7 +429,7 @@ const styles = StyleSheet.create({
     height: "100%",
   },
   avatarText: {
-    color: COLORS.text,
+    color: colors.text,
     fontSize: 16,
     fontWeight: "700",
   },
@@ -327,39 +438,39 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   profileName: {
-    color: COLORS.text,
+    color: colors.text,
     fontSize: 17,
     fontWeight: "700",
   },
   profileSubtitle: {
-    color: COLORS.mutedText,
+    color: colors.mutedText,
     fontSize: 12,
   },
   sectionLabel: {
     paddingHorizontal: 2,
-    color: COLORS.mutedText,
+    color: colors.mutedText,
     fontSize: 14,
     fontWeight: "500",
   },
   groupCard: {
     borderRadius: RADIUS.md,
-    backgroundColor: COLORS.surface,
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: colors.border,
     overflow: "hidden",
     ...SHADOWS.sm,
   },
   row: {
     paddingHorizontal: SPACING.lg,
     paddingVertical: SPACING.lg,
-    backgroundColor: COLORS.surface,
+    backgroundColor: colors.surface,
   },
   rowDivider: {
     borderBottomWidth: 1,
-    borderBottomColor: COLORS.divider,
+    borderBottomColor: colors.divider,
   },
   rowPressed: {
-    backgroundColor: COLORS.surfaceMuted,
+    backgroundColor: colors.surfaceMuted,
   },
   rowDisabled: {
     opacity: 0.55,
@@ -375,15 +486,15 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   rowTitle: {
-    color: COLORS.text,
+    color: colors.text,
     fontSize: 16,
     fontWeight: "600",
   },
   rowTitleDestructive: {
-    color: COLORS.danger,
+    color: colors.danger,
   },
   rowSubtitle: {
-    color: COLORS.mutedText,
+    color: colors.mutedText,
     fontSize: 12,
     lineHeight: 16,
   },
@@ -394,7 +505,56 @@ const styles = StyleSheet.create({
     maxWidth: "42%",
   },
   rowValue: {
-    color: COLORS.subtleText,
+    color: colors.subtleText,
     fontSize: 15,
+  },
+  themeOption: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: SPACING.md,
+    paddingHorizontal: SPACING.lg,
+    paddingVertical: SPACING.lg,
+    backgroundColor: colors.surface,
+  },
+  themeOptionMain: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.sm,
+  },
+  themeOptionIconWrap: {
+    width: 28,
+    height: 28,
+    borderRadius: 999,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.surfaceMuted,
+  },
+  themeOptionDivider: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.divider,
+  },
+  themeOptionSelected: {
+    backgroundColor: colors.activeSurface,
+  },
+  themeRadio: {
+    width: 20,
+    height: 20,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.divider,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.surface,
+  },
+  themeRadioSelected: {
+    borderColor: colors.accent,
+  },
+  themeRadioDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 999,
+    backgroundColor: colors.accent,
   },
 });

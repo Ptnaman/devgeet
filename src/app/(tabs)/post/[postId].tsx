@@ -15,7 +15,7 @@ import { FavouriteIcon } from "@hugeicons/core-free-icons";
 import { doc, onSnapshot, type DocumentData } from "firebase/firestore";
 import YoutubePlayer from "react-native-youtube-iframe";
 
-import { COLORS, FONT_SIZE, RADIUS, SPACING } from "@/constants/theme";
+import { FONT_SIZE, RADIUS, SPACING, type ThemeColors } from "@/constants/theme";
 import {
   formatDate,
   getPostCardThumbnailUrl,
@@ -26,6 +26,7 @@ import {
 } from "@/lib/content";
 import { useFavorites } from "@/hooks/use-favorites";
 import { firestore } from "@/lib/firebase";
+import { useAppTheme } from "@/providers/theme-provider";
 
 const resolvePostId = (value: string | string[] | undefined) =>
   typeof value === "string" ? value : "";
@@ -35,9 +36,11 @@ const DEFAULT_LYRICS_FONT_SIZE = 16;
 const LYRICS_FONT_STEP = 1;
 
 export default function PostDetailsScreen() {
+  const { colors } = useAppTheme();
   const router = useRouter();
   const { postId: postIdParam } = useLocalSearchParams<{ postId?: string }>();
   const { isFavorite, toggleFavorite } = useFavorites();
+  const styles = createStyles(colors);
 
   const postId = resolvePostId(postIdParam);
   const [post, setPost] = useState<PostRecord | null>(null);
@@ -134,7 +137,7 @@ export default function PostDetailsScreen() {
   if (isLoading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
+        <ActivityIndicator size="large" color={colors.primary} />
       </View>
     );
   }
@@ -185,7 +188,7 @@ export default function PostDetailsScreen() {
           <HugeiconsIcon
             icon={FavouriteIcon}
             size={18}
-            color={favorite ? COLORS.danger : COLORS.mutedText}
+            color={favorite ? colors.danger : colors.mutedText}
           />
           <Text
             style={[
@@ -292,32 +295,32 @@ export default function PostDetailsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
   loadingContainer: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: COLORS.background,
+    backgroundColor: colors.background,
   },
   errorContainer: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: COLORS.background,
+    backgroundColor: colors.background,
     padding: SPACING.xl,
     gap: SPACING.md,
   },
   errorTitle: {
     fontSize: FONT_SIZE.body,
-    color: COLORS.danger,
+    color: colors.danger,
     fontWeight: "600",
     textAlign: "center",
   },
   backButton: {
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: colors.border,
     borderRadius: RADIUS.md,
-    backgroundColor: COLORS.surfaceMuted,
+    backgroundColor: colors.surfaceMuted,
     paddingHorizontal: SPACING.lg,
     paddingVertical: SPACING.sm,
   },
@@ -325,30 +328,30 @@ const styles = StyleSheet.create({
     opacity: 0.85,
   },
   backButtonText: {
-    color: COLORS.text,
+    color: colors.text,
     fontWeight: "600",
   },
   container: {
     padding: SPACING.xl,
     paddingBottom: SPACING.xxl * 2,
     gap: SPACING.md,
-    backgroundColor: COLORS.background,
+    backgroundColor: colors.background,
   },
   thumbnail: {
     width: "100%",
     aspectRatio: 16 / 9,
     borderRadius: 4,
     overflow: "hidden",
-    backgroundColor: COLORS.surfaceSoft,
+    backgroundColor: colors.surfaceSoft,
   },
   title: {
     fontSize: 22,
     fontWeight: "700",
-    color: COLORS.text,
+    color: colors.text,
     lineHeight: 30,
   },
   meta: {
-    color: COLORS.mutedText,
+    color: colors.mutedText,
     fontSize: 12,
   },
   actionRow: {
@@ -361,8 +364,8 @@ const styles = StyleSheet.create({
   contentCard: {
     borderRadius: RADIUS.sm,
     borderWidth: 1,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.surface,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
     padding: SPACING.md,
     gap: SPACING.md,
   },
@@ -372,23 +375,23 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: SPACING.xs,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: colors.border,
     borderRadius: 999,
     paddingHorizontal: SPACING.md,
     paddingVertical: 8,
-    backgroundColor: COLORS.surfaceMuted,
+    backgroundColor: colors.surfaceMuted,
   },
   favoriteButtonActive: {
-    borderColor: COLORS.dangerBorder,
-    backgroundColor: COLORS.dangerSoft,
+    borderColor: colors.dangerBorder,
+    backgroundColor: colors.dangerSoft,
   },
   favoriteButtonText: {
-    color: COLORS.text,
+    color: colors.text,
     fontSize: 12,
     fontWeight: "600",
   },
   favoriteButtonTextActive: {
-    color: COLORS.danger,
+    color: colors.danger,
   },
   fontControlsWrap: {
     marginLeft: "auto",
@@ -415,41 +418,41 @@ const styles = StyleSheet.create({
     opacity: 0.35,
   },
   fontButtonText: {
-    color: COLORS.text,
+    color: colors.text,
     fontSize: 16,
     fontWeight: "700",
   },
   fontButtonTextDisabled: {
-    color: COLORS.mutedText,
+    color: colors.mutedText,
   },
   fontValue: {
     minWidth: 24,
     textAlign: "center",
-    color: COLORS.text,
+    color: colors.text,
     fontSize: 13,
     fontWeight: "700",
   },
   content: {
-    color: COLORS.text,
+    color: colors.text,
   },
   videoCard: {
     borderRadius: RADIUS.md,
     borderWidth: 1,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.surface,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
     padding: SPACING.md,
     gap: SPACING.sm,
   },
   videoTitle: {
-    color: COLORS.text,
+    color: colors.text,
     fontSize: 16,
     fontWeight: "700",
   },
   videoFrame: {
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: colors.border,
     borderRadius: RADIUS.lg,
-    backgroundColor: COLORS.surface,
+    backgroundColor: colors.surface,
     overflow: "hidden",
     width: "100%",
     aspectRatio: 16 / 9,
@@ -463,15 +466,15 @@ const styles = StyleSheet.create({
     gap: SPACING.xs,
   },
   videoErrorText: {
-    color: COLORS.mutedText,
+    color: colors.mutedText,
     fontSize: 12,
   },
   openYoutubeButton: {
     alignSelf: "flex-start",
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: colors.border,
     borderRadius: 999,
-    backgroundColor: COLORS.surfaceMuted,
+    backgroundColor: colors.surfaceMuted,
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.sm,
   },
@@ -479,7 +482,7 @@ const styles = StyleSheet.create({
     opacity: 0.85,
   },
   openYoutubeButtonText: {
-    color: COLORS.text,
+    color: colors.text,
     fontSize: 12,
     fontWeight: "700",
   },

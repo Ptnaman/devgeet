@@ -18,7 +18,7 @@ import {
   type DocumentData,
 } from "firebase/firestore";
 
-import { COLORS, FONT_SIZE, RADIUS, SHADOWS, SPACING } from "@/constants/theme";
+import { FONT_SIZE, RADIUS, SHADOWS, SPACING, type ThemeColors } from "@/constants/theme";
 import {
   getPostCardThumbnailUrl,
   mapPostRecord,
@@ -28,11 +28,14 @@ import {
 } from "@/lib/content";
 import { useFavorites } from "@/hooks/use-favorites";
 import { firestore } from "@/lib/firebase";
+import { useAppTheme } from "@/providers/theme-provider";
 
 export default function FavoriteScreen() {
+  const { colors } = useAppTheme();
   const router = useRouter();
   const { favoritePostIds, isFavorite, isLoadingFavorites, toggleFavorite } =
     useFavorites();
+  const styles = createStyles(colors);
   const [posts, setPosts] = useState<PostRecord[]>([]);
   const [isLoadingPosts, setIsLoadingPosts] = useState(true);
   const [postsError, setPostsError] = useState("");
@@ -105,7 +108,7 @@ export default function FavoriteScreen() {
       </View>
 
       {isLoading ? (
-        <ActivityIndicator size="large" color={COLORS.primary} style={styles.loader} />
+        <ActivityIndicator size="large" color={colors.primary} style={styles.loader} />
       ) : null}
 
       {!isLoading && postsError ? (
@@ -115,7 +118,7 @@ export default function FavoriteScreen() {
       {!isLoading && !favoritePosts.length ? (
         <View style={styles.emptyWrap}>
           <View style={styles.emptyIconCard}>
-            <HugeiconsIcon icon={FavouriteIcon} size={30} color={COLORS.mutedText} />
+            <HugeiconsIcon icon={FavouriteIcon} size={30} color={colors.mutedText} />
           </View>
           <Text style={styles.emptyTitle}>No favorites yet</Text>
           <Text style={styles.emptyText}>
@@ -143,7 +146,7 @@ export default function FavoriteScreen() {
                   />
                 ) : (
                   <View style={styles.thumbnailFallback}>
-                    <HugeiconsIcon icon={FavouriteIcon} size={18} color={COLORS.mutedText} />
+                    <HugeiconsIcon icon={FavouriteIcon} size={18} color={colors.mutedText} />
                   </View>
                 )}
 
@@ -168,7 +171,7 @@ export default function FavoriteScreen() {
                       <HugeiconsIcon
                         icon={FavouriteIcon}
                         size={16}
-                        color={favorite ? COLORS.danger : COLORS.mutedText}
+                        color={favorite ? colors.danger : colors.mutedText}
                       />
                       <Text
                         style={[
@@ -190,19 +193,19 @@ export default function FavoriteScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
   container: {
     flexGrow: 1,
     padding: SPACING.xl,
     gap: SPACING.md,
-    backgroundColor: COLORS.background,
+    backgroundColor: colors.background,
     paddingBottom: SPACING.xxl * 2,
   },
   headerCard: {
-    backgroundColor: COLORS.surface,
+    backgroundColor: colors.surface,
     padding: SPACING.lg,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: colors.border,
     ...SHADOWS.sm,
   },
   headerRow: {
@@ -218,11 +221,11 @@ const styles = StyleSheet.create({
   title: {
     fontSize: FONT_SIZE.title,
     fontWeight: "700",
-    color: COLORS.text,
+    color: colors.text,
   },
   subtitle: {
     fontSize: 13,
-    color: COLORS.mutedText,
+    color: colors.mutedText,
     lineHeight: 20,
   },
   countPill: {
@@ -231,13 +234,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.md,
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.surfaceMuted,
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceMuted,
     alignItems: "center",
     justifyContent: "center",
   },
   countPillText: {
-    color: COLORS.text,
+    color: colors.text,
     fontSize: 13,
     fontWeight: "700",
   },
@@ -245,7 +248,7 @@ const styles = StyleSheet.create({
     marginVertical: SPACING.md,
   },
   errorText: {
-    color: COLORS.danger,
+    color: colors.danger,
     fontSize: 13,
   },
   emptyWrap: {
@@ -254,9 +257,9 @@ const styles = StyleSheet.create({
     gap: SPACING.sm,
     borderRadius: RADIUS.lg,
     padding: SPACING.xl,
-    backgroundColor: COLORS.surface,
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: colors.border,
     ...SHADOWS.sm,
   },
   emptyIconCard: {
@@ -265,27 +268,27 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: COLORS.surfaceMuted,
+    backgroundColor: colors.surfaceMuted,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: colors.border,
   },
   emptyTitle: {
-    color: COLORS.text,
+    color: colors.text,
     fontSize: 17,
     fontWeight: "700",
   },
   emptyText: {
-    color: COLORS.mutedText,
+    color: colors.mutedText,
     fontSize: 13,
     textAlign: "center",
     lineHeight: 20,
   },
   card: {
-    backgroundColor: COLORS.surface,
+    backgroundColor: colors.surface,
     borderRadius: RADIUS.xs,
     padding: SPACING.md,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: colors.border,
     ...SHADOWS.sm,
   },
   cardBody: {
@@ -303,15 +306,15 @@ const styles = StyleSheet.create({
     width: 96,
     height: 108,
     borderRadius: RADIUS.xs,
-    backgroundColor: COLORS.surfaceSoft,
+    backgroundColor: colors.surfaceSoft,
   },
   thumbnailFallback: {
     width: 96,
     height: 108,
     borderRadius: RADIUS.md,
-    backgroundColor: COLORS.surfaceMuted,
+    backgroundColor: colors.surfaceMuted,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: colors.border,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -330,12 +333,12 @@ const styles = StyleSheet.create({
   cardTitle: {
     fontSize: 16,
     fontWeight: "700",
-    color: COLORS.text,
+    color: colors.text,
     lineHeight: 22,
   },
   cardPreview: {
     fontSize: 13,
-    color: COLORS.mutedText,
+    color: colors.mutedText,
     lineHeight: 19,
   },
   favoriteButton: {
@@ -343,22 +346,22 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: SPACING.xs,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: colors.border,
     borderRadius: 999,
     paddingHorizontal: 12,
     paddingVertical: 7,
-    backgroundColor: COLORS.surfaceMuted,
+    backgroundColor: colors.surfaceMuted,
   },
   favoriteButtonActive: {
-    borderColor: COLORS.dangerBorder,
-    backgroundColor: COLORS.dangerSoft,
+    borderColor: colors.dangerBorder,
+    backgroundColor: colors.dangerSoft,
   },
   favoriteButtonText: {
-    color: COLORS.text,
+    color: colors.text,
     fontSize: 12,
     fontWeight: "700",
   },
   favoriteButtonTextActive: {
-    color: COLORS.danger,
+    color: colors.danger,
   },
 });

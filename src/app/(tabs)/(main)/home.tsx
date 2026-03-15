@@ -17,7 +17,7 @@ import {
   View,
 } from "react-native";
 
-import { COLORS, FONT_SIZE, RADIUS, SHADOWS, SPACING } from "@/constants/theme";
+import { FONT_SIZE, RADIUS, SHADOWS, SPACING, type ThemeColors } from "@/constants/theme";
 import { SkeletonBlock } from "@/components/skeleton-block";
 import { useFavorites } from "@/hooks/use-favorites";
 import {
@@ -29,12 +29,15 @@ import {
   type PostRecord,
 } from "@/lib/content";
 import { firestore } from "@/lib/firebase";
+import { useAppTheme } from "@/providers/theme-provider";
 
 const HOME_SKELETON_ITEMS = Array.from({ length: 3 }, (_, index) => index);
 
 export default function HomeScreen() {
+  const { colors } = useAppTheme();
   const router = useRouter();
   const { isFavorite, toggleFavorite } = useFavorites();
+  const styles = createStyles(colors);
   const [posts, setPosts] = useState<PostRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
@@ -147,7 +150,7 @@ export default function HomeScreen() {
                     <HugeiconsIcon
                       icon={FavouriteIcon}
                       size={16}
-                      color={favorite ? COLORS.danger : COLORS.mutedText}
+                      color={favorite ? colors.danger : colors.mutedText}
                     />
                     <Text
                       style={[
@@ -167,18 +170,18 @@ export default function HomeScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
   container: {
     flexGrow: 1,
     padding: SPACING.xxl,
     gap: SPACING.xl,
-    backgroundColor: COLORS.background,
+    backgroundColor: colors.background,
   },
   card: {
-    backgroundColor: COLORS.surface,
+    backgroundColor: colors.surface,
     borderRadius: RADIUS.lg,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: colors.border,
     padding: SPACING.lg,
     gap: SPACING.sm,
     ...SHADOWS.sm,
@@ -193,17 +196,17 @@ const styles = StyleSheet.create({
     width: "100%",
     height: 156,
     borderRadius: RADIUS.md,
-    backgroundColor: COLORS.surfaceSoft,
+    backgroundColor: colors.surfaceSoft,
   },
   cardTitle: {
     fontSize: 17,
     fontWeight: "700",
-    color: COLORS.text,
+    color: colors.text,
     lineHeight: 23,
   },
   cardPreview: {
     fontSize: FONT_SIZE.body,
-    color: COLORS.mutedText,
+    color: colors.mutedText,
     lineHeight: 21,
   },
   cardFooter: {
@@ -218,30 +221,30 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: SPACING.xs,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: colors.border,
     borderRadius: 999,
     paddingHorizontal: 10,
     paddingVertical: 5,
-    backgroundColor: COLORS.surfaceMuted,
+    backgroundColor: colors.surfaceMuted,
   },
   favoriteButtonActive: {
-    borderColor: COLORS.dangerBorder,
-    backgroundColor: COLORS.dangerSoft,
+    borderColor: colors.dangerBorder,
+    backgroundColor: colors.dangerSoft,
   },
   favoriteButtonText: {
-    color: COLORS.text,
+    color: colors.text,
     fontSize: 12,
     fontWeight: "700",
   },
   favoriteButtonTextActive: {
-    color: COLORS.danger,
+    color: colors.danger,
   },
   errorText: {
-    color: COLORS.danger,
+    color: colors.danger,
     fontSize: 13,
   },
   meta: {
     fontSize: 12,
-    color: COLORS.mutedText,
+    color: colors.mutedText,
   },
 });

@@ -1,8 +1,10 @@
 import Constants from "expo-constants";
 import { useCallback, useState } from "react";
 import { Tabs } from "expo-router";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { CategoryTabIcon } from "@/components/icons/category-tab-icon";
+import { SHADOWS } from "@/constants/theme";
 import { FavoriteTabIcon } from "@/components/icons/favorite-tab-icon";
 import {
   HeaderProfileButton,
@@ -10,11 +12,20 @@ import {
 } from "@/components/header-profile-button";
 import { HomeTabIcon } from "@/components/icons/home-tab-icon";
 import { SettingsTabIcon } from "@/components/icons/settings-tab-icon";
-import { COLORS } from "@/constants/theme";
+import { useAppTheme } from "@/providers/theme-provider";
 
 export default function MainTabsLayout() {
+  const { colors, resolvedTheme } = useAppTheme();
+  const insets = useSafeAreaInsets();
   const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
   const appName = Constants.expoConfig?.name ?? "DevGeet";
+  const tabBarActiveColor = colors.tabActive;
+  const tabBarInactiveColor = colors.tabInactive;
+  const tabBarBorderColor =
+    resolvedTheme === "dark" ? colors.divider : colors.border;
+  const tabBarTopPadding = 8;
+  const tabBarBottomPadding = Math.max(insets.bottom, 12);
+  const tabBarHeight = 58 + tabBarBottomPadding;
   const openAccountMenu = useCallback(() => {
     setIsAccountMenuOpen(true);
   }, []);
@@ -27,20 +38,20 @@ export default function MainTabsLayout() {
       <Tabs
         initialRouteName="home"
         screenOptions={{
-          headerStyle: { backgroundColor: COLORS.surface },
-          headerTintColor: COLORS.text,
+          headerStyle: { backgroundColor: colors.surface },
+          headerTintColor: colors.text,
           headerTitle: appName,
           headerShadowVisible: false,
           headerRight: () => <HeaderProfileButton onPress={openAccountMenu} />,
-          tabBarActiveTintColor: COLORS.tabActive,
-          tabBarInactiveTintColor: COLORS.tabInactive,
+          tabBarActiveTintColor: tabBarActiveColor,
+          tabBarInactiveTintColor: tabBarInactiveColor,
           tabBarStyle: {
-            backgroundColor: COLORS.surface,
-            borderTopColor: COLORS.border,
-            height: 74,
-            paddingTop: 8,
-            paddingBottom: 8,
-            borderTopWidth: 1,
+            backgroundColor: colors.surface,
+            borderTopColor: tabBarBorderColor,
+            height: tabBarHeight,
+            paddingTop: tabBarTopPadding,
+            paddingBottom: tabBarBottomPadding,
+            ...SHADOWS.md,
           },
           tabBarLabelStyle: {
             fontSize: 11,

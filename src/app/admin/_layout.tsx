@@ -8,17 +8,20 @@ import {
   View,
 } from "react-native";
 
-import { COLORS, RADIUS, SPACING } from "@/constants/theme";
+import { RADIUS, SPACING, type ThemeColors } from "@/constants/theme";
 import { useAuth } from "@/providers/auth-provider";
+import { useAppTheme } from "@/providers/theme-provider";
 
 export default function AdminLayout() {
+  const { colors } = useAppTheme();
   const router = useRouter();
   const { isAdmin, isBootstrapping } = useAuth();
+  const styles = createStyles(colors);
 
   if (isBootstrapping) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
+        <ActivityIndicator size="large" color={colors.primary} />
       </View>
     );
   }
@@ -30,10 +33,10 @@ export default function AdminLayout() {
   return (
     <Stack
       screenOptions={{
-        headerStyle: { backgroundColor: COLORS.surface },
-        headerTintColor: COLORS.text,
+        headerStyle: { backgroundColor: colors.surface },
+        headerTintColor: colors.text,
         headerShadowVisible: false,
-        contentStyle: { backgroundColor: COLORS.background },
+        contentStyle: { backgroundColor: colors.background },
         headerRight: () => (
           <Pressable
             style={({ pressed }) => [
@@ -42,7 +45,7 @@ export default function AdminLayout() {
             ]}
             onPress={() => router.replace("/home")}
           >
-            <HugeiconsIcon icon={Logout01Icon} size={18} color={COLORS.text} />
+            <HugeiconsIcon icon={Logout01Icon} size={18} color={colors.text} />
           </Pressable>
         ),
       }}
@@ -61,18 +64,18 @@ export default function AdminLayout() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
   loadingContainer: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: COLORS.background,
+    backgroundColor: colors.background,
   },
   logoutIconButton: {
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: colors.border,
     borderRadius: RADIUS.md,
-    backgroundColor: COLORS.surface,
+    backgroundColor: colors.surface,
     width: 36,
     height: 36,
     alignItems: "center",

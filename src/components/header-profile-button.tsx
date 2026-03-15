@@ -18,8 +18,9 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { COLORS, RADIUS, SHADOWS, SPACING } from "@/constants/theme";
+import { RADIUS, SHADOWS, SPACING, type ThemeColors } from "@/constants/theme";
 import { useAuth } from "@/providers/auth-provider";
+import { useAppTheme } from "@/providers/theme-provider";
 
 const getAvatarUri = (...values: (string | null | undefined)[]) => {
   for (const value of values) {
@@ -55,6 +56,9 @@ function MenuAction({
   disabled = false,
   isDestructive = false,
 }: MenuActionProps) {
+  const { colors } = useAppTheme();
+  const styles = createStyles(colors);
+
   return (
     <Pressable
       accessibilityRole="button"
@@ -75,7 +79,7 @@ function MenuAction({
         <HugeiconsIcon
           icon={icon}
           size={18}
-          color={isDestructive ? COLORS.danger : COLORS.text}
+          color={isDestructive ? colors.danger : colors.text}
         />
       </View>
       <Text
@@ -91,10 +95,12 @@ function MenuAction({
 }
 
 export function HeaderProfileButton({ onPress }: HeaderProfileButtonProps) {
+  const { colors } = useAppTheme();
   const { user, profile } = useAuth();
   const [hasImageError, setHasImageError] = useState(false);
   const avatarUri = getAvatarUri(profile?.photoURL, user?.photoURL);
   const shouldShowPhoto = Boolean(avatarUri) && !hasImageError;
+  const styles = createStyles(colors);
 
   useEffect(() => {
     setHasImageError(false);
@@ -119,7 +125,7 @@ export function HeaderProfileButton({ onPress }: HeaderProfileButtonProps) {
         />
       ) : (
         <View style={[styles.avatarImage, styles.avatarFallback]}>
-          <HugeiconsIcon icon={User02Icon} size={18} color={COLORS.text} />
+          <HugeiconsIcon icon={User02Icon} size={18} color={colors.text} />
         </View>
       )}
     </Pressable>
@@ -130,6 +136,7 @@ export function HeaderProfileMenu({
   visible,
   onClose,
 }: HeaderProfileMenuProps) {
+  const { colors } = useAppTheme();
   const router = useRouter();
   const pathname = usePathname();
   const insets = useSafeAreaInsets();
@@ -142,6 +149,7 @@ export function HeaderProfileMenu({
   const accountName =
     profile?.displayName || user?.displayName || profile?.email || user?.email || "User";
   const accountEmail = profile?.email || user?.email || "";
+  const styles = createStyles(colors);
 
   useEffect(() => {
     setHasImageError(false);
@@ -216,7 +224,7 @@ export function HeaderProfileMenu({
                 <Image source={{ uri: avatarUri }} style={styles.menuAvatarImage} />
               ) : (
                 <View style={[styles.menuAvatarImage, styles.avatarFallback]}>
-                  <HugeiconsIcon icon={User02Icon} size={20} color={COLORS.text} />
+                  <HugeiconsIcon icon={User02Icon} size={20} color={colors.text} />
                 </View>
               )}
             </View>
@@ -263,7 +271,7 @@ export function HeaderProfileMenu({
 
           {isLoggingOut ? (
             <View style={styles.logoutLoader}>
-              <ActivityIndicator size="small" color={COLORS.danger} />
+              <ActivityIndicator size="small" color={colors.danger} />
             </View>
           ) : null}
         </View>
@@ -272,15 +280,15 @@ export function HeaderProfileMenu({
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
   profileButton: {
     width: 36,
     height: 36,
     borderRadius: 999,
     overflow: "hidden",
     borderWidth: 1,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.surface,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
     alignItems: "center",
     justifyContent: "center",
     marginRight: 8,
@@ -294,7 +302,7 @@ const styles = StyleSheet.create({
   avatarFallback: {
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: COLORS.surfaceSoft,
+    backgroundColor: colors.surfaceSoft,
   },
   buttonPressed: {
     opacity: 0.85,
@@ -317,11 +325,11 @@ const styles = StyleSheet.create({
     right: 12,
     width: 240,
     borderRadius: RADIUS.card,
-    backgroundColor: COLORS.surface,
+    backgroundColor: colors.surface,
     padding: SPACING.md,
     gap: SPACING.xs,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: colors.border,
     ...SHADOWS.md,
   },
   menuHeader: {
@@ -335,7 +343,7 @@ const styles = StyleSheet.create({
     height: 42,
     borderRadius: 999,
     overflow: "hidden",
-    backgroundColor: COLORS.surfaceSoft,
+    backgroundColor: colors.surfaceSoft,
   },
   menuAvatarImage: {
     width: "100%",
@@ -347,17 +355,17 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   menuTitle: {
-    color: COLORS.text,
+    color: colors.text,
     fontSize: 15,
     fontWeight: "700",
   },
   menuSubtitle: {
-    color: COLORS.mutedText,
+    color: colors.mutedText,
     fontSize: 12,
   },
   menuDivider: {
     height: 1,
-    backgroundColor: COLORS.border,
+    backgroundColor: colors.border,
     marginVertical: SPACING.xs,
   },
   menuAction: {
@@ -369,7 +377,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
   },
   menuActionPressed: {
-    backgroundColor: COLORS.surfaceMuted,
+    backgroundColor: colors.surfaceMuted,
   },
   menuActionDisabled: {
     opacity: 0.7,
@@ -380,18 +388,18 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: COLORS.surfaceSoft,
+    backgroundColor: colors.surfaceSoft,
   },
   menuIconWrapDanger: {
-    backgroundColor: COLORS.dangerSoft,
+    backgroundColor: colors.dangerSoft,
   },
   menuActionText: {
-    color: COLORS.text,
+    color: colors.text,
     fontSize: 14,
     fontWeight: "600",
   },
   menuActionTextDanger: {
-    color: COLORS.danger,
+    color: colors.danger,
   },
   logoutLoader: {
     paddingTop: SPACING.xs,

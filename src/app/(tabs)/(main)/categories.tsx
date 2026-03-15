@@ -17,7 +17,7 @@ import {
 } from "react-native";
 
 import { SkeletonBlock } from "@/components/skeleton-block";
-import { COLORS, FONT_SIZE, RADIUS, SHADOWS, SPACING } from "@/constants/theme";
+import { FONT_SIZE, RADIUS, SHADOWS, SPACING, type ThemeColors } from "@/constants/theme";
 import {
   CATEGORIES_COLLECTION,
   getPostCardThumbnailUrl,
@@ -29,13 +29,16 @@ import {
   type PostRecord,
 } from "@/lib/content";
 import { firestore } from "@/lib/firebase";
+import { useAppTheme } from "@/providers/theme-provider";
 
 const normalizeCategoryKey = (value: string) => value.trim().toLowerCase();
 const CATEGORY_SKELETON_ITEMS = Array.from({ length: 4 }, (_, index) => index);
 const CATEGORY_POST_SKELETON_ITEMS = Array.from({ length: 2 }, (_, index) => index);
 
 export default function CategoriesScreen() {
+  const { colors } = useAppTheme();
   const router = useRouter();
+  const styles = createStyles(colors);
   const [categories, setCategories] = useState<CategoryRecord[]>([]);
   const [posts, setPosts] = useState<PostRecord[]>([]);
   const [selectedCategory, setSelectedCategory] = useState("");
@@ -301,35 +304,35 @@ export default function CategoriesScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
   container: {
     flexGrow: 1,
     padding: SPACING.xl,
     gap: SPACING.sm,
-    backgroundColor: COLORS.background,
+    backgroundColor: colors.background,
   },
   title: {
     fontSize: FONT_SIZE.title,
     fontWeight: "700",
-    color: COLORS.text,
+    color: colors.text,
   },
   subtitle: {
     fontSize: FONT_SIZE.body,
-    color: COLORS.mutedText,
+    color: colors.mutedText,
   },
   error: {
-    color: COLORS.danger,
+    color: colors.danger,
     fontSize: 13,
   },
   emptyWrap: {
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: colors.border,
     borderRadius: RADIUS.md,
     padding: SPACING.md,
-    backgroundColor: COLORS.surface,
+    backgroundColor: colors.surface,
   },
   emptyText: {
-    color: COLORS.mutedText,
+    color: colors.mutedText,
     fontSize: 13,
     textAlign: "center",
   },
@@ -342,59 +345,59 @@ const styles = StyleSheet.create({
     width: "48%",
     minHeight: 120,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: colors.border,
     borderRadius: RADIUS.xs,
-    backgroundColor: COLORS.surface,
+    backgroundColor: colors.surface,
     padding: SPACING.md,
     gap: SPACING.xs,
     justifyContent: "space-between",
     ...SHADOWS.sm,
   },
   categoryCardActive: {
-    borderColor: COLORS.accentBorder,
-    backgroundColor: COLORS.accentSoft,
+    borderColor: colors.accentBorder,
+    backgroundColor: colors.accentSoft,
   },
   categoryName: {
-    color: COLORS.text,
+    color: colors.text,
     fontSize: 15,
     fontWeight: "700",
   },
   categoryNameActive: {
-    color: COLORS.accent,
+    color: colors.accent,
   },
   categorySlug: {
-    color: COLORS.mutedText,
+    color: colors.mutedText,
     fontSize: 12,
   },
   categorySlugActive: {
-    color: COLORS.accent,
+    color: colors.accent,
   },
   categoryCount: {
-    color: COLORS.text,
+    color: colors.text,
     fontSize: 12,
     fontWeight: "600",
   },
   categoryCountActive: {
-    color: COLORS.accent,
+    color: colors.accent,
   },
   resultsWrap: {
     marginTop: SPACING.sm,
     gap: SPACING.sm,
   },
   resultsTitle: {
-    color: COLORS.text,
+    color: colors.text,
     fontSize: 18,
     fontWeight: "700",
   },
   resultsMeta: {
-    color: COLORS.mutedText,
+    color: colors.mutedText,
     fontSize: 12,
   },
   postCard: {
     borderRadius: RADIUS.sm,
-    backgroundColor: COLORS.surface,
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: colors.border,
     padding: SPACING.md,
     gap: SPACING.md,
     flexDirection: "row",
@@ -409,13 +412,13 @@ const styles = StyleSheet.create({
     width: 108,
     height: 84,
     borderRadius: RADIUS.xs,
-    backgroundColor: COLORS.surfaceSoft,
+    backgroundColor: colors.surfaceSoft,
   },
   thumbnailPlaceholder: {
     width: 108,
     height: 84,
     borderRadius: RADIUS.md,
-    backgroundColor: COLORS.surfaceSoft,
+    backgroundColor: colors.surfaceSoft,
   },
   postContent: {
     flex: 1,
@@ -423,13 +426,13 @@ const styles = StyleSheet.create({
     gap: SPACING.xs,
   },
   postTitle: {
-    color: COLORS.text,
+    color: colors.text,
     fontSize: 16,
     fontWeight: "700",
     lineHeight: 21,
   },
   postPreview: {
-    color: COLORS.mutedText,
+    color: colors.mutedText,
     fontSize: FONT_SIZE.body,
     lineHeight: 19,
   },

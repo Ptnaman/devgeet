@@ -15,13 +15,14 @@ import {
 } from "react-native";
 
 import {
-  COLORS,
   CONTROL_SIZE,
   FONT_SIZE,
   RADIUS,
   SPACING,
+  type ThemeColors,
 } from "@/constants/theme";
 import { useAuth } from "@/providers/auth-provider";
+import { useAppTheme } from "@/providers/theme-provider";
 
 const getErrorMessage = (error: unknown) => {
   if (error instanceof Error && error.message) {
@@ -38,9 +39,11 @@ type FocusedField =
   | "confirmPassword";
 
 export default function SignupScreen() {
+  const { colors } = useAppTheme();
   const router = useRouter();
   const headerHeight = useHeaderHeight();
   const { signupWithEmail } = useAuth();
+  const styles = createStyles(colors);
 
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
@@ -166,7 +169,7 @@ export default function SignupScreen() {
                   onFocus={() => setFocusedField("firstName")}
                   onBlur={() => setFocusedField(null)}
                   placeholder="First name"
-                  placeholderTextColor={COLORS.mutedText}
+                  placeholderTextColor={colors.mutedText}
                   autoCapitalize="words"
                   autoComplete="name-given"
                   returnKeyType="next"
@@ -186,7 +189,7 @@ export default function SignupScreen() {
                   onFocus={() => setFocusedField("lastName")}
                   onBlur={() => setFocusedField(null)}
                   placeholder="Last name"
-                  placeholderTextColor={COLORS.mutedText}
+                  placeholderTextColor={colors.mutedText}
                   autoCapitalize="words"
                   autoComplete="name-family"
                   returnKeyType="next"
@@ -210,7 +213,7 @@ export default function SignupScreen() {
                 onFocus={() => setFocusedField("email")}
                 onBlur={() => setFocusedField(null)}
                 placeholder="you@example.com"
-                placeholderTextColor={COLORS.mutedText}
+                placeholderTextColor={colors.mutedText}
                 keyboardType="email-address"
                 autoCapitalize="none"
                 autoCorrect={false}
@@ -237,7 +240,7 @@ export default function SignupScreen() {
                   onFocus={() => setFocusedField("password")}
                   onBlur={() => setFocusedField(null)}
                   placeholder="Create a strong password"
-                  placeholderTextColor={COLORS.mutedText}
+                  placeholderTextColor={colors.mutedText}
                   secureTextEntry={!isPasswordVisible}
                   autoCapitalize="none"
                   autoComplete="new-password"
@@ -281,7 +284,7 @@ export default function SignupScreen() {
                   onFocus={() => setFocusedField("confirmPassword")}
                   onBlur={() => setFocusedField(null)}
                   placeholder="Re-enter your password"
-                  placeholderTextColor={COLORS.mutedText}
+                  placeholderTextColor={colors.mutedText}
                   secureTextEntry={!isConfirmPasswordVisible}
                   autoCapitalize="none"
                   autoComplete="new-password"
@@ -324,7 +327,7 @@ export default function SignupScreen() {
               disabled={isSignupDisabled}
             >
               {isSubmitting ? (
-                <ActivityIndicator size="small" color={COLORS.primaryText} />
+                <ActivityIndicator size="small" color={colors.primaryText} />
               ) : (
                 <Text style={styles.primaryButtonText}>Create account</Text>
               )}
@@ -347,7 +350,7 @@ export default function SignupScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
   keyboardAvoiding: {
     flex: 1,
   },
@@ -356,7 +359,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     paddingHorizontal: SPACING.lg,
     paddingVertical: SPACING.xl,
-    backgroundColor: COLORS.background,
+    backgroundColor: colors.background,
   },
   scrollKeyboardOpen: {
     justifyContent: "flex-start",
@@ -376,7 +379,7 @@ const styles = StyleSheet.create({
   title: {
     fontSize: FONT_SIZE.title,
     fontWeight: "700",
-    color: COLORS.text,
+    color: colors.text,
     textAlign: "center",
   },
   formLayout: {
@@ -387,12 +390,12 @@ const styles = StyleSheet.create({
     paddingBottom: SPACING.sm,
   },
   formTitle: {
-    color: COLORS.text,
+    color: colors.text,
     fontSize: FONT_SIZE.button,
     fontWeight: "700",
   },
   formSubtitle: {
-    color: COLORS.mutedText,
+    color: colors.mutedText,
     fontSize: 13,
     lineHeight: 18,
   },
@@ -400,7 +403,7 @@ const styles = StyleSheet.create({
     gap: SPACING.xs,
   },
   label: {
-    color: COLORS.text,
+    color: colors.text,
     fontSize: 13,
     fontWeight: "600",
   },
@@ -412,10 +415,10 @@ const styles = StyleSheet.create({
     minHeight: CONTROL_SIZE.inputHeight - 8,
     borderRadius: RADIUS.md,
     borderWidth: 1,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.surfaceMuted,
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceMuted,
     paddingHorizontal: SPACING.md,
-    color: COLORS.text,
+    color: colors.text,
     fontSize: FONT_SIZE.button,
   },
   nameInput: {
@@ -425,8 +428,8 @@ const styles = StyleSheet.create({
     minHeight: CONTROL_SIZE.inputHeight - 8,
     borderRadius: RADIUS.md,
     borderWidth: 1,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.surfaceMuted,
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceMuted,
     paddingLeft: SPACING.md,
     paddingRight: SPACING.xs,
     flexDirection: "row",
@@ -434,11 +437,11 @@ const styles = StyleSheet.create({
   },
   inputWithActionText: {
     flex: 1,
-    color: COLORS.text,
+    color: colors.text,
     fontSize: FONT_SIZE.button,
   },
   inputFocused: {
-    borderColor: COLORS.primary,
+    borderColor: colors.primary,
   },
   toggleButton: {
     minWidth: 54,
@@ -449,30 +452,30 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.sm,
   },
   toggleText: {
-    color: COLORS.primary,
+    color: colors.primary,
     fontSize: 13,
     fontWeight: "700",
   },
   helperText: {
-    color: COLORS.mutedText,
+    color: colors.mutedText,
     fontSize: 12,
     lineHeight: 17,
   },
   helperTextError: {
-    color: COLORS.danger,
+    color: colors.danger,
     fontSize: 12,
     lineHeight: 17,
   },
   errorBanner: {
     borderRadius: RADIUS.md,
     borderWidth: 1,
-    borderColor: COLORS.dangerBorder,
-    backgroundColor: COLORS.dangerSoft,
+    borderColor: colors.dangerBorder,
+    backgroundColor: colors.dangerSoft,
     paddingHorizontal: SPACING.md - 2,
     paddingVertical: SPACING.sm,
   },
   error: {
-    color: COLORS.danger,
+    color: colors.danger,
     fontSize: 13,
     lineHeight: 18,
     textAlign: "center",
@@ -480,27 +483,27 @@ const styles = StyleSheet.create({
   primaryButton: {
     minHeight: CONTROL_SIZE.inputHeight - 6,
     borderRadius: RADIUS.pill,
-    backgroundColor: COLORS.primary,
+    backgroundColor: colors.primary,
     alignItems: "center",
     justifyContent: "center",
   },
   primaryButtonText: {
-    color: COLORS.primaryText,
+    color: colors.primaryText,
     fontWeight: "700",
     fontSize: FONT_SIZE.button,
   },
   formFootnote: {
-    color: COLORS.mutedText,
+    color: colors.mutedText,
     fontSize: 12,
     textAlign: "center",
   },
   switchText: {
     textAlign: "center",
-    color: COLORS.mutedText,
+    color: colors.mutedText,
     fontSize: FONT_SIZE.body,
   },
   switchLink: {
-    color: COLORS.text,
+    color: colors.text,
     fontWeight: "700",
   },
   buttonPressed: {
