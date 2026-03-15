@@ -1,18 +1,15 @@
 import Constants from "expo-constants";
 import { useCallback, useState } from "react";
 import { Tabs } from "expo-router";
-import { HugeiconsIcon } from "@hugeicons/react-native";
-import {
-  Add01Icon,
-  FavouriteIcon,
-  Home01Icon,
-  Settings01Icon,
-} from "@hugeicons/core-free-icons";
 
+import { CategoryTabIcon } from "@/components/icons/category-tab-icon";
+import { FavoriteTabIcon } from "@/components/icons/favorite-tab-icon";
 import {
   HeaderProfileButton,
   HeaderProfileMenu,
 } from "@/components/header-profile-button";
+import { HomeTabIcon } from "@/components/icons/home-tab-icon";
+import { SettingsTabIcon } from "@/components/icons/settings-tab-icon";
 import { COLORS } from "@/constants/theme";
 
 export default function MainTabsLayout() {
@@ -55,8 +52,8 @@ export default function MainTabsLayout() {
           name="home"
           options={{
             title: "Home",
-            tabBarIcon: ({ color, size }) => (
-              <HugeiconsIcon icon={Home01Icon} color={color} size={size} />
+            tabBarIcon: ({ color, size, focused }) => (
+              <HomeTabIcon color={color} size={size} filled={focused} />
             ),
           }}
         />
@@ -64,8 +61,8 @@ export default function MainTabsLayout() {
           name="categories"
           options={{
             title: "Categories",
-            tabBarIcon: ({ color, size }) => (
-              <HugeiconsIcon icon={Add01Icon} color={color} size={size} />
+            tabBarIcon: ({ color, size, focused }) => (
+              <CategoryTabIcon color={color} size={size} filled={focused} />
             ),
           }}
         />
@@ -73,8 +70,8 @@ export default function MainTabsLayout() {
           name="favorite"
           options={{
             title: "Favorite",
-            tabBarIcon: ({ color, size }) => (
-              <HugeiconsIcon icon={FavouriteIcon} color={color} size={size} />
+            tabBarIcon: ({ color, size, focused }) => (
+              <FavoriteTabIcon color={color} size={size} filled={focused} />
             ),
           }}
         />
@@ -82,8 +79,8 @@ export default function MainTabsLayout() {
           name="settings"
           options={{
             title: "Settings",
-            tabBarIcon: ({ color, size }) => (
-              <HugeiconsIcon icon={Settings01Icon} color={color} size={size} />
+            tabBarIcon: ({ color, size, focused }) => (
+              <SettingsTabIcon color={color} size={size} filled={focused} />
             ),
           }}
         />

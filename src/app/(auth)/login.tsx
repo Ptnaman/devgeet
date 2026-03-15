@@ -24,22 +24,27 @@ import { useAuth } from "@/providers/auth-provider";
 
 const LAST_LOGIN_IDENTIFIER_KEY = "auth:last_login_identifier";
 
-const getErrorMessage = (error: unknown) => {
+const getErrorMessage = (
+  error: unknown,
+  fallbackMessage = "Unable to login. Please try again."
+) => {
   if (error instanceof Error && error.message) {
     return error.message;
   }
-  return "Unable to login. Please try again.";
+  return fallbackMessage;
 };
 
 export default function LoginScreen() {
   const router = useRouter();
-  const { loginWithEmailOrUsername } = useAuth();
+  const { loginWithEmailOrUsername, requestPasswordReset } = useAuth();
 
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [isPasswordVisible, setIsPasswordVisible] = useState(false);
   const [error, setError] = useState("");
+  const [successMessage, setSuccessMessage] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isResettingPassword, setIsResettingPassword] = useState(false);
   const [isIdentifierFocused, setIsIdentifierFocused] = useState(false);
   const [isPasswordFocused, setIsPasswordFocused] = useState(false);
 
@@ -61,12 +66,14 @@ export default function LoginScreen() {
   const handleLogin = async () => {
     if (!identifier.trim() || !password) {
       setError("Enter username/email and password.");
+      setSuccessMessage("");
       return;
     }
 
     try {
       setIsSubmitting(true);
       setError("");
+      setSuccessMessage("");
       const normalizedIdentifier = identifier.trim();
       await loginWithEmailOrUsername(normalizedIdentifier, password);
       await AsyncStorage.setItem(LAST_LOGIN_IDENTIFIER_KEY, normalizedIdentifier);
@@ -78,13 +85,42 @@ export default function LoginScreen() {
     }
   };
 
-  const clearError = () => {
-    if (error) {
+  const handleForgotPassword = async () => {
+    if (!identifier.trim()) {
+      setError("Enter your email or username first.");
+      setSuccessMessage("");
+      return;
+    }
+
+    try {
+      setIsResettingPassword(true);
       setError("");
+      setSuccessMessage("");
+      const normalizedIdentifier = identifier.trim();
+      await requestPasswordReset(normalizedIdentifier);
+      await AsyncStorage.setItem(LAST_LOGIN_IDENTIFIER_KEY, normalizedIdentifier);
+      setIdentifier(normalizedIdentifier);
+      setSuccessMessage("Password reset email sent. Check your inbox.");
+    } catch (passwordResetError) {
+      setError(
+        getErrorMessage(passwordResetError, "Unable to send reset email. Please try again.")
+      );
+    } finally {
+      setIsResettingPassword(false);
     }
   };
 
-  const isLoginDisabled = isSubmitting || !identifier.trim() || !password;
+  const clearFeedback = () => {
+    if (error) {
+      setError("");
+    }
+    if (successMessage) {
+      setSuccessMessage("");
+    }
+  };
+
+  const isLoginDisabled = isSubmitting || isResettingPassword || !identifier.trim() || !password;
+  const isPasswordResetDisabled = isSubmitting || isResettingPassword || !identifier.trim();
 
   return (
     <ScrollView
@@ -104,7 +140,7 @@ export default function LoginScreen() {
               value={identifier}
               onChangeText={(value) => {
                 setIdentifier(value);
-                clearError();
+                clearFeedback();
               }}
               onFocus={() => setIsIdentifierFocused(true)}
               onBlur={() => setIsIdentifierFocused(false)}
@@ -125,7 +161,7 @@ export default function LoginScreen() {
                 value={password}
                 onChangeText={(value) => {
                   setPassword(value);
-                  clearError();
+                  clearFeedback();
                 }}
                 onFocus={() => setIsPasswordFocused(true)}
                 onBlur={() => setIsPasswordFocused(false)}
@@ -152,6 +188,7 @@ export default function LoginScreen() {
             </View>
           </View>
 
+          {successMessage ? <Text style={styles.success}>{successMessage}</Text> : null}
           {error ? <Text style={styles.error}>{error}</Text> : null}
 
           <Pressable
@@ -180,11 +217,17 @@ export default function LoginScreen() {
           <Pressable
             style={({ pressed }) => [
               styles.secondaryButton,
-              pressed && styles.buttonPressed,
+              isPasswordResetDisabled && styles.secondaryButtonDisabled,
+              pressed && !isPasswordResetDisabled && styles.buttonPressed,
             ]}
-            onPress={() => setError("Forgot password flow will be available soon.")}
+            onPress={handleForgotPassword}
+            disabled={isPasswordResetDisabled}
           >
-            <Text style={styles.secondaryButtonText}>Forgot password?</Text>
+            {isResettingPassword ? (
+              <ActivityIndicator size="small" color={COLORS.text} />
+            ) : (
+              <Text style={styles.secondaryButtonText}>Forgot password?</Text>
+            )}
           </Pressable>
         </View>
 
@@ -295,6 +338,12 @@ const styles = StyleSheet.create({
     textAlign: "center",
     lineHeight: 18,
   },
+  success: {
+    color: COLORS.success,
+    fontSize: 13,
+    textAlign: "center",
+    lineHeight: 18,
+  },
   primaryButton: {
     minHeight: CONTROL_SIZE.inputHeight + 2,
     borderRadius: RADIUS.pill,
@@ -326,6 +375,9 @@ const styles = StyleSheet.create({
     color: COLORS.text,
     fontWeight: "600",
     fontSize: FONT_SIZE.button + 1,
+  },
+  secondaryButtonDisabled: {
+    opacity: 0.6,
   },
   dividerRow: {
     flexDirection: "row",

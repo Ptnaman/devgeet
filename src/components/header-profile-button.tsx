@@ -249,7 +249,9 @@ export function HeaderProfileMenu({
               onPress={openAdmin}
               disabled={isLoggingOut}
             />
-          ) : null}
+          ) : (
+            null
+          )}
 
           <MenuAction
             icon={Logout03Icon}

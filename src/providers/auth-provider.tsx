@@ -9,6 +9,7 @@ import {
   createUserWithEmailAndPassword,
   GoogleAuthProvider,
   onAuthStateChanged,
+  sendPasswordResetEmail,
   signInWithCredential,
   signInWithEmailAndPassword,
   signOut,
@@ -32,7 +33,6 @@ import { loadGoogleSignInModule } from "@/lib/google-signin-loader";
 
 const USERNAMES_COLLECTION = "usernames";
 const USERS_COLLECTION = "users";
-
 type UserProfile = {
   uid: string;
   username: string;
@@ -52,6 +52,7 @@ type AuthContextType = {
   isAdmin: boolean;
   isBootstrapping: boolean;
   loginWithEmailOrUsername: (identifier: string, password: string) => Promise<void>;
+  requestPasswordReset: (identifier: string) => Promise<void>;
   signupWithEmail: (payload: {
     firstName: string;
     lastName: string;
@@ -250,6 +251,34 @@ const mapEmailSignupError = (error: unknown) => {
   return new Error("Unable to create account. Please try again.");
 };
 
+const mapPasswordResetError = (error: unknown) => {
+  const code =
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    typeof (error as { code?: unknown }).code === "string"
+      ? (error as { code: string }).code
+      : "";
+
+  if (code === "auth/invalid-email") {
+    return new Error("Enter a valid email or username.");
+  }
+
+  if (code === "auth/missing-email") {
+    return new Error("Enter your email or username first.");
+  }
+
+  if (code === "auth/user-not-found") {
+    return new Error("No account found for this email or username.");
+  }
+
+  if (error instanceof Error) {
+    return error;
+  }
+
+  return new Error("Unable to send reset email. Please try again.");
+};
+
 const writeUserProfile = async (payload: {
   uid: string;
   username: string;
@@ -342,6 +371,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       : await readUsernameEmail(normalizedIdentifier);
 
     await signInWithEmailAndPassword(auth, email, password);
+  };
+
+  const requestPasswordReset = async (identifier: string) => {
+    const normalizedIdentifier = identifier.trim();
+
+    if (!normalizedIdentifier) {
+      throw new Error("Enter your email or username first.");
+    }
+
+    try {
+      const email = normalizedIdentifier.includes("@")
+        ? normalizeEmail(normalizedIdentifier)
+        : await readUsernameEmail(normalizedIdentifier);
+
+      await sendPasswordResetEmail(auth, email);
+    } catch (error) {
+      throw mapPasswordResetError(error);
+    }
   };
 
   const signupWithEmail = async (payload: {
@@ -565,6 +612,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     isAdmin,
     isBootstrapping: !authReady,
     loginWithEmailOrUsername,
+    requestPasswordReset,
     signupWithEmail,
     updateCurrentUserProfile,
     loginWithGoogleIdToken,

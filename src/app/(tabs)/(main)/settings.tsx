@@ -18,7 +18,6 @@ import { COLORS, RADIUS, SHADOWS, SPACING } from "@/constants/theme";
 import { useAuth } from "@/providers/auth-provider";
 
 const APP_LINKS = {
-  home: "https://devgeet.com/",
   terms: "https://devgeet.com/terms/",
   disclaimer: "https://devgeet.com/disclaimer/",
   contact: "https://devgeet.com/contact/",
@@ -32,9 +31,10 @@ type SettingItem = {
   title: string;
   subtitle?: string;
   value?: string;
-  onPress: () => void | Promise<void>;
+  onPress?: () => void | Promise<void>;
   destructive?: boolean;
   disabled?: boolean;
+  showChevron?: boolean;
 };
 
 function SettingRow({
@@ -44,16 +44,18 @@ function SettingRow({
   item: SettingItem;
   isLast?: boolean;
 }) {
+  const isInteractive = Boolean(item.onPress) && !item.disabled;
+
   return (
     <Pressable
       style={({ pressed }) => [
         styles.row,
         !isLast && styles.rowDivider,
-        pressed && !item.disabled && styles.rowPressed,
+        pressed && isInteractive && styles.rowPressed,
         item.disabled && styles.rowDisabled,
       ]}
       onPress={item.onPress}
-      disabled={item.disabled}
+      disabled={!isInteractive}
     >
       <View style={styles.rowContent}>
         <View style={styles.rowTextWrap}>
@@ -78,11 +80,13 @@ function SettingRow({
               {item.value}
             </Text>
           ) : null}
-          <HugeiconsIcon
-            icon={ArrowRight01Icon}
-            size={20}
-            color={COLORS.subtleText}
-          />
+          {item.showChevron !== false ? (
+            <HugeiconsIcon
+              icon={ArrowRight01Icon}
+              size={20}
+              color={COLORS.subtleText}
+            />
+          ) : null}
         </View>
       </View>
     </Pressable>
@@ -254,9 +258,9 @@ export default function SettingsScreen() {
         <SettingRow
           item={{
             key: "about",
-            title: `About ${appName}`,
+            title: "Version",
             value: `v${appVersion}`,
-            onPress: () => openExternal(APP_LINKS.home, `About ${appName}`),
+            showChevron: false,
           }}
           isLast
         />

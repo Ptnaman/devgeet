@@ -1,4 +1,4 @@
-export const COLORS = {
+export const LIGHT_COLORS = {
   background: "#EEF0F3",
   surface: "#FFFFFF",
   surfaceMuted: "#F8FAFC",
@@ -20,7 +20,44 @@ export const COLORS = {
   dangerBorder: "#F6C9CF",
   tabActive: "#111827",
   tabInactive: "#9AA1AD",
-};
+} as const;
+
+export const DARK_COLORS = {
+  background: "#0B1220",
+  surface: "#111827",
+  surfaceMuted: "#172033",
+  surfaceSoft: "#1E293B",
+  text: "#E5E7EB",
+  mutedText: "#94A3B8",
+  subtleText: "#64748B",
+  border: "#233047",
+  divider: "#1A2437",
+  primary: "#E2E8F0",
+  primaryText: "#0F172A",
+  accent: "#60A5FA",
+  accentSoft: "#0F1E35",
+  accentBorder: "#1D4ED8",
+  success: "#22C55E",
+  successSoft: "#052E1A",
+  danger: "#F87171",
+  dangerSoft: "#341316",
+  dangerBorder: "#7F1D1D",
+  tabActive: "#F8FAFC",
+  tabInactive: "#64748B",
+} as const;
+
+export const COLORS = LIGHT_COLORS;
+
+export const THEME_COLORS = {
+  light: LIGHT_COLORS,
+  dark: DARK_COLORS,
+} as const;
+
+export type ThemeMode = keyof typeof THEME_COLORS;
+export type ThemeColors = typeof LIGHT_COLORS;
+
+export const getThemeColors = (mode: ThemeMode | null | undefined) =>
+  mode === "dark" ? DARK_COLORS : LIGHT_COLORS;
 
 export const SPACING = {
   xs: 4,

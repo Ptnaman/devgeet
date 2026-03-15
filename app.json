@@ -2,7 +2,7 @@
   "expo": {
     "name": "DevGeet",
     "slug": "devgeet",
-    "version": "1.0.0",
+    "version": "1.0.23",
     "versionCode": 4,
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
