@@ -21,15 +21,17 @@ import {
   SPACING,
   type ThemeColors,
 } from "@/constants/theme";
+import { getActionErrorMessage } from "@/lib/network";
 import { useAuth } from "@/providers/auth-provider";
+import { useNetworkStatus } from "@/providers/network-provider";
 import { useAppTheme } from "@/providers/theme-provider";
 
-const getErrorMessage = (error: unknown) => {
-  if (error instanceof Error && error.message) {
-    return error.message;
-  }
-  return "Unable to create account. Please try again.";
-};
+const getErrorMessage = (error: unknown, isConnected: boolean) =>
+  getActionErrorMessage({
+    error,
+    isConnected,
+    fallbackMessage: "Unable to create account. Please try again.",
+  });
 
 type FocusedField =
   | "firstName"
@@ -40,6 +42,7 @@ type FocusedField =
 
 export default function SignupScreen() {
   const { colors } = useAppTheme();
+  const { isConnected } = useNetworkStatus();
   const router = useRouter();
   const headerHeight = useHeaderHeight();
   const { signupWithEmail } = useAuth();
@@ -108,7 +111,7 @@ export default function SignupScreen() {
       });
       router.replace("/home");
     } catch (signupError) {
-      setError(getErrorMessage(signupError));
+      setError(getErrorMessage(signupError, isConnected));
     } finally {
       setIsSubmitting(false);
     }

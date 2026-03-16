@@ -12,11 +12,13 @@ import {
   SPACING,
   type ThemeColors,
 } from "@/constants/theme";
+import { DEFAULT_OFFLINE_MESSAGE, getActionErrorMessage } from "@/lib/network";
 import {
   loadGoogleSignInModule,
   type GoogleSignInModuleLike,
 } from "@/lib/google-signin-loader";
 import { useAuth } from "@/providers/auth-provider";
+import { useNetworkStatus } from "@/providers/network-provider";
 import { useAppTheme } from "@/providers/theme-provider";
 
 type GoogleAuthButtonProps = {
@@ -67,12 +69,12 @@ const resolveGoogleClientIds = () => {
   };
 };
 
-const getErrorMessage = (error: unknown) => {
-  if (error instanceof Error && error.message) {
-    return error.message;
-  }
-  return "Google sign-in failed. Please try again.";
-};
+const getErrorMessage = (error: unknown, isConnected: boolean) =>
+  getActionErrorMessage({
+    error,
+    isConnected,
+    fallbackMessage: "Google sign-in failed. Please try again.",
+  });
 
 const getIdToken = async (
   response: unknown,
@@ -109,6 +111,7 @@ export function GoogleAuthButton({
   autoPrompt = false,
 }: GoogleAuthButtonProps) {
   const { colors } = useAppTheme();
+  const { isConnected } = useNetworkStatus();
   const { loginWithGoogleIdToken } = useAuth();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const hasAutoPromptedRef = useRef(false);
@@ -232,6 +235,11 @@ export function GoogleAuthButton({
       setIsSubmitting(true);
       onError("");
 
+      if (!isConnected) {
+        onError(DEFAULT_OFFLINE_MESSAGE);
+        return;
+      }
+
       if (hasOneTapApi) {
         const oneTapResponse = await runOneTapFlow(mode);
         if (!oneTapResponse) {
@@ -286,7 +294,7 @@ export function GoogleAuthButton({
         }
       }
 
-      onError(getErrorMessage(error));
+      onError(getErrorMessage(error, isConnected));
     } finally {
       setIsSubmitting(false);
     }
@@ -299,6 +307,7 @@ export function GoogleAuthButton({
     loginWithGoogleIdToken,
     onError,
     runOneTapFlow,
+    isConnected,
   ]);
 
   const handlePress = useCallback(() => {

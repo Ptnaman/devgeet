@@ -29,6 +29,8 @@ import {
   type PostRecord,
 } from "@/lib/content";
 import { firestore } from "@/lib/firebase";
+import { getRequestErrorMessage } from "@/lib/network";
+import { useNetworkStatus } from "@/providers/network-provider";
 import { useAppTheme } from "@/providers/theme-provider";
 
 const normalizeCategoryKey = (value: string) => value.trim().toLowerCase();
@@ -37,6 +39,7 @@ const CATEGORY_POST_SKELETON_ITEMS = Array.from({ length: 2 }, (_, index) => ind
 
 export default function CategoriesScreen() {
   const { colors } = useAppTheme();
+  const { isConnected } = useNetworkStatus();
   const router = useRouter();
   const styles = createStyles(colors);
   const [categories, setCategories] = useState<CategoryRecord[]>([]);
@@ -63,9 +66,15 @@ export default function CategoriesScreen() {
         setError("");
         setIsLoadingCategories(false);
       },
-      () => {
+      (snapshotError) => {
         setIsLoadingCategories(false);
-        setError("Unable to load categories.");
+        setError(
+          getRequestErrorMessage({
+            error: snapshotError,
+            isConnected,
+            onlineMessage: "Unable to load categories.",
+          }),
+        );
       },
     );
 
@@ -81,9 +90,15 @@ export default function CategoriesScreen() {
         setError("");
         setIsLoadingPosts(false);
       },
-      () => {
+      (snapshotError) => {
         setIsLoadingPosts(false);
-        setError("Unable to load posts.");
+        setError(
+          getRequestErrorMessage({
+            error: snapshotError,
+            isConnected,
+            onlineMessage: "Unable to load posts.",
+          }),
+        );
       },
     );
 
@@ -91,7 +106,7 @@ export default function CategoriesScreen() {
       unsubscribeCategories();
       unsubscribePosts();
     };
-  }, []);
+  }, [isConnected]);
 
   useEffect(() => {
     if (

@@ -33,10 +33,13 @@ import {
   type PostRecord,
 } from "@/lib/content";
 import { firestore } from "@/lib/firebase";
+import { getRequestErrorMessage } from "@/lib/network";
+import { useNetworkStatus } from "@/providers/network-provider";
 import { useAppTheme } from "@/providers/theme-provider";
 
 export default function AdminOverviewScreen() {
   const { colors } = useAppTheme();
+  const { isConnected } = useNetworkStatus();
   const router = useRouter();
   const styles = createStyles(colors);
   const [categories, setCategories] = useState<CategoryRecord[]>([]);
@@ -63,8 +66,14 @@ export default function AdminOverviewScreen() {
         setError("");
         setIsLoadingCategories(false);
       },
-      () => {
-        setError("Unable to load categories.");
+      (snapshotError) => {
+        setError(
+          getRequestErrorMessage({
+            error: snapshotError,
+            isConnected,
+            onlineMessage: "Unable to load categories.",
+          })
+        );
         setIsLoadingCategories(false);
       }
     );
@@ -82,8 +91,14 @@ export default function AdminOverviewScreen() {
         setError("");
         setIsLoadingPosts(false);
       },
-      () => {
-        setError("Unable to load posts.");
+      (snapshotError) => {
+        setError(
+          getRequestErrorMessage({
+            error: snapshotError,
+            isConnected,
+            onlineMessage: "Unable to load posts.",
+          })
+        );
         setIsLoadingPosts(false);
       }
     );
@@ -92,7 +107,7 @@ export default function AdminOverviewScreen() {
       unsubscribeCategories();
       unsubscribePosts();
     };
-  }, []);
+  }, [isConnected]);
 
   const stats = useMemo(() => {
     const published = posts.filter((item) => item.status === "published").length;

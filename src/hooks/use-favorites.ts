@@ -18,7 +18,9 @@ import {
   type PostRecord,
 } from "@/lib/content";
 import { firestore } from "@/lib/firebase";
+import { DEFAULT_OFFLINE_MESSAGE, getRequestErrorMessage } from "@/lib/network";
 import { useAuth } from "@/providers/auth-provider";
+import { useNetworkStatus } from "@/providers/network-provider";
 
 type FavoriteMutationResult = "added" | "removed";
 
@@ -40,6 +42,7 @@ const toSortTime = (value: FavoriteRecord) => {
 
 export function useFavorites() {
   const { user } = useAuth();
+  const { isConnected } = useNetworkStatus();
   const [favorites, setFavorites] = useState<FavoriteRecord[]>([]);
   const [isLoadingFavorites, setIsLoadingFavorites] = useState(true);
   const [favoritesError, setFavoritesError] = useState("");
@@ -70,15 +73,21 @@ export function useFavorites() {
         setFavoritesError("");
         setIsLoadingFavorites(false);
       },
-      () => {
+      (snapshotError) => {
         setFavorites([]);
-        setFavoritesError("Unable to sync favorites right now.");
+        setFavoritesError(
+          getRequestErrorMessage({
+            error: snapshotError,
+            isConnected,
+            onlineMessage: "Unable to sync favorites right now.",
+          }),
+        );
         setIsLoadingFavorites(false);
       },
     );
 
     return unsubscribe;
-  }, [user?.uid]);
+  }, [isConnected, user?.uid]);
 
   const favoritePostIds = useMemo(
     () => new Set(favorites.map((item) => item.postId)),
@@ -96,6 +105,10 @@ export function useFavorites() {
     ): Promise<FavoriteMutationResult> => {
       if (!user?.uid) {
         throw new Error("Please login to manage favorites.");
+      }
+
+      if (!isConnected) {
+        throw new Error(DEFAULT_OFFLINE_MESSAGE);
       }
 
       const favoriteDocId = createFavoriteDocId(user.uid, post.id);
@@ -124,7 +137,7 @@ export function useFavorites() {
 
       return "added";
     },
-    [favoritePostIds, user?.email, user?.uid],
+    [favoritePostIds, isConnected, user?.email, user?.uid],
   );
 
   return {

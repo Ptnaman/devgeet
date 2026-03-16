@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Image,
   Linking,
   Pressable,
@@ -26,6 +27,8 @@ import {
 } from "@/lib/content";
 import { useFavorites } from "@/hooks/use-favorites";
 import { firestore } from "@/lib/firebase";
+import { getActionErrorMessage, getRequestErrorMessage } from "@/lib/network";
+import { useNetworkStatus } from "@/providers/network-provider";
 import { useAppTheme } from "@/providers/theme-provider";
 
 const resolvePostId = (value: string | string[] | undefined) =>
@@ -37,6 +40,7 @@ const LYRICS_FONT_STEP = 1;
 
 export default function PostDetailsScreen() {
   const { colors } = useAppTheme();
+  const { isConnected } = useNetworkStatus();
   const router = useRouter();
   const { postId: postIdParam } = useLocalSearchParams<{ postId?: string }>();
   const { isFavorite, toggleFavorite } = useFavorites();
@@ -80,26 +84,50 @@ export default function PostDetailsScreen() {
         setError("");
         setIsLoading(false);
       },
-      () => {
-        setError("Unable to load post details.");
+      (snapshotError) => {
+        setError(
+          getRequestErrorMessage({
+            error: snapshotError,
+            isConnected,
+            onlineMessage: "Unable to load post details.",
+          }),
+        );
         setPost(null);
         setIsLoading(false);
       },
     );
 
     return unsubscribe;
-  }, [postId]);
+  }, [isConnected, postId]);
 
   const handleToggleFavorite = async () => {
     if (!post) {
       return;
     }
 
-    await toggleFavorite(post).catch(() => undefined);
+    try {
+      await toggleFavorite(post);
+    } catch (toggleError) {
+      Alert.alert(
+        "Unable to update favorites",
+        getActionErrorMessage({
+          error: toggleError,
+          isConnected,
+          fallbackMessage: "Favorites could not be updated right now.",
+        }),
+      );
+    }
   };
 
   const handleOpenInYouTube = async (url: string) => {
-    await Linking.openURL(url).catch(() => undefined);
+    if (!isConnected) {
+      Alert.alert("YouTube unavailable", "No internet connection. Check your internet and try again.");
+      return;
+    }
+
+    await Linking.openURL(url).catch(() => {
+      Alert.alert("YouTube unavailable", "Unable to open YouTube right now.");
+    });
   };
 
   const handleDecreaseLyricsFontSize = () => {

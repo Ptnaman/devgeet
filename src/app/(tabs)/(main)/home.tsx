@@ -9,6 +9,7 @@ import {
 } from "firebase/firestore";
 import { useEffect, useState } from "react";
 import {
+  Alert,
   Image,
   Pressable,
   ScrollView,
@@ -29,6 +30,8 @@ import {
   type PostRecord,
 } from "@/lib/content";
 import { firestore } from "@/lib/firebase";
+import { getActionErrorMessage, getRequestErrorMessage } from "@/lib/network";
+import { useNetworkStatus } from "@/providers/network-provider";
 import { useAppTheme } from "@/providers/theme-provider";
 
 const HOME_SKELETON_ITEMS = Array.from({ length: 3 }, (_, index) => index);
@@ -37,6 +40,7 @@ export default function HomeScreen() {
   const { colors } = useAppTheme();
   const router = useRouter();
   const { isFavorite, toggleFavorite } = useFavorites();
+  const { isConnected } = useNetworkStatus();
   const styles = createStyles(colors);
   const [posts, setPosts] = useState<PostRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -58,21 +62,38 @@ export default function HomeScreen() {
         setPosts(nextPosts);
         setIsLoading(false);
       },
-      () => {
-        setError("Unable to load posts right now.");
+      (snapshotError) => {
+        setError(
+          getRequestErrorMessage({
+            error: snapshotError,
+            isConnected,
+            onlineMessage: "Unable to load posts right now.",
+          }),
+        );
         setIsLoading(false);
       },
     );
 
     return unsubscribe;
-  }, []);
+  }, [isConnected]);
 
   const openPost = (postId: string) => {
     router.push({ pathname: "/post/[postId]", params: { postId } });
   };
 
   const handleToggleFavorite = async (post: PostRecord) => {
-    await toggleFavorite(post).catch(() => undefined);
+    try {
+      await toggleFavorite(post);
+    } catch (toggleError) {
+      Alert.alert(
+        "Unable to update favorites",
+        getActionErrorMessage({
+          error: toggleError,
+          isConnected,
+          fallbackMessage: "Favorites could not be updated right now.",
+        }),
+      );
+    }
   };
 
   return (

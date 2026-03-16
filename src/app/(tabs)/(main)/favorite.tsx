@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Image,
   Pressable,
   ScrollView,
@@ -28,12 +29,21 @@ import {
 } from "@/lib/content";
 import { useFavorites } from "@/hooks/use-favorites";
 import { firestore } from "@/lib/firebase";
+import { getActionErrorMessage, getRequestErrorMessage } from "@/lib/network";
+import { useNetworkStatus } from "@/providers/network-provider";
 import { useAppTheme } from "@/providers/theme-provider";
 
 export default function FavoriteScreen() {
   const { colors } = useAppTheme();
+  const { isConnected } = useNetworkStatus();
   const router = useRouter();
-  const { favoritePostIds, isFavorite, isLoadingFavorites, toggleFavorite } =
+  const {
+    favoritePostIds,
+    favoritesError,
+    isFavorite,
+    isLoadingFavorites,
+    toggleFavorite,
+  } =
     useFavorites();
   const styles = createStyles(colors);
   const [posts, setPosts] = useState<PostRecord[]>([]);
@@ -56,15 +66,21 @@ export default function FavoriteScreen() {
         setPostsError("");
         setIsLoadingPosts(false);
       },
-      () => {
+      (snapshotError) => {
         setPosts([]);
-        setPostsError("Unable to load posts right now.");
+        setPostsError(
+          getRequestErrorMessage({
+            error: snapshotError,
+            isConnected,
+            onlineMessage: "Unable to load posts right now.",
+          }),
+        );
         setIsLoadingPosts(false);
       },
     );
 
     return unsubscribe;
-  }, []);
+  }, [isConnected]);
 
   const favoritePosts = useMemo(
     () => posts.filter((post) => favoritePostIds.has(post.id)),
@@ -78,12 +94,29 @@ export default function FavoriteScreen() {
   };
 
   const handleToggleFavorite = async (post: PostRecord) => {
-    await toggleFavorite(post).catch(() => undefined);
+    try {
+      await toggleFavorite(post);
+    } catch (toggleError) {
+      Alert.alert(
+        "Unable to update favorites",
+        getActionErrorMessage({
+          error: toggleError,
+          isConnected,
+          fallbackMessage: "Favorites could not be updated right now.",
+        }),
+      );
+    }
   };
+
+  const combinedError = postsError || favoritesError;
 
   const subtitle = useMemo(() => {
     if (isLoading) {
       return "Loading your saved posts...";
+    }
+
+    if (combinedError) {
+      return combinedError;
     }
 
     if (!favoritePosts.length) {
@@ -91,7 +124,7 @@ export default function FavoriteScreen() {
     }
 
     return `${favoritePosts.length} saved post${favoritePosts.length === 1 ? "" : "s"}.`;
-  }, [favoritePosts.length, isLoading]);
+  }, [combinedError, favoritePosts.length, isLoading]);
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
@@ -111,11 +144,11 @@ export default function FavoriteScreen() {
         <ActivityIndicator size="large" color={colors.primary} style={styles.loader} />
       ) : null}
 
-      {!isLoading && postsError ? (
-        <Text style={styles.errorText}>{postsError}</Text>
+      {!isLoading && combinedError ? (
+        <Text style={styles.errorText}>{combinedError}</Text>
       ) : null}
 
-      {!isLoading && !favoritePosts.length ? (
+      {!isLoading && !combinedError && !favoritePosts.length ? (
         <View style={styles.emptyWrap}>
           <View style={styles.emptyIconCard}>
             <HugeiconsIcon icon={FavouriteIcon} size={30} color={colors.mutedText} />

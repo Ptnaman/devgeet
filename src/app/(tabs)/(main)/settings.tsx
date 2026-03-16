@@ -16,7 +16,9 @@ import {
 import Svg, { Circle, Path } from "react-native-svg";
 
 import { RADIUS, SHADOWS, SPACING, type ThemeColors } from "@/constants/theme";
+import { DEFAULT_OFFLINE_MESSAGE } from "@/lib/network";
 import { useAuth } from "@/providers/auth-provider";
+import { useNetworkStatus } from "@/providers/network-provider";
 import { useAppTheme, type ThemePreference } from "@/providers/theme-provider";
 
 const APP_LINKS = {
@@ -165,6 +167,7 @@ function SettingRow({
 
 export default function SettingsScreen() {
   const { colors, themePreference, setThemePreference } = useAppTheme();
+  const { isConnected } = useNetworkStatus();
   const router = useRouter();
   const { user, profile, logout } = useAuth();
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -184,6 +187,11 @@ export default function SettingsScreen() {
   const avatarUri = profile?.photoURL || user?.photoURL || "";
 
   const openExternal = async (url: string, label: string) => {
+    if (!isConnected) {
+      Alert.alert(label, DEFAULT_OFFLINE_MESSAGE);
+      return;
+    }
+
     try {
       await Linking.openURL(url);
     } catch {
@@ -200,6 +208,11 @@ export default function SettingsScreen() {
     subject: string;
     body?: string;
   }) => {
+    if (!isConnected) {
+      Alert.alert(label, DEFAULT_OFFLINE_MESSAGE);
+      return;
+    }
+
     const mailtoUrl = `mailto:${APP_LINKS.email}?subject=${encodeURIComponent(subject)}${
       body ? `&body=${encodeURIComponent(body)}` : ""
     }`;

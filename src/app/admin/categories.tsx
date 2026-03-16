@@ -35,11 +35,14 @@ import {
   type CategoryRecord,
 } from "@/lib/content";
 import { firestore } from "@/lib/firebase";
+import { getActionErrorMessage, getRequestErrorMessage } from "@/lib/network";
 import { useAuth } from "@/providers/auth-provider";
+import { useNetworkStatus } from "@/providers/network-provider";
 import { useAppTheme } from "@/providers/theme-provider";
 
 export default function AdminCategoriesScreen() {
   const { colors } = useAppTheme();
+  const { isConnected } = useNetworkStatus();
   const { user } = useAuth();
   const styles = createStyles(colors);
   const [categories, setCategories] = useState<CategoryRecord[]>([]);
@@ -66,14 +69,20 @@ export default function AdminCategoriesScreen() {
         setError("");
         setIsLoading(false);
       },
-      () => {
-        setError("Unable to load categories.");
+      (snapshotError) => {
+        setError(
+          getRequestErrorMessage({
+            error: snapshotError,
+            isConnected,
+            onlineMessage: "Unable to load categories.",
+          }),
+        );
         setIsLoading(false);
       }
     );
 
     return unsubscribe;
-  }, []);
+  }, [isConnected]);
 
   const clearFeedback = () => {
     setError("");
@@ -123,11 +132,13 @@ export default function AdminCategoriesScreen() {
       setCategoryName("");
       setSuccess("Category created.");
     } catch (saveError) {
-      if (saveError instanceof Error && saveError.message) {
-        setError(saveError.message);
-      } else {
-        setError("Unable to create category.");
-      }
+      setError(
+        getActionErrorMessage({
+          error: saveError,
+          isConnected,
+          fallbackMessage: "Unable to create category.",
+        }),
+      );
     } finally {
       setIsSaving(false);
     }

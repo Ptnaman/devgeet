@@ -20,23 +20,27 @@ import {
   SPACING,
   type ThemeColors,
 } from "@/constants/theme";
+import { getActionErrorMessage } from "@/lib/network";
 import { useAuth } from "@/providers/auth-provider";
+import { useNetworkStatus } from "@/providers/network-provider";
 import { useAppTheme } from "@/providers/theme-provider";
 
 const LAST_LOGIN_IDENTIFIER_KEY = "auth:last_login_identifier";
 
 const getErrorMessage = (
   error: unknown,
+  isConnected: boolean,
   fallbackMessage = "Unable to login. Please try again."
-) => {
-  if (error instanceof Error && error.message) {
-    return error.message;
-  }
-  return fallbackMessage;
-};
+) =>
+  getActionErrorMessage({
+    error,
+    isConnected,
+    fallbackMessage,
+  });
 
 export default function LoginScreen() {
   const { colors } = useAppTheme();
+  const { isConnected } = useNetworkStatus();
   const router = useRouter();
   const { loginWithEmailOrUsername, requestPasswordReset } = useAuth();
   const styles = createStyles(colors);
@@ -82,7 +86,7 @@ export default function LoginScreen() {
       await AsyncStorage.setItem(LAST_LOGIN_IDENTIFIER_KEY, normalizedIdentifier);
       router.replace("/home");
     } catch (loginError) {
-      setError(getErrorMessage(loginError));
+      setError(getErrorMessage(loginError, isConnected));
     } finally {
       setIsSubmitting(false);
     }
@@ -106,7 +110,11 @@ export default function LoginScreen() {
       setSuccessMessage("Password reset email sent. Check your inbox.");
     } catch (passwordResetError) {
       setError(
-        getErrorMessage(passwordResetError, "Unable to send reset email. Please try again.")
+        getErrorMessage(
+          passwordResetError,
+          isConnected,
+          "Unable to send reset email. Please try again.",
+        )
       );
     } finally {
       setIsResettingPassword(false);

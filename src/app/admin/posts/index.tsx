@@ -43,6 +43,8 @@ import {
   type PostStatus,
 } from "@/lib/content";
 import { firestore } from "@/lib/firebase";
+import { getActionErrorMessage, getRequestErrorMessage } from "@/lib/network";
+import { useNetworkStatus } from "@/providers/network-provider";
 import { useAppTheme } from "@/providers/theme-provider";
 
 const POST_STATUSES: PostStatus[] = ["draft", "published"];
@@ -51,6 +53,7 @@ const DEFAULT_CATEGORY = "general";
 
 export default function AdminPostsListScreen() {
   const { colors } = useAppTheme();
+  const { isConnected } = useNetworkStatus();
   const router = useRouter();
   const styles = createStyles(colors);
   const [categories, setCategories] = useState<CategoryRecord[]>([]);
@@ -82,9 +85,15 @@ export default function AdminPostsListScreen() {
         setIsLoadingCategories(false);
         setError("");
       },
-      () => {
+      (snapshotError) => {
         setIsLoadingCategories(false);
-        setError("Unable to load categories.");
+        setError(
+          getRequestErrorMessage({
+            error: snapshotError,
+            isConnected,
+            onlineMessage: "Unable to load categories.",
+          }),
+        );
       }
     );
 
@@ -101,9 +110,15 @@ export default function AdminPostsListScreen() {
         setIsLoadingPosts(false);
         setError("");
       },
-      () => {
+      (snapshotError) => {
         setIsLoadingPosts(false);
-        setError("Unable to load posts.");
+        setError(
+          getRequestErrorMessage({
+            error: snapshotError,
+            isConnected,
+            onlineMessage: "Unable to load posts.",
+          }),
+        );
       }
     );
 
@@ -111,7 +126,7 @@ export default function AdminPostsListScreen() {
       unsubscribeCategories();
       unsubscribePosts();
     };
-  }, []);
+  }, [isConnected]);
 
   const isLoadingData = isLoadingCategories || isLoadingPosts;
 
@@ -168,11 +183,13 @@ export default function AdminPostsListScreen() {
       );
       setSuccess(`Post moved to ${nextStatus}.`);
     } catch (updateError) {
-      if (updateError instanceof Error && updateError.message) {
-        setError(updateError.message);
-      } else {
-        setError("Unable to update post status.");
-      }
+      setError(
+        getActionErrorMessage({
+          error: updateError,
+          isConnected,
+          fallbackMessage: "Unable to update post status.",
+        }),
+      );
     }
   };
 
@@ -182,11 +199,13 @@ export default function AdminPostsListScreen() {
       await deleteDoc(doc(firestore, POSTS_COLLECTION, post.id));
       setSuccess("Post deleted.");
     } catch (deleteError) {
-      if (deleteError instanceof Error && deleteError.message) {
-        setError(deleteError.message);
-      } else {
-        setError("Unable to delete post.");
-      }
+      setError(
+        getActionErrorMessage({
+          error: deleteError,
+          isConnected,
+          fallbackMessage: "Unable to delete post.",
+        }),
+      );
     }
   };
 

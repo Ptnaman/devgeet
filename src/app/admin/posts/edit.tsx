@@ -42,7 +42,9 @@ import {
   type PostStatus,
 } from "@/lib/content";
 import { firestore } from "@/lib/firebase";
+import { getActionErrorMessage, getRequestErrorMessage } from "@/lib/network";
 import { useAuth } from "@/providers/auth-provider";
+import { useNetworkStatus } from "@/providers/network-provider";
 import { useAppTheme } from "@/providers/theme-provider";
 
 const POST_STATUSES: PostStatus[] = ["draft", "published"];
@@ -86,6 +88,7 @@ const extractPlainText = (value: string) =>
 
 export default function AdminPostEditScreen() {
   const { colors } = useAppTheme();
+  const { isConnected } = useNetworkStatus();
   const router = useRouter();
   const { postId: postIdParam } = useLocalSearchParams<{ postId?: string }>();
   const { user } = useAuth();
@@ -137,10 +140,17 @@ export default function AdminPostEditScreen() {
           ),
         );
         setIsLoadingCategories(false);
+        setError("");
       },
-      () => {
+      (snapshotError) => {
         setIsLoadingCategories(false);
-        setError("Unable to load categories.");
+        setError(
+          getRequestErrorMessage({
+            error: snapshotError,
+            isConnected,
+            onlineMessage: "Unable to load categories.",
+          }),
+        );
       },
     );
 
@@ -154,9 +164,16 @@ export default function AdminPostEditScreen() {
             ),
           ),
         );
+        setError("");
       },
-      () => {
-        setError("Unable to load posts for validation.");
+      (snapshotError) => {
+        setError(
+          getRequestErrorMessage({
+            error: snapshotError,
+            isConnected,
+            onlineMessage: "Unable to load posts for validation.",
+          }),
+        );
       },
     );
 
@@ -164,7 +181,7 @@ export default function AdminPostEditScreen() {
       unsubscribeCategories();
       unsubscribePosts();
     };
-  }, []);
+  }, [isConnected]);
 
   useEffect(() => {
     if (!isEditing) {
@@ -208,9 +225,15 @@ export default function AdminPostEditScreen() {
         setCategory(post.category);
         setStatus(post.status);
         setError("");
-      } catch {
+      } catch (loadError) {
         if (active) {
-          setError("Unable to load post details.");
+          setError(
+            getRequestErrorMessage({
+              error: loadError,
+              isConnected,
+              onlineMessage: "Unable to load post details.",
+            }),
+          );
         }
       } finally {
         if (active) {
@@ -224,7 +247,7 @@ export default function AdminPostEditScreen() {
     return () => {
       active = false;
     };
-  }, [isEditing, postId]);
+  }, [isConnected, isEditing, postId]);
 
   useEffect(() => {
     if (!isSlugManuallyEdited) {
@@ -416,11 +439,13 @@ export default function AdminPostEditScreen() {
 
       router.replace("/admin/posts");
     } catch (saveError) {
-      if (saveError instanceof Error && saveError.message) {
-        setError(saveError.message);
-      } else {
-        setError("Unable to save post to Firebase.");
-      }
+      setError(
+        getActionErrorMessage({
+          error: saveError,
+          isConnected,
+          fallbackMessage: "Unable to save post to Firebase.",
+        }),
+      );
     } finally {
       setIsSubmitting(false);
     }

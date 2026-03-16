@@ -17,19 +17,21 @@ import {
   SPACING,
   type ThemeColors,
 } from "@/constants/theme";
+import { getActionErrorMessage } from "@/lib/network";
 import { useAuth } from "@/providers/auth-provider";
+import { useNetworkStatus } from "@/providers/network-provider";
 import { useAppTheme } from "@/providers/theme-provider";
 
-const getErrorMessage = (error: unknown) => {
-  if (error instanceof Error && error.message) {
-    return error.message;
-  }
-
-  return "Unable to update profile. Please try again.";
-};
+const getErrorMessage = (error: unknown, isConnected: boolean) =>
+  getActionErrorMessage({
+    error,
+    isConnected,
+    fallbackMessage: "Unable to update profile. Please try again.",
+  });
 
 export default function ProfileScreen() {
   const { colors } = useAppTheme();
+  const { isConnected } = useNetworkStatus();
   const { user, profile, updateCurrentUserProfile } = useAuth();
   const styles = createStyles(colors);
   const [firstName, setFirstName] = useState("");
@@ -87,7 +89,7 @@ export default function ProfileScreen() {
       });
       setSuccess("Profile updated successfully.");
     } catch (saveError) {
-      setError(getErrorMessage(saveError));
+      setError(getErrorMessage(saveError, isConnected));
     } finally {
       setIsSaving(false);
     }
