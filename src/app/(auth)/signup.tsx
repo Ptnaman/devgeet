@@ -21,7 +21,7 @@ import {
   SPACING,
   type ThemeColors,
 } from "@/constants/theme";
-import { getActionErrorMessage } from "@/lib/network";
+import { DEFAULT_OFFLINE_MESSAGE, getActionErrorMessage } from "@/lib/network";
 import { useAuth } from "@/providers/auth-provider";
 import { useNetworkStatus } from "@/providers/network-provider";
 import { useAppTheme } from "@/providers/theme-provider";
@@ -42,7 +42,7 @@ type FocusedField =
 
 export default function SignupScreen() {
   const { colors } = useAppTheme();
-  const { isConnected } = useNetworkStatus();
+  const { isConnected, showOfflineToast } = useNetworkStatus();
   const router = useRouter();
   const headerHeight = useHeaderHeight();
   const { signupWithEmail } = useAuth();
@@ -111,7 +111,11 @@ export default function SignupScreen() {
       });
       router.replace("/home");
     } catch (signupError) {
-      setError(getErrorMessage(signupError, isConnected));
+      const message = getErrorMessage(signupError, isConnected);
+      if (message === DEFAULT_OFFLINE_MESSAGE) {
+        showOfflineToast();
+      }
+      setError(message);
     } finally {
       setIsSubmitting(false);
     }

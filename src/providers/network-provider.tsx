@@ -3,20 +3,29 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
 import { AppState, Platform, type AppStateStatus } from "react-native";
 
+import { NetworkStatusToast } from "@/components/network-status-toast";
+
 type NetworkContextType = {
   isConnected: boolean;
   isCheckingConnection: boolean;
   refreshConnection: () => Promise<boolean>;
+  showToast: (message: string) => void;
+  showOfflineToast: () => void;
+  showOnlineToast: () => void;
 };
 
 const CHECK_INTERVAL_MS = 15000;
 const CHECK_TIMEOUT_MS = 5000;
 const NETWORK_PING_URL = "https://www.gstatic.com/generate_204";
+const TOAST_HIDE_DELAY_MS = 2200;
+const OFFLINE_TOAST_MESSAGE = "No internet connection";
+const ONLINE_TOAST_MESSAGE = "You are online";
 
 const NetworkContext = createContext<NetworkContextType | undefined>(undefined);
 
@@ -72,6 +81,36 @@ export function NetworkProvider({ children }: { children: ReactNode }) {
     Platform.OS === "web" ? getBrowserConnectionState() : true,
   );
   const [isCheckingConnection, setIsCheckingConnection] = useState(Platform.OS !== "web");
+  const [isToastVisible, setIsToastVisible] = useState(false);
+  const [toastKey, setToastKey] = useState(0);
+  const [toastMessage, setToastMessage] = useState("");
+  const toastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const previousConnectionRef = useRef<boolean | null>(null);
+
+  const clearToastTimer = useCallback(() => {
+    if (toastTimeoutRef.current) {
+      clearTimeout(toastTimeoutRef.current);
+      toastTimeoutRef.current = null;
+    }
+  }, []);
+
+  const showToast = useCallback((message: string) => {
+    clearToastTimer();
+    setToastMessage(message);
+    setIsToastVisible(true);
+    setToastKey((current) => current + 1);
+    toastTimeoutRef.current = setTimeout(() => {
+      setIsToastVisible(false);
+    }, TOAST_HIDE_DELAY_MS);
+  }, [clearToastTimer]);
+
+  const showOfflineToast = useCallback(() => {
+    showToast(OFFLINE_TOAST_MESSAGE);
+  }, [showToast]);
+
+  const showOnlineToast = useCallback(() => {
+    showToast(ONLINE_TOAST_MESSAGE);
+  }, [showToast]);
 
   const refreshConnection = useCallback(async () => {
     setIsCheckingConnection(true);
@@ -118,13 +157,53 @@ export function NetworkProvider({ children }: { children: ReactNode }) {
     };
   }, [refreshConnection]);
 
+  useEffect(() => {
+    if (previousConnectionRef.current === null) {
+      previousConnectionRef.current = isConnected;
+
+      if (!isConnected) {
+        showOfflineToast();
+      }
+
+      return;
+    }
+
+    if (previousConnectionRef.current !== isConnected) {
+      if (isConnected) {
+        showOnlineToast();
+      } else {
+        showOfflineToast();
+      }
+    }
+
+    previousConnectionRef.current = isConnected;
+  }, [isConnected, showOfflineToast, showOnlineToast]);
+
+  useEffect(() => {
+    return () => {
+      clearToastTimer();
+    };
+  }, [clearToastTimer]);
+
   const value: NetworkContextType = {
     isConnected,
     isCheckingConnection,
     refreshConnection,
+    showToast,
+    showOfflineToast,
+    showOnlineToast,
   };
 
-  return <NetworkContext.Provider value={value}>{children}</NetworkContext.Provider>;
+  return (
+    <NetworkContext.Provider value={value}>
+      {children}
+      <NetworkStatusToast
+        message={toastMessage}
+        toastKey={toastKey}
+        visible={isToastVisible}
+      />
+    </NetworkContext.Provider>
+  );
 }
 
 export function useNetworkStatus() {

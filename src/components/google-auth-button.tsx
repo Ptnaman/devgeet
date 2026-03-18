@@ -111,7 +111,7 @@ export function GoogleAuthButton({
   autoPrompt = false,
 }: GoogleAuthButtonProps) {
   const { colors } = useAppTheme();
-  const { isConnected } = useNetworkStatus();
+  const { isConnected, showOfflineToast } = useNetworkStatus();
   const { loginWithGoogleIdToken } = useAuth();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const hasAutoPromptedRef = useRef(false);
@@ -236,6 +236,7 @@ export function GoogleAuthButton({
       onError("");
 
       if (!isConnected) {
+        showOfflineToast();
         onError(DEFAULT_OFFLINE_MESSAGE);
         return;
       }
@@ -294,7 +295,11 @@ export function GoogleAuthButton({
         }
       }
 
-      onError(getErrorMessage(error, isConnected));
+      const message = getErrorMessage(error, isConnected);
+      if (message === DEFAULT_OFFLINE_MESSAGE) {
+        showOfflineToast();
+      }
+      onError(message);
     } finally {
       setIsSubmitting(false);
     }
@@ -308,6 +313,7 @@ export function GoogleAuthButton({
     onError,
     runOneTapFlow,
     isConnected,
+    showOfflineToast,
   ]);
 
   const handlePress = useCallback(() => {

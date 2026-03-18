@@ -2,13 +2,14 @@ import { ArrowRight01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react-native";
 import Constants from "expo-constants";
 import { useRouter } from "expo-router";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import {
   Alert,
   Image,
   Linking,
   Pressable,
   ScrollView,
+  Share,
   StyleSheet,
   Text,
   View,
@@ -16,7 +17,6 @@ import {
 import Svg, { Circle, Path } from "react-native-svg";
 
 import { RADIUS, SHADOWS, SPACING, type ThemeColors } from "@/constants/theme";
-import { DEFAULT_OFFLINE_MESSAGE } from "@/lib/network";
 import { useAuth } from "@/providers/auth-provider";
 import { useNetworkStatus } from "@/providers/network-provider";
 import { useAppTheme, type ThemePreference } from "@/providers/theme-provider";
@@ -24,10 +24,13 @@ import { useAppTheme, type ThemePreference } from "@/providers/theme-provider";
 const APP_LINKS = {
   terms: "https://devgeet.com/terms/",
   disclaimer: "https://devgeet.com/disclaimer/",
-  contact: "https://devgeet.com/contact/",
   privacy: "https://devgeet.com/privacy/",
   whatsapp: "https://chat.whatsapp.com/DHaKK4v5UOJLTCI5JuMwY1",
   email: "naman@devgeet.com",
+  playStore: "https://play.google.com/store/apps/details?id=com.panditnaman.devgeet",
+  playStoreReview: "market://details?id=com.panditnaman.devgeet&showAllReviews=true",
+  playStoreReviewWeb:
+    "https://play.google.com/store/apps/details?id=com.panditnaman.devgeet&showAllReviews=true",
 } as const;
 
 const THEME_OPTIONS: {
@@ -96,11 +99,28 @@ function ThemeOptionIcon({
   );
 }
 
+function ShareAppIcon({ color }: { color: string }) {
+  return (
+    <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
+      <Circle cx="18" cy="5.5" r="2.25" stroke={color} strokeWidth={1.8} />
+      <Circle cx="6" cy="12" r="2.25" stroke={color} strokeWidth={1.8} />
+      <Circle cx="18" cy="18.5" r="2.25" stroke={color} strokeWidth={1.8} />
+      <Path
+        d="M8 11.1L15.8 6.3M8 12.9L15.8 17.7"
+        stroke={color}
+        strokeLinecap="round"
+        strokeWidth={1.8}
+      />
+    </Svg>
+  );
+}
+
 type SettingItem = {
   key: string;
   title: string;
   subtitle?: string;
   value?: string;
+  icon?: ReactNode;
   onPress?: () => void | Promise<void>;
   destructive?: boolean;
   disabled?: boolean;
@@ -130,20 +150,27 @@ function SettingRow({
       disabled={!isInteractive}
     >
       <View style={styles.rowContent}>
-        <View style={styles.rowTextWrap}>
-          <Text
-            style={[
-              styles.rowTitle,
-              item.destructive && styles.rowTitleDestructive,
-            ]}
-          >
-            {item.title}
-          </Text>
-          {item.subtitle ? (
-            <Text style={styles.rowSubtitle} numberOfLines={2}>
-              {item.subtitle}
-            </Text>
+        <View style={styles.rowMain}>
+          {item.icon ? (
+            <View style={styles.rowIconWrap}>
+              {item.icon}
+            </View>
           ) : null}
+          <View style={styles.rowTextWrap}>
+            <Text
+              style={[
+                styles.rowTitle,
+                item.destructive && styles.rowTitleDestructive,
+              ]}
+            >
+              {item.title}
+            </Text>
+            {item.subtitle ? (
+              <Text style={styles.rowSubtitle} numberOfLines={2}>
+                {item.subtitle}
+              </Text>
+            ) : null}
+          </View>
         </View>
 
         <View style={styles.rowRight}>
@@ -167,7 +194,7 @@ function SettingRow({
 
 export default function SettingsScreen() {
   const { colors, themePreference, setThemePreference } = useAppTheme();
-  const { isConnected } = useNetworkStatus();
+  const { isConnected, showOfflineToast } = useNetworkStatus();
   const router = useRouter();
   const { user, profile, logout } = useAuth();
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -188,7 +215,7 @@ export default function SettingsScreen() {
 
   const openExternal = async (url: string, label: string) => {
     if (!isConnected) {
-      Alert.alert(label, DEFAULT_OFFLINE_MESSAGE);
+      showOfflineToast();
       return;
     }
 
@@ -208,11 +235,6 @@ export default function SettingsScreen() {
     subject: string;
     body?: string;
   }) => {
-    if (!isConnected) {
-      Alert.alert(label, DEFAULT_OFFLINE_MESSAGE);
-      return;
-    }
-
     const mailtoUrl = `mailto:${APP_LINKS.email}?subject=${encodeURIComponent(subject)}${
       body ? `&body=${encodeURIComponent(body)}` : ""
     }`;
@@ -224,6 +246,35 @@ export default function SettingsScreen() {
         label,
         `Mail app not available. Please write to ${APP_LINKS.email}.`,
       );
+    }
+  };
+
+  const openPlayStoreFeedback = async () => {
+    if (!isConnected) {
+      showOfflineToast();
+      return;
+    }
+
+    try {
+      await Linking.openURL(APP_LINKS.playStoreReview);
+    } catch {
+      try {
+        await Linking.openURL(APP_LINKS.playStoreReviewWeb);
+      } catch {
+        Alert.alert("Feedback", "Unable to open Google Play feedback right now.");
+      }
+    }
+  };
+
+  const handleShareApp = async () => {
+    try {
+      await Share.share({
+        title: appName,
+        message: `Download ${appName}: ${APP_LINKS.playStore}`,
+        url: APP_LINKS.playStore,
+      });
+    } catch {
+      Alert.alert("Share App", "Unable to open share options right now.");
     }
   };
 
@@ -257,9 +308,14 @@ export default function SettingsScreen() {
 
   const supportItems: SettingItem[] = [
     {
-      key: "contact-page",
-      title: "Contact Us",
-      onPress: () => openExternal(APP_LINKS.contact, "Contact Us"),
+      key: "email",
+      title: "Email",
+      subtitle: APP_LINKS.email,
+      onPress: () =>
+        openEmail({
+          label: "Email",
+          subject: `${appName} Support`,
+        }),
     },
     {
       key: "whatsapp",
@@ -270,13 +326,8 @@ export default function SettingsScreen() {
     {
       key: "feedback",
       title: "Feedback",
-      subtitle: "Send suggestions, bugs, or improvement ideas",
-      onPress: () =>
-        openEmail({
-          label: "Feedback",
-          subject: `${appName} Feedback (v${appVersion})`,
-          body: "Hi DevGeet team,\n\nI want to share this feedback:\n\n",
-        }),
+      subtitle: "Rate and review on Google Play",
+      onPress: openPlayStoreFeedback,
     },
   ];
 
@@ -379,6 +430,16 @@ export default function SettingsScreen() {
 
       <Text style={styles.sectionLabel}>About</Text>
       <View style={styles.groupCard}>
+        <SettingRow
+          item={{
+            key: "share-app",
+            title: "Share App",
+            subtitle: "Send DevGeet to your friends",
+            icon: <ShareAppIcon color={colors.accent} />,
+            onPress: handleShareApp,
+            showChevron: false,
+          }}
+        />
         <SettingRow
           item={{
             key: "about",
@@ -493,6 +554,20 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     gap: SPACING.md,
+  },
+  rowMain: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.sm,
+  },
+  rowIconWrap: {
+    width: 34,
+    height: 34,
+    borderRadius: 999,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.surfaceMuted,
   },
   rowTextWrap: {
     flex: 1,

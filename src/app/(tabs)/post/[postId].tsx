@@ -11,12 +11,18 @@ import {
   View,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { HugeiconsIcon } from "@hugeicons/react-native";
-import { FavouriteIcon } from "@hugeicons/core-free-icons";
 import { doc, onSnapshot, type DocumentData } from "firebase/firestore";
 import YoutubePlayer from "react-native-youtube-iframe";
 
-import { FONT_SIZE, RADIUS, SPACING, type ThemeColors } from "@/constants/theme";
+import {
+  FONT_SIZE,
+  RADIUS,
+  SHADOWS,
+  SPACING,
+  type ThemeColors,
+  type ThemeMode,
+} from "@/constants/theme";
+import { FavoriteActionIcon } from "@/components/icons/favorite-action-icon";
 import {
   formatDate,
   getPostCardThumbnailUrl,
@@ -27,7 +33,11 @@ import {
 } from "@/lib/content";
 import { useFavorites } from "@/hooks/use-favorites";
 import { firestore } from "@/lib/firebase";
-import { getActionErrorMessage, getRequestErrorMessage } from "@/lib/network";
+import {
+  DEFAULT_OFFLINE_MESSAGE,
+  getActionErrorMessage,
+  getRequestErrorMessage,
+} from "@/lib/network";
 import { useNetworkStatus } from "@/providers/network-provider";
 import { useAppTheme } from "@/providers/theme-provider";
 
@@ -39,12 +49,12 @@ const DEFAULT_LYRICS_FONT_SIZE = 16;
 const LYRICS_FONT_STEP = 1;
 
 export default function PostDetailsScreen() {
-  const { colors } = useAppTheme();
-  const { isConnected } = useNetworkStatus();
+  const { colors, resolvedTheme } = useAppTheme();
+  const { isConnected, showOfflineToast } = useNetworkStatus();
   const router = useRouter();
   const { postId: postIdParam } = useLocalSearchParams<{ postId?: string }>();
   const { isFavorite, toggleFavorite } = useFavorites();
-  const styles = createStyles(colors);
+  const styles = createStyles(colors, resolvedTheme);
 
   const postId = resolvePostId(postIdParam);
   const [post, setPost] = useState<PostRecord | null>(null);
@@ -52,6 +62,8 @@ export default function PostDetailsScreen() {
   const [error, setError] = useState("");
   const [youtubePlayerError, setYoutubePlayerError] = useState("");
   const [lyricsFontSize, setLyricsFontSize] = useState(DEFAULT_LYRICS_FONT_SIZE);
+  const favoriteIconColor = resolvedTheme === "dark" ? "#FFFFFF" : "#111111";
+  const favoriteFillColor = resolvedTheme === "dark" ? "#FFFFFF" : "#111111";
 
   useEffect(() => {
     if (!postId) {
@@ -108,20 +120,27 @@ export default function PostDetailsScreen() {
     try {
       await toggleFavorite(post);
     } catch (toggleError) {
+      const message = getActionErrorMessage({
+        error: toggleError,
+        isConnected,
+        fallbackMessage: "Favorites could not be updated right now.",
+      });
+
+      if (message === DEFAULT_OFFLINE_MESSAGE) {
+        showOfflineToast();
+        return;
+      }
+
       Alert.alert(
         "Unable to update favorites",
-        getActionErrorMessage({
-          error: toggleError,
-          isConnected,
-          fallbackMessage: "Favorites could not be updated right now.",
-        }),
+        message,
       );
     }
   };
 
   const handleOpenInYouTube = async (url: string) => {
     if (!isConnected) {
-      Alert.alert("YouTube unavailable", "No internet connection. Check your internet and try again.");
+      showOfflineToast();
       return;
     }
 
@@ -205,27 +224,24 @@ export default function PostDetailsScreen() {
 
       <View style={styles.actionRow}>
         <Pressable
-          style={[
+          style={({ pressed }) => [
             styles.favoriteButton,
-            favorite ? styles.favoriteButtonActive : undefined,
+            pressed && styles.favoriteButtonPressed,
           ]}
           onPress={() => {
             void handleToggleFavorite();
           }}
+          accessibilityRole="button"
+          accessibilityLabel={favorite ? "Remove from favorites" : "Add to favorites"}
         >
-          <HugeiconsIcon
-            icon={FavouriteIcon}
-            size={18}
-            color={favorite ? colors.danger : colors.mutedText}
+          <FavoriteActionIcon
+            size={16}
+            color={favoriteIconColor}
+            filled={favorite}
+            fillColor={favoriteFillColor}
+            accentColor="#111111"
+            accentUnderlayColor={resolvedTheme === "dark" ? undefined : "#FFFFFF"}
           />
-          <Text
-            style={[
-              styles.favoriteButtonText,
-              favorite ? styles.favoriteButtonTextActive : undefined,
-            ]}
-          >
-            {favorite ? "Saved" : "Save"}
-          </Text>
         </Pressable>
 
         <View style={styles.fontControlsWrap}>
@@ -323,7 +339,7 @@ export default function PostDetailsScreen() {
   );
 }
 
-const createStyles = (colors: ThemeColors) => StyleSheet.create({
+const createStyles = (colors: ThemeColors, resolvedTheme: ThemeMode) => StyleSheet.create({
   loadingContainer: {
     flex: 1,
     alignItems: "center",
@@ -399,27 +415,16 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   },
   favoriteButton: {
     alignSelf: "flex-start",
-    flexDirection: "row",
     alignItems: "center",
-    gap: SPACING.xs,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 999,
-    paddingHorizontal: SPACING.md,
-    paddingVertical: 8,
-    backgroundColor: colors.surfaceMuted,
+    justifyContent: "center",
+    width: 30,
+    height: 28,
+    borderRadius: 10,
+    backgroundColor: resolvedTheme === "dark" ? "#2D2D30" : "#FFFFFF",
+    ...SHADOWS.lg,
   },
-  favoriteButtonActive: {
-    borderColor: colors.dangerBorder,
-    backgroundColor: colors.dangerSoft,
-  },
-  favoriteButtonText: {
-    color: colors.text,
-    fontSize: 12,
-    fontWeight: "600",
-  },
-  favoriteButtonTextActive: {
-    color: colors.danger,
+  favoriteButtonPressed: {
+    opacity: 0.85,
   },
   fontControlsWrap: {
     marginLeft: "auto",

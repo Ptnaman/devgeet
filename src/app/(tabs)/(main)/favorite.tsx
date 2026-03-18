@@ -20,6 +20,7 @@ import {
 } from "firebase/firestore";
 
 import { FONT_SIZE, RADIUS, SHADOWS, SPACING, type ThemeColors } from "@/constants/theme";
+import { TrashActionIcon } from "@/components/icons/trash-action-icon";
 import {
   getPostCardThumbnailUrl,
   mapPostRecord,
@@ -29,19 +30,23 @@ import {
 } from "@/lib/content";
 import { useFavorites } from "@/hooks/use-favorites";
 import { firestore } from "@/lib/firebase";
-import { getActionErrorMessage, getRequestErrorMessage } from "@/lib/network";
+import {
+  DEFAULT_OFFLINE_MESSAGE,
+  getActionErrorMessage,
+  getRequestErrorMessage,
+} from "@/lib/network";
 import { useNetworkStatus } from "@/providers/network-provider";
 import { useAppTheme } from "@/providers/theme-provider";
 
 export default function FavoriteScreen() {
   const { colors } = useAppTheme();
-  const { isConnected } = useNetworkStatus();
+  const { isConnected, showOfflineToast } = useNetworkStatus();
   const router = useRouter();
   const {
     favoritePostIds,
     favoritesError,
-    isFavorite,
     isLoadingFavorites,
+    clearFavorites,
     toggleFavorite,
   } =
     useFavorites();
@@ -97,25 +102,76 @@ export default function FavoriteScreen() {
     try {
       await toggleFavorite(post);
     } catch (toggleError) {
+      const message = getActionErrorMessage({
+        error: toggleError,
+        isConnected,
+        fallbackMessage: "Favorites could not be updated right now.",
+      });
+
+      if (message === DEFAULT_OFFLINE_MESSAGE) {
+        showOfflineToast();
+        return;
+      }
+
       Alert.alert(
         "Unable to update favorites",
-        getActionErrorMessage({
-          error: toggleError,
-          isConnected,
-          fallbackMessage: "Favorites could not be updated right now.",
-        }),
+        message,
       );
     }
   };
 
+  const handleClearAllFavorites = async () => {
+    try {
+      await clearFavorites();
+    } catch (clearError) {
+      const message = getActionErrorMessage({
+        error: clearError,
+        isConnected,
+        fallbackMessage: "Favorites could not be cleared right now.",
+      });
+
+      if (message === DEFAULT_OFFLINE_MESSAGE) {
+        showOfflineToast();
+        return;
+      }
+
+      Alert.alert(
+        "Unable to clear favorites",
+        message,
+      );
+    }
+  };
+
+  const handleConfirmClearAllFavorites = () => {
+    Alert.alert(
+      "Clear all favorites?",
+      "This will remove every saved post from your favorites.",
+      [
+        {
+          text: "Cancel",
+          style: "cancel",
+        },
+        {
+          text: "Clear all",
+          style: "destructive",
+          onPress: () => {
+            void handleClearAllFavorites();
+          },
+        },
+      ],
+    );
+  };
+
   const combinedError = postsError || favoritesError;
+  const isOfflineState = !isConnected || combinedError === DEFAULT_OFFLINE_MESSAGE;
+  const showInlineError = Boolean(combinedError) && !isOfflineState;
 
   const subtitle = useMemo(() => {
     if (isLoading) {
       return "Loading your saved posts...";
     }
 
-    if (combinedError) {
+    if (showInlineError) {
       return combinedError;
     }
 
@@ -124,53 +180,70 @@ export default function FavoriteScreen() {
     }
 
     return `${favoritePosts.length} saved post${favoritePosts.length === 1 ? "" : "s"}.`;
-  }, [combinedError, favoritePosts.length, isLoading]);
+  }, [combinedError, favoritePosts.length, isLoading, showInlineError]);
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      <View style={styles.headerCard}>
-        <View style={styles.headerRow}>
-          <View style={styles.headerTextWrap}>
-            <Text style={styles.title}>Favorites</Text>
-            <Text style={styles.subtitle}>{subtitle}</Text>
-          </View>
-          <View style={styles.countPill}>
-            <Text style={styles.countPillText}>{favoritePosts.length}</Text>
+    <View style={styles.screen}>
+      <ScrollView contentContainerStyle={styles.container}>
+        <View style={styles.headerCard}>
+          <View style={styles.headerRow}>
+            <View style={styles.headerTextWrap}>
+              <Text style={styles.title}>Favorites</Text>
+              <Text style={styles.subtitle}>{subtitle}</Text>
+            </View>
+            <View style={styles.headerActions}>
+              {!isLoading && favoritePosts.length ? (
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.clearAllButton,
+                    pressed && styles.clearAllButtonPressed,
+                  ]}
+                  onPress={handleConfirmClearAllFavorites}
+                  accessibilityRole="button"
+                  accessibilityLabel="Clear all favorites"
+                >
+                  <Text style={styles.clearAllButtonText}>Clear all</Text>
+                </Pressable>
+              ) : null}
+              <View style={styles.countPill}>
+                <Text style={styles.countPillText}>{favoritePosts.length}</Text>
+              </View>
+            </View>
           </View>
         </View>
-      </View>
 
-      {isLoading ? (
-        <ActivityIndicator size="large" color={colors.primary} style={styles.loader} />
-      ) : null}
+        {isLoading ? (
+          <ActivityIndicator size="large" color={colors.primary} style={styles.loader} />
+        ) : null}
 
-      {!isLoading && combinedError ? (
-        <Text style={styles.errorText}>{combinedError}</Text>
-      ) : null}
+        {!isLoading && showInlineError ? (
+          <Text style={styles.errorText}>{combinedError}</Text>
+        ) : null}
 
-      {!isLoading && !combinedError && !favoritePosts.length ? (
-        <View style={styles.emptyWrap}>
-          <View style={styles.emptyIconCard}>
-            <HugeiconsIcon icon={FavouriteIcon} size={30} color={colors.mutedText} />
+        {!isLoading && !combinedError && !favoritePosts.length ? (
+          <View style={styles.emptyWrap}>
+            <View style={styles.emptyIconCard}>
+              <HugeiconsIcon icon={FavouriteIcon} size={30} color={colors.mutedText} />
+            </View>
+            <Text style={styles.emptyTitle}>No favorites yet</Text>
+            <Text style={styles.emptyText}>
+              Save any post and it will show here for quick access.
+            </Text>
           </View>
-          <Text style={styles.emptyTitle}>No favorites yet</Text>
-          <Text style={styles.emptyText}>
-            Save any post and it will show here for quick access.
-          </Text>
-        </View>
-      ) : null}
+        ) : null}
 
-      {favoritePosts.map((post) => {
-        const thumbnailUrl = getPostCardThumbnailUrl(post);
-        const favorite = isFavorite(post.id);
+        {favoritePosts.map((post) => {
+          const thumbnailUrl = getPostCardThumbnailUrl(post);
 
-        return (
-          <View key={post.id} style={styles.card}>
-            <Pressable
-              style={({ pressed }) => [styles.cardBody, pressed && styles.cardBodyPressed]}
-              onPress={() => openPost(post.id)}
-            >
-              <View style={styles.cardRow}>
+          return (
+            <View key={post.id} style={styles.card}>
+              <Pressable
+                style={({ pressed }) => [
+                  styles.cardBody,
+                  pressed && styles.cardBodyPressed,
+                ]}
+                onPress={() => openPost(post.id)}
+              >
                 {thumbnailUrl ? (
                   <Image
                     source={{ uri: thumbnailUrl }}
@@ -187,46 +260,37 @@ export default function FavoriteScreen() {
                   <Text style={styles.cardTitle} numberOfLines={2} ellipsizeMode="tail">
                     {post.title}
                   </Text>
-                  <Text style={styles.cardPreview} numberOfLines={2} ellipsizeMode="tail">
+                  <Text style={styles.cardPreview} numberOfLines={1} ellipsizeMode="tail">
                     {post.content.trim() || "-"}
                   </Text>
-
-                  <View style={styles.cardFooterRow}>
-                    <Pressable
-                      style={[
-                        styles.favoriteButton,
-                        favorite ? styles.favoriteButtonActive : undefined,
-                      ]}
-                      onPress={() => {
-                        void handleToggleFavorite(post);
-                      }}
-                    >
-                      <HugeiconsIcon
-                        icon={FavouriteIcon}
-                        size={16}
-                        color={favorite ? colors.danger : colors.mutedText}
-                      />
-                      <Text
-                        style={[
-                          styles.favoriteButtonText,
-                          favorite ? styles.favoriteButtonTextActive : undefined,
-                        ]}
-                      >
-                        {favorite ? "Saved" : "Save"}
-                      </Text>
-                    </Pressable>
-                  </View>
                 </View>
-              </View>
-            </Pressable>
-          </View>
-        );
-      })}
-    </ScrollView>
+              </Pressable>
+
+              <Pressable
+                style={({ pressed }) => [
+                  styles.removeButton,
+                  pressed && styles.removeButtonPressed,
+                ]}
+                onPress={() => {
+                  void handleToggleFavorite(post);
+                }}
+                accessibilityRole="button"
+                accessibilityLabel={`Remove ${post.title} from favorites`}
+              >
+                <TrashActionIcon size={17} color="#FFFFFF" />
+              </Pressable>
+            </View>
+          );
+        })}
+      </ScrollView>
+    </View>
   );
 }
 
 const createStyles = (colors: ThemeColors) => StyleSheet.create({
+  screen: {
+    flex: 1,
+  },
   container: {
     flexGrow: 1,
     padding: SPACING.xl,
@@ -250,6 +314,11 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   headerTextWrap: {
     flex: 1,
     gap: 4,
+  },
+  headerActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.sm,
   },
   title: {
     fontSize: FONT_SIZE.title,
@@ -275,6 +344,22 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   countPillText: {
     color: colors.text,
     fontSize: 13,
+    fontWeight: "700",
+  },
+  clearAllButton: {
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.dangerBorder,
+    backgroundColor: colors.dangerSoft,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: 8,
+  },
+  clearAllButtonPressed: {
+    opacity: 0.85,
+  },
+  clearAllButtonText: {
+    color: colors.danger,
+    fontSize: 12,
     fontWeight: "700",
   },
   loader: {
@@ -318,33 +403,34 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   },
   card: {
     backgroundColor: colors.surface,
-    borderRadius: RADIUS.xs,
+    borderRadius: RADIUS.md,
     padding: SPACING.md,
     borderWidth: 1,
     borderColor: colors.border,
     ...SHADOWS.sm,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.md,
   },
   cardBody: {
-    gap: SPACING.sm,
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
+    gap: SPACING.md,
   },
   cardBodyPressed: {
     opacity: 0.92,
   },
-  cardRow: {
-    flexDirection: "row",
-    alignItems: "stretch",
-    gap: SPACING.md,
-  },
   thumbnail: {
-    width: 96,
-    height: 108,
-    borderRadius: RADIUS.xs,
+    width: 84,
+    height: 84,
+    borderRadius: RADIUS.sm,
     backgroundColor: colors.surfaceSoft,
   },
   thumbnailFallback: {
-    width: 96,
-    height: 108,
-    borderRadius: RADIUS.md,
+    width: 84,
+    height: 84,
+    borderRadius: RADIUS.sm,
     backgroundColor: colors.surfaceMuted,
     borderWidth: 1,
     borderColor: colors.border,
@@ -353,15 +439,8 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   },
   cardContent: {
     flex: 1,
-    minHeight: 108,
-    justifyContent: "space-between",
-    gap: SPACING.sm,
-  },
-  cardFooterRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "flex-end",
-    gap: SPACING.md,
+    justifyContent: "center",
+    gap: 8,
   },
   cardTitle: {
     fontSize: 16,
@@ -370,31 +449,19 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     lineHeight: 22,
   },
   cardPreview: {
-    fontSize: 13,
     color: colors.mutedText,
-    lineHeight: 19,
+    fontSize: 13,
+    lineHeight: 18,
   },
-  favoriteButton: {
-    flexDirection: "row",
+  removeButton: {
     alignItems: "center",
-    gap: SPACING.xs,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 999,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    backgroundColor: colors.surfaceMuted,
+    justifyContent: "center",
+    borderRadius: 12,
+    width: 42,
+    height: 42,
+    backgroundColor: "#F56B98",
   },
-  favoriteButtonActive: {
-    borderColor: colors.dangerBorder,
-    backgroundColor: colors.dangerSoft,
-  },
-  favoriteButtonText: {
-    color: colors.text,
-    fontSize: 12,
-    fontWeight: "700",
-  },
-  favoriteButtonTextActive: {
-    color: colors.danger,
+  removeButtonPressed: {
+    opacity: 0.88,
   },
 });

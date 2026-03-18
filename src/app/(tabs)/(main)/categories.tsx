@@ -29,7 +29,7 @@ import {
   type PostRecord,
 } from "@/lib/content";
 import { firestore } from "@/lib/firebase";
-import { getRequestErrorMessage } from "@/lib/network";
+import { DEFAULT_OFFLINE_MESSAGE, getRequestErrorMessage } from "@/lib/network";
 import { useNetworkStatus } from "@/providers/network-provider";
 import { useAppTheme } from "@/providers/theme-provider";
 
@@ -48,6 +48,8 @@ export default function CategoriesScreen() {
   const [isLoadingCategories, setIsLoadingCategories] = useState(true);
   const [isLoadingPosts, setIsLoadingPosts] = useState(true);
   const [error, setError] = useState("");
+  const isOfflineState = !isConnected || error === DEFAULT_OFFLINE_MESSAGE;
+  const showInlineError = Boolean(error) && !isOfflineState;
 
   useEffect(() => {
     const categoriesQuery = query(
@@ -158,168 +160,173 @@ export default function CategoriesScreen() {
   };
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      <Text style={styles.title}>Categories</Text>
-      <Text style={styles.subtitle}>
-        Category par tap karo aur uske saare published posts dekho.
-      </Text>
+    <View style={styles.screen}>
+      <ScrollView contentContainerStyle={styles.container}>
+        <Text style={styles.title}>Categories</Text>
+        <Text style={styles.subtitle}>
+          Category par tap karo aur uske saare published posts dekho.
+        </Text>
 
-      {error ? <Text style={styles.error}>{error}</Text> : null}
+        {showInlineError ? <Text style={styles.error}>{error}</Text> : null}
 
-      {isLoading ? (
-        <>
-          <View style={styles.grid}>
-            {CATEGORY_SKELETON_ITEMS.map((item) => (
-              <View key={item} style={styles.categoryCard}>
-                <SkeletonBlock width="72%" height={20} borderRadius={RADIUS.sm} />
-                <SkeletonBlock width="52%" height={14} borderRadius={RADIUS.sm} />
-                <SkeletonBlock width={70} height={16} borderRadius={RADIUS.sm} />
-              </View>
-            ))}
-          </View>
-
-          <View style={styles.resultsWrap}>
-            <SkeletonBlock width={164} height={24} borderRadius={RADIUS.sm} />
-            <SkeletonBlock width={86} height={16} borderRadius={RADIUS.sm} />
-
-            {CATEGORY_POST_SKELETON_ITEMS.map((item) => (
-              <View key={item} style={styles.postCard}>
-                <SkeletonBlock width={108} height={84} borderRadius={RADIUS.md} />
-
-                <View style={styles.postContent}>
-                  <SkeletonBlock width="86%" height={20} borderRadius={RADIUS.sm} />
-                  <SkeletonBlock width="100%" height={16} borderRadius={RADIUS.sm} />
-                  <SkeletonBlock width="70%" height={16} borderRadius={RADIUS.sm} />
+        {isLoading ? (
+          <>
+            <View style={styles.grid}>
+              {CATEGORY_SKELETON_ITEMS.map((item) => (
+                <View key={item} style={styles.categoryCard}>
+                  <SkeletonBlock width="72%" height={20} borderRadius={RADIUS.sm} />
+                  <SkeletonBlock width="52%" height={14} borderRadius={RADIUS.sm} />
+                  <SkeletonBlock width={70} height={16} borderRadius={RADIUS.sm} />
                 </View>
-              </View>
-            ))}
-          </View>
-        </>
-      ) : null}
-
-      {!isLoading && !categories.length ? (
-        <View style={styles.emptyWrap}>
-          <Text style={styles.emptyText}>No categories found.</Text>
-        </View>
-      ) : null}
-
-      {!!categories.length ? (
-        <View style={styles.grid}>
-          {categories.map((item) => {
-            const categoryKey = normalizeCategoryKey(item.slug);
-            const isActive =
-              normalizeCategoryKey(selectedCategory) === categoryKey;
-            const postCount = postCountsByCategory.get(categoryKey) ?? 0;
-
-            return (
-              <Pressable
-                key={item.id}
-                style={[
-                  styles.categoryCard,
-                  isActive ? styles.categoryCardActive : undefined,
-                ]}
-                onPress={() => setSelectedCategory(item.slug)}
-              >
-                <Text
-                  style={[
-                    styles.categoryName,
-                    isActive ? styles.categoryNameActive : undefined,
-                  ]}
-                  numberOfLines={2}
-                >
-                  {item.name}
-                </Text>
-                <Text
-                  style={[
-                    styles.categorySlug,
-                    isActive ? styles.categorySlugActive : undefined,
-                  ]}
-                  numberOfLines={1}
-                >
-                  {item.slug}
-                </Text>
-                <Text
-                  style={[
-                    styles.categoryCount,
-                    isActive ? styles.categoryCountActive : undefined,
-                  ]}
-                >
-                  {postCount} post{postCount === 1 ? "" : "s"}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
-      ) : null}
-
-      {selectedCategory ? (
-        <View style={styles.resultsWrap}>
-          <Text style={styles.resultsTitle}>{selectedCategoryName} Posts</Text>
-          <Text style={styles.resultsMeta}>
-            {categoryPosts.length} post{categoryPosts.length === 1 ? "" : "s"}{" "}
-            found
-          </Text>
-
-          {!categoryPosts.length ? (
-            <View style={styles.emptyWrap}>
-              <Text style={styles.emptyText}>
-                No published posts in this category yet.
-              </Text>
+              ))}
             </View>
-          ) : null}
 
-          {categoryPosts.map((post) => {
-            const thumbnailUrl = getPostCardThumbnailUrl(post);
+            <View style={styles.resultsWrap}>
+              <SkeletonBlock width={164} height={24} borderRadius={RADIUS.sm} />
+              <SkeletonBlock width={86} height={16} borderRadius={RADIUS.sm} />
 
-            return (
-              <Pressable
-                key={post.id}
-                style={({ pressed }) => [
-                  styles.postCard,
-                  pressed && styles.postCardPressed,
-                ]}
-                onPress={() => openPost(post.id)}
-              >
-                {thumbnailUrl ? (
-                  <Image
-                    source={{ uri: thumbnailUrl }}
-                    style={styles.thumbnail}
-                    resizeMode="cover"
-                  />
-                ) : (
-                  <View style={styles.thumbnailPlaceholder} />
-                )}
+              {CATEGORY_POST_SKELETON_ITEMS.map((item) => (
+                <View key={item} style={styles.postCard}>
+                  <SkeletonBlock width={108} height={84} borderRadius={RADIUS.md} />
 
-                <View style={styles.postContent}>
-                  <Text style={styles.postTitle} numberOfLines={2} ellipsizeMode="tail">
-                    {post.title}
+                  <View style={styles.postContent}>
+                    <SkeletonBlock width="86%" height={20} borderRadius={RADIUS.sm} />
+                    <SkeletonBlock width="100%" height={16} borderRadius={RADIUS.sm} />
+                    <SkeletonBlock width="70%" height={16} borderRadius={RADIUS.sm} />
+                  </View>
+                </View>
+              ))}
+            </View>
+          </>
+        ) : null}
+
+        {!isLoading && !categories.length ? (
+          <View style={styles.emptyWrap}>
+            <Text style={styles.emptyText}>No categories found.</Text>
+          </View>
+        ) : null}
+
+        {!!categories.length ? (
+          <View style={styles.grid}>
+            {categories.map((item) => {
+              const categoryKey = normalizeCategoryKey(item.slug);
+              const isActive =
+                normalizeCategoryKey(selectedCategory) === categoryKey;
+              const postCount = postCountsByCategory.get(categoryKey) ?? 0;
+
+              return (
+                <Pressable
+                  key={item.id}
+                  style={[
+                    styles.categoryCard,
+                    isActive ? styles.categoryCardActive : undefined,
+                  ]}
+                  onPress={() => setSelectedCategory(item.slug)}
+                >
+                  <Text
+                    style={[
+                      styles.categoryName,
+                      isActive ? styles.categoryNameActive : undefined,
+                    ]}
+                    numberOfLines={2}
+                  >
+                    {item.name}
                   </Text>
                   <Text
-                    style={styles.postPreview}
-                    numberOfLines={3}
-                    ellipsizeMode="tail"
+                    style={[
+                      styles.categorySlug,
+                      isActive ? styles.categorySlugActive : undefined,
+                    ]}
+                    numberOfLines={1}
                   >
-                    {post.content.trim() || "-"}
+                    {item.slug}
                   </Text>
-                </View>
-              </Pressable>
-            );
-          })}
-        </View>
-      ) : (
-        !isLoading && (
-          <View style={styles.emptyWrap}>
-            <Text style={styles.emptyText}>
-              Select a category to view its posts.
-            </Text>
+                  <Text
+                    style={[
+                      styles.categoryCount,
+                      isActive ? styles.categoryCountActive : undefined,
+                    ]}
+                  >
+                    {postCount} post{postCount === 1 ? "" : "s"}
+                  </Text>
+                </Pressable>
+              );
+            })}
           </View>
-        )
-      )}
-    </ScrollView>
+        ) : null}
+
+        {selectedCategory ? (
+          <View style={styles.resultsWrap}>
+            <Text style={styles.resultsTitle}>{selectedCategoryName} Posts</Text>
+            <Text style={styles.resultsMeta}>
+              {categoryPosts.length} post{categoryPosts.length === 1 ? "" : "s"}{" "}
+              found
+            </Text>
+
+            {!categoryPosts.length ? (
+              <View style={styles.emptyWrap}>
+                <Text style={styles.emptyText}>
+                  No published posts in this category yet.
+                </Text>
+              </View>
+            ) : null}
+
+            {categoryPosts.map((post) => {
+              const thumbnailUrl = getPostCardThumbnailUrl(post);
+
+              return (
+                <Pressable
+                  key={post.id}
+                  style={({ pressed }) => [
+                    styles.postCard,
+                    pressed && styles.postCardPressed,
+                  ]}
+                  onPress={() => openPost(post.id)}
+                >
+                  {thumbnailUrl ? (
+                    <Image
+                      source={{ uri: thumbnailUrl }}
+                      style={styles.thumbnail}
+                      resizeMode="cover"
+                    />
+                  ) : (
+                    <View style={styles.thumbnailPlaceholder} />
+                  )}
+
+                  <View style={styles.postContent}>
+                    <Text style={styles.postTitle} numberOfLines={2} ellipsizeMode="tail">
+                      {post.title}
+                    </Text>
+                    <Text
+                      style={styles.postPreview}
+                      numberOfLines={3}
+                      ellipsizeMode="tail"
+                    >
+                      {post.content.trim() || "-"}
+                    </Text>
+                  </View>
+                </Pressable>
+              );
+            })}
+          </View>
+        ) : (
+          !isLoading && (
+            <View style={styles.emptyWrap}>
+              <Text style={styles.emptyText}>
+                Select a category to view its posts.
+              </Text>
+            </View>
+          )
+        )}
+      </ScrollView>
+    </View>
   );
 }
 
 const createStyles = (colors: ThemeColors) => StyleSheet.create({
+  screen: {
+    flex: 1,
+  },
   container: {
     flexGrow: 1,
     padding: SPACING.xl,

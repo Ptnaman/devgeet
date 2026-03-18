@@ -17,7 +17,7 @@ import {
   SPACING,
   type ThemeColors,
 } from "@/constants/theme";
-import { getActionErrorMessage } from "@/lib/network";
+import { DEFAULT_OFFLINE_MESSAGE, getActionErrorMessage } from "@/lib/network";
 import { useAuth } from "@/providers/auth-provider";
 import { useNetworkStatus } from "@/providers/network-provider";
 import { useAppTheme } from "@/providers/theme-provider";
@@ -31,7 +31,7 @@ const getErrorMessage = (error: unknown, isConnected: boolean) =>
 
 export default function ProfileScreen() {
   const { colors } = useAppTheme();
-  const { isConnected } = useNetworkStatus();
+  const { isConnected, showOfflineToast } = useNetworkStatus();
   const { user, profile, updateCurrentUserProfile } = useAuth();
   const styles = createStyles(colors);
   const [firstName, setFirstName] = useState("");
@@ -89,7 +89,11 @@ export default function ProfileScreen() {
       });
       setSuccess("Profile updated successfully.");
     } catch (saveError) {
-      setError(getErrorMessage(saveError, isConnected));
+      const message = getErrorMessage(saveError, isConnected);
+      if (message === DEFAULT_OFFLINE_MESSAGE) {
+        showOfflineToast();
+      }
+      setError(message);
     } finally {
       setIsSaving(false);
     }

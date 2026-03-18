@@ -1,5 +1,3 @@
-import { FavouriteIcon } from "@hugeicons/core-free-icons";
-import { HugeiconsIcon } from "@hugeicons/react-native";
 import { useRouter } from "expo-router";
 import {
   collection,
@@ -18,7 +16,15 @@ import {
   View,
 } from "react-native";
 
-import { FONT_SIZE, RADIUS, SHADOWS, SPACING, type ThemeColors } from "@/constants/theme";
+import {
+  FONT_SIZE,
+  RADIUS,
+  SHADOWS,
+  SPACING,
+  type ThemeColors,
+  type ThemeMode,
+} from "@/constants/theme";
+import { FavoriteActionIcon } from "@/components/icons/favorite-action-icon";
 import { SkeletonBlock } from "@/components/skeleton-block";
 import { useFavorites } from "@/hooks/use-favorites";
 import {
@@ -30,21 +36,29 @@ import {
   type PostRecord,
 } from "@/lib/content";
 import { firestore } from "@/lib/firebase";
-import { getActionErrorMessage, getRequestErrorMessage } from "@/lib/network";
+import {
+  DEFAULT_OFFLINE_MESSAGE,
+  getActionErrorMessage,
+  getRequestErrorMessage,
+} from "@/lib/network";
 import { useNetworkStatus } from "@/providers/network-provider";
 import { useAppTheme } from "@/providers/theme-provider";
 
 const HOME_SKELETON_ITEMS = Array.from({ length: 3 }, (_, index) => index);
 
 export default function HomeScreen() {
-  const { colors } = useAppTheme();
+  const { colors, resolvedTheme } = useAppTheme();
   const router = useRouter();
   const { isFavorite, toggleFavorite } = useFavorites();
-  const { isConnected } = useNetworkStatus();
-  const styles = createStyles(colors);
+  const { isConnected, showOfflineToast } = useNetworkStatus();
+  const styles = createStyles(colors, resolvedTheme);
   const [posts, setPosts] = useState<PostRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
+  const isOfflineState = !isConnected || error === DEFAULT_OFFLINE_MESSAGE;
+  const showInlineError = Boolean(error) && !isOfflineState;
+  const favoriteIconColor = resolvedTheme === "dark" ? "#FFFFFF" : "#111111";
+  const favoriteFillColor = resolvedTheme === "dark" ? "#FFFFFF" : "#111111";
 
   useEffect(() => {
     const postsQuery = query(collection(firestore, POSTS_COLLECTION));
@@ -85,113 +99,124 @@ export default function HomeScreen() {
     try {
       await toggleFavorite(post);
     } catch (toggleError) {
+      const message = getActionErrorMessage({
+        error: toggleError,
+        isConnected,
+        fallbackMessage: "Favorites could not be updated right now.",
+      });
+
+      if (message === DEFAULT_OFFLINE_MESSAGE) {
+        showOfflineToast();
+        return;
+      }
+
       Alert.alert(
         "Unable to update favorites",
-        getActionErrorMessage({
-          error: toggleError,
-          isConnected,
-          fallbackMessage: "Favorites could not be updated right now.",
-        }),
+        message,
       );
     }
   };
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      {isLoading
-        ? HOME_SKELETON_ITEMS.map((item) => (
-            <View key={item} style={styles.card}>
-              <View style={styles.cardBody}>
-                <SkeletonBlock height={156} borderRadius={RADIUS.md} />
-                <SkeletonBlock width="82%" height={24} />
-                <SkeletonBlock width="68%" height={24} />
-                <SkeletonBlock width="100%" height={16} borderRadius={RADIUS.sm} />
-                <SkeletonBlock width="76%" height={16} borderRadius={RADIUS.sm} />
-              </View>
-
-              <View style={styles.cardFooter}>
-                <SkeletonBlock width={92} height={16} borderRadius={RADIUS.sm} />
-                <SkeletonBlock
-                  width={86}
-                  height={34}
-                  borderRadius={RADIUS.pill}
-                />
-              </View>
-            </View>
-          ))
-        : null}
-
-      {!isLoading && error ? <Text style={styles.errorText}>{error}</Text> : null}
-
-      {!isLoading
-        ? posts.map((post) => {
-            const thumbnailUrl = getPostCardThumbnailUrl(post);
-            const favorite = isFavorite(post.id);
-            const updatedLabel = formatDate(post.uploadDate || post.createDate);
-
-            return (
-              <View key={post.id} style={styles.card}>
-                <Pressable
-                  style={({ pressed }) => [
-                    styles.cardBody,
-                    pressed && styles.cardBodyPressed,
-                  ]}
-                  onPress={() => openPost(post.id)}
-                >
-                  {thumbnailUrl ? (
-                    <Image
-                      source={{ uri: thumbnailUrl }}
-                      style={styles.thumbnail}
-                      resizeMode="cover"
-                    />
-                  ) : null}
-                  <Text style={styles.cardTitle} numberOfLines={3} ellipsizeMode="tail">
-                    {post.title}
-                  </Text>
-                  <Text
-                    style={styles.cardPreview}
-                    numberOfLines={2}
-                    ellipsizeMode="tail"
-                  >
-                    {post.content.trim() || "-"}
-                  </Text>
-                </Pressable>
+    <View style={styles.screen}>
+      <ScrollView contentContainerStyle={styles.container}>
+        {isLoading
+            ? HOME_SKELETON_ITEMS.map((item) => (
+                <View key={item} style={styles.card}>
+                  <View style={styles.cardBody}>
+                    <SkeletonBlock height={156} borderRadius={RADIUS.md} />
+                    <SkeletonBlock width="82%" height={24} />
+                    <SkeletonBlock width="68%" height={24} />
+                    <SkeletonBlock width="100%" height={16} borderRadius={RADIUS.sm} />
+                  <SkeletonBlock width="76%" height={16} borderRadius={RADIUS.sm} />
+                </View>
 
                 <View style={styles.cardFooter}>
-                  <Text style={styles.meta}>Updated {updatedLabel}</Text>
-                  <Pressable
-                    style={[
-                      styles.favoriteButton,
-                      favorite ? styles.favoriteButtonActive : undefined,
-                    ]}
-                    onPress={() => {
-                      void handleToggleFavorite(post);
-                    }}
-                  >
-                    <HugeiconsIcon
-                      icon={FavouriteIcon}
-                      size={16}
-                      color={favorite ? colors.danger : colors.mutedText}
-                    />
-                    <Text
-                      style={[
-                        styles.favoriteButtonText,
-                        favorite ? styles.favoriteButtonTextActive : undefined,
-                      ]}
-                    >
-                      {favorite ? "Saved" : "Save"}
-                    </Text>
-                  </Pressable>
+                  <SkeletonBlock width={92} height={16} borderRadius={RADIUS.sm} />
                 </View>
               </View>
-            );
-          })
-        : null}
-    </ScrollView>
+            ))
+          : null}
+
+        {!isLoading && showInlineError ? <Text style={styles.errorText}>{error}</Text> : null}
+
+        {!isLoading
+          ? posts.map((post) => {
+              const thumbnailUrl = getPostCardThumbnailUrl(post);
+              const favorite = isFavorite(post.id);
+              const updatedLabel = formatDate(post.uploadDate || post.createDate);
+
+              return (
+                <View key={post.id} style={styles.card}>
+                  <Pressable
+                    style={({ pressed }) => [
+                      styles.cardBody,
+                      pressed && styles.cardBodyPressed,
+                    ]}
+                    onPress={() => openPost(post.id)}
+                  >
+                    <View style={styles.mediaWrap}>
+                      {thumbnailUrl ? (
+                        <Image
+                          source={{ uri: thumbnailUrl }}
+                          style={styles.thumbnail}
+                          resizeMode="cover"
+                        />
+                      ) : (
+                        <View style={styles.thumbnailFallback} />
+                      )}
+                      <Pressable
+                        style={({ pressed }) => [
+                          styles.favoriteButton,
+                          pressed && styles.favoriteButtonPressed,
+                        ]}
+                        onPress={(event) => {
+                          event.stopPropagation();
+                          void handleToggleFavorite(post);
+                        }}
+                        accessibilityRole="button"
+                        accessibilityLabel={
+                          favorite ? `Remove ${post.title} from favorites` : `Add ${post.title} to favorites`
+                        }
+                      >
+                        <FavoriteActionIcon
+                          size={16}
+                          color={favoriteIconColor}
+                          filled={favorite}
+                          fillColor={favoriteFillColor}
+                          accentColor="#111111"
+                          accentUnderlayColor={resolvedTheme === "dark" ? undefined : "#FFFFFF"}
+                        />
+                      </Pressable>
+                    </View>
+                    <Text style={styles.cardTitle} numberOfLines={3} ellipsizeMode="tail">
+                      {post.title}
+                    </Text>
+                    <Text
+                      style={styles.cardPreview}
+                      numberOfLines={2}
+                      ellipsizeMode="tail"
+                    >
+                      {post.content.trim() || "-"}
+                    </Text>
+                  </Pressable>
+
+                  <View style={styles.cardFooter}>
+                    <Text style={styles.meta}>Updated {updatedLabel}</Text>
+                  </View>
+                </View>
+              );
+            })
+          : null}
+      </ScrollView>
+    </View>
   );
 }
 
-const createStyles = (colors: ThemeColors) => StyleSheet.create({
+const createStyles = (colors: ThemeColors, resolvedTheme: ThemeMode) => StyleSheet.create({
+  screen: {
+    flex: 1,
+  },
   container: {
     flexGrow: 1,
     padding: SPACING.xxl,
@@ -213,7 +238,16 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   cardBodyPressed: {
     opacity: 0.92,
   },
+  mediaWrap: {
+    position: "relative",
+  },
   thumbnail: {
+    width: "100%",
+    height: 156,
+    borderRadius: RADIUS.md,
+    backgroundColor: colors.surfaceSoft,
+  },
+  thumbnailFallback: {
     width: "100%",
     height: 156,
     borderRadius: RADIUS.md,
@@ -238,27 +272,19 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     gap: SPACING.sm,
   },
   favoriteButton: {
-    flexDirection: "row",
+    position: "absolute",
+    top: SPACING.sm,
+    right: SPACING.sm,
     alignItems: "center",
-    gap: SPACING.xs,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    backgroundColor: colors.surfaceMuted,
+    justifyContent: "center",
+    borderRadius: 10,
+    width: 32,
+    height: 32,
+    backgroundColor: resolvedTheme === "dark" ? "#2D2D30" : "#FFFFFF",
+    ...SHADOWS.lg,
   },
-  favoriteButtonActive: {
-    borderColor: colors.dangerBorder,
-    backgroundColor: colors.dangerSoft,
-  },
-  favoriteButtonText: {
-    color: colors.text,
-    fontSize: 12,
-    fontWeight: "700",
-  },
-  favoriteButtonTextActive: {
-    color: colors.danger,
+  favoriteButtonPressed: {
+    opacity: 0.85,
   },
   errorText: {
     color: colors.danger,
