@@ -1,12 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ComponentType } from "react";
 import { usePathname, useRouter } from "expo-router";
 import { GlassView } from "expo-glass-effect";
-import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react-native";
-import {
-  Login01Icon,
-  Logout03Icon,
-  User02Icon,
-} from "@hugeicons/core-free-icons";
 import {
   ActivityIndicator,
   Image,
@@ -18,6 +12,9 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { AdminPanelIcon } from "@/components/icons/admin-panel-icon";
+import { LogoutActionIcon } from "@/components/icons/logout-action-icon";
+import { UserAvatarIcon } from "@/components/icons/user-avatar-icon";
 import { RADIUS, SHADOWS, SPACING, type ThemeColors } from "@/constants/theme";
 import { useAuth } from "@/providers/auth-provider";
 import { useAppTheme } from "@/providers/theme-provider";
@@ -41,8 +38,13 @@ type HeaderProfileMenuProps = {
   onClose: () => void;
 };
 
+type MenuActionIconProps = {
+  color: string;
+  size: number;
+};
+
 type MenuActionProps = {
-  icon: IconSvgElement;
+  icon: ComponentType<MenuActionIconProps>;
   label: string;
   onPress: () => void | Promise<void>;
   disabled?: boolean;
@@ -58,6 +60,7 @@ function MenuAction({
 }: MenuActionProps) {
   const { colors } = useAppTheme();
   const styles = createStyles(colors);
+  const Icon = icon;
 
   return (
     <Pressable
@@ -76,8 +79,7 @@ function MenuAction({
           isDestructive && styles.menuIconWrapDanger,
         ]}
       >
-        <HugeiconsIcon
-          icon={icon}
+        <Icon
           size={18}
           color={isDestructive ? colors.danger : colors.text}
         />
@@ -125,7 +127,7 @@ export function HeaderProfileButton({ onPress }: HeaderProfileButtonProps) {
         />
       ) : (
         <View style={[styles.avatarImage, styles.avatarFallback]}>
-          <HugeiconsIcon icon={User02Icon} size={18} color={colors.text} />
+          <UserAvatarIcon size={18} color={colors.text} />
         </View>
       )}
     </Pressable>
@@ -140,7 +142,7 @@ export function HeaderProfileMenu({
   const router = useRouter();
   const pathname = usePathname();
   const insets = useSafeAreaInsets();
-  const { user, profile, isAdmin, logout } = useAuth();
+  const { user, profile, canManagePosts, isAdmin, logout } = useAuth();
   const [hasImageError, setHasImageError] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const previousPathnameRef = useRef(pathname);
@@ -149,6 +151,7 @@ export function HeaderProfileMenu({
   const accountName =
     profile?.displayName || user?.displayName || profile?.email || user?.email || "User";
   const accountEmail = profile?.email || user?.email || "";
+  const adminEntryPath = isAdmin ? "/admin" : "/admin/posts";
   const styles = createStyles(colors);
 
   useEffect(() => {
@@ -178,8 +181,8 @@ export function HeaderProfileMenu({
 
   const openAdmin = () => {
     handleClose();
-    if (pathname !== "/admin") {
-      router.push("/admin");
+    if (pathname !== adminEntryPath) {
+      router.push(adminEntryPath);
     }
   };
 
@@ -224,7 +227,7 @@ export function HeaderProfileMenu({
                 <Image source={{ uri: avatarUri }} style={styles.menuAvatarImage} />
               ) : (
                 <View style={[styles.menuAvatarImage, styles.avatarFallback]}>
-                  <HugeiconsIcon icon={User02Icon} size={20} color={colors.text} />
+                  <UserAvatarIcon size={20} color={colors.text} />
                 </View>
               )}
             </View>
@@ -244,16 +247,16 @@ export function HeaderProfileMenu({
           <View style={styles.menuDivider} />
 
           <MenuAction
-            icon={User02Icon}
+            icon={UserAvatarIcon}
             label="Edit Profile"
             onPress={openProfile}
             disabled={isLoggingOut}
           />
 
-          {isAdmin ? (
+          {canManagePosts ? (
             <MenuAction
-              icon={Login01Icon}
-              label="Admin Panel"
+              icon={AdminPanelIcon}
+              label={isAdmin ? "Admin Panel" : "Post Manager"}
               onPress={openAdmin}
               disabled={isLoggingOut}
             />
@@ -262,7 +265,7 @@ export function HeaderProfileMenu({
           )}
 
           <MenuAction
-            icon={Logout03Icon}
+            icon={LogoutActionIcon}
             label={isLoggingOut ? "Logging out..." : "Logout"}
             onPress={handleLogout}
             disabled={isLoggingOut}

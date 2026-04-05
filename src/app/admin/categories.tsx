@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Redirect } from "expo-router";
 import {
   ActivityIndicator,
   Pressable,
@@ -43,7 +44,7 @@ import { useAppTheme } from "@/providers/theme-provider";
 export default function AdminCategoriesScreen() {
   const { colors } = useAppTheme();
   const { isConnected } = useNetworkStatus();
-  const { user } = useAuth();
+  const { isAdmin, user } = useAuth();
   const styles = createStyles(colors);
   const [categories, setCategories] = useState<CategoryRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -88,6 +89,10 @@ export default function AdminCategoriesScreen() {
     setError("");
     setSuccess("");
   };
+
+  if (!isAdmin) {
+    return <Redirect href="/admin/posts" />;
+  }
 
   const handleCreateCategory = async () => {
     const trimmedName = categoryName.trim();

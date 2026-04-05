@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { Redirect, useRouter } from "expo-router";
 import {
   ActivityIndicator,
   Pressable,
@@ -7,7 +8,6 @@ import {
   Text,
   View,
 } from "react-native";
-import { useRouter } from "expo-router";
 import {
   collection,
   onSnapshot,
@@ -34,6 +34,7 @@ import {
 } from "@/lib/content";
 import { firestore } from "@/lib/firebase";
 import { getRequestErrorMessage } from "@/lib/network";
+import { useAuth } from "@/providers/auth-provider";
 import { useNetworkStatus } from "@/providers/network-provider";
 import { useAppTheme } from "@/providers/theme-provider";
 
@@ -41,6 +42,7 @@ export default function AdminOverviewScreen() {
   const { colors } = useAppTheme();
   const { isConnected } = useNetworkStatus();
   const router = useRouter();
+  const { isAdmin, isOwner } = useAuth();
   const styles = createStyles(colors);
   const [categories, setCategories] = useState<CategoryRecord[]>([]);
   const [posts, setPosts] = useState<PostRecord[]>([]);
@@ -123,6 +125,10 @@ export default function AdminOverviewScreen() {
 
   const isLoading = isLoadingCategories || isLoadingPosts;
 
+  if (!isAdmin) {
+    return <Redirect href="/admin/posts" />;
+  }
+
   return (
     <ScrollView contentContainerStyle={styles.container}>
       <Text style={styles.title}>Admin Control Center</Text>
@@ -181,6 +187,16 @@ export default function AdminOverviewScreen() {
             <Text style={styles.quickCardTitle}>Categories</Text>
             <Text style={styles.quickCardMeta}>Manage categories</Text>
           </Pressable>
+
+          {isOwner ? (
+            <Pressable
+              style={({ pressed }) => [styles.quickCard, pressed && styles.buttonPressed]}
+              onPress={() => router.push("/admin/users")}
+            >
+              <Text style={styles.quickCardTitle}>Users</Text>
+              <Text style={styles.quickCardMeta}>Assign roles and remove access</Text>
+            </Pressable>
+          ) : null}
         </View>
       </View>
     </ScrollView>

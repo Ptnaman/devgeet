@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Platform, Pressable, StyleSheet, Text } from "react-native";
 import Constants from "expo-constants";
-import { HugeiconsIcon } from "@hugeicons/react-native";
-import { ArrowRight01Icon } from "@hugeicons/core-free-icons";
 import Svg, { Path } from "react-native-svg";
 
+import { ArrowRightIcon } from "@/components/icons/arrow-right-icon";
 import {
   CONTROL_SIZE,
   FONT_SIZE,
@@ -359,7 +358,7 @@ export function GoogleAuthButton({
       {isSubmitting ? (
         <ActivityIndicator size="small" color={colors.primary} />
       ) : (
-        <HugeiconsIcon icon={ArrowRight01Icon} size={18} color={colors.text} />
+        <ArrowRightIcon size={18} color={colors.text} />
       )}
     </Pressable>
   );

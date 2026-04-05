@@ -27,7 +27,15 @@ import {
   type DocumentData,
 } from "firebase/firestore";
 
-import { isAdminEmail } from "@/lib/access";
+import {
+  canManagePosts as canManagePostsForRole,
+  canManageUsers as canManageUsersForRole,
+  getEffectiveUserRole,
+  isOwnerEmail,
+  normalizeAccountStatus,
+  type AccountStatus,
+  type UserRole,
+} from "@/lib/access";
 import { auth, firestore } from "@/lib/firebase";
 import { loadGoogleSignInModule } from "@/lib/google-signin-loader";
 
@@ -40,7 +48,8 @@ type UserProfile = {
   firstName: string;
   lastName: string;
   email: string;
-  role: string;
+  role: UserRole;
+  accountStatus: AccountStatus;
   provider: string;
   displayName: string;
   photoURL: string;
@@ -49,7 +58,11 @@ type UserProfile = {
 type AuthContextType = {
   user: User | null;
   profile: UserProfile | null;
+  role: UserRole;
+  isOwner: boolean;
   isAdmin: boolean;
+  canManagePosts: boolean;
+  canManageUsers: boolean;
   isBootstrapping: boolean;
   loginWithEmailOrUsername: (identifier: string, password: string) => Promise<void>;
   requestPasswordReset: (identifier: string) => Promise<void>;
@@ -73,7 +86,6 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 const normalizeEmail = (value: string) => value.trim().toLowerCase();
 const normalizeUsername = (value: string) => value.trim().toLowerCase();
 const normalizeName = (value: string) => value.trim();
-const normalizeRole = (value: string) => value.trim().toLowerCase();
 const normalizePhotoUrl = (value: string | null | undefined) => value?.trim() ?? "";
 const sanitizeUsername = (value: string) =>
   value.trim().toLowerCase().replace(/[^a-z0-9._-]/g, "").slice(0, 20);
@@ -159,6 +171,7 @@ const buildUserProfileRecord = (payload: {
   lastName: string;
   email: string;
   role: string;
+  accountStatus?: string;
   provider: string;
   displayName?: string | null;
   photoURL?: string | null;
@@ -168,7 +181,8 @@ const buildUserProfileRecord = (payload: {
   const normalizedFirstName = normalizeName(payload.firstName);
   const normalizedLastName = normalizeName(payload.lastName);
   const normalizedEmail = normalizeEmail(payload.email);
-  const normalizedRole = normalizeRole(payload.role);
+  const effectiveRole = getEffectiveUserRole(payload.role, normalizedEmail);
+  const accountStatus = normalizeAccountStatus(payload.accountStatus);
   const normalizedProvider = payload.provider.trim().toLowerCase() || "password";
   const normalizedDisplayName =
     normalizeName(payload.displayName ?? `${normalizedFirstName} ${normalizedLastName}`) ||
@@ -181,7 +195,8 @@ const buildUserProfileRecord = (payload: {
     firstName: normalizedFirstName,
     lastName: normalizedLastName,
     email: normalizedEmail,
-    role: normalizedRole,
+    role: effectiveRole,
+    accountStatus,
     provider: normalizedProvider,
     displayName: normalizedDisplayName,
     photoURL: normalizePhotoUrl(payload.photoURL),
@@ -201,7 +216,8 @@ const createFallbackUserProfile = (currentUser: User): UserProfile => {
     firstName: effectiveFirstName,
     lastName: effectiveLastName,
     email: normalizedEmail,
-    role: isAdminEmail(normalizedEmail) ? "admin" : "user",
+    role: getEffectiveUserRole(undefined, normalizedEmail),
+    accountStatus: "active",
     provider: resolveProvider(currentUser),
     displayName: currentUser.displayName,
     photoURL: currentUser.photoURL,
@@ -222,10 +238,27 @@ const mapUserProfile = (uid: string, data: DocumentData): UserProfile => {
     lastName,
     email: normalizedEmail,
     role: readStringValue(data?.role) || "user",
+    accountStatus: readStringValue(data?.accountStatus) || "active",
     provider: readStringValue(data?.provider) || "password",
     displayName: readStringValue(data?.displayName),
     photoURL: readStringValue(data?.photoURL),
   });
+};
+
+const ensureAccountIsActive = async (uid: string) => {
+  const userSnapshot = await getDoc(doc(firestore, USERS_COLLECTION, uid));
+
+  if (!userSnapshot.exists()) {
+    return;
+  }
+
+  const accountStatus = normalizeAccountStatus(
+    readStringValue((userSnapshot.data() as DocumentData)?.accountStatus)
+  );
+
+  if (accountStatus === "deleted") {
+    throw new Error("This account has been removed by admin.");
+  }
 };
 
 const isUsernameTakenError = (error: unknown) =>
@@ -286,6 +319,7 @@ const writeUserProfile = async (payload: {
   lastName: string;
   email: string;
   role: string;
+  accountStatus?: string;
   provider: "password" | "google";
   displayName?: string | null;
   photoURL?: string | null;
@@ -304,6 +338,7 @@ const writeUserProfile = async (payload: {
   const persistedProfile = {
     ...profileRecord,
     photoURL: profileRecord.photoURL || null,
+    accountStatus: profileRecord.accountStatus,
     updatedAt: serverTimestamp(),
     lastLoginAt: serverTimestamp(),
   };
@@ -325,7 +360,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [authReady, setAuthReady] = useState(false);
-  const isAdmin = isAdminEmail(user?.email);
+  const accountEmail = profile?.email || user?.email;
+  const role = getEffectiveUserRole(profile?.role, accountEmail);
+  const isOwner = isOwnerEmail(accountEmail);
+  const isAdmin = role === "admin";
+  const canManagePosts = canManagePostsForRole(role);
+  const canManageUsers = canManageUsersForRole(role, accountEmail);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (nextUser) => {
@@ -364,13 +404,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return unsubscribe;
   }, [user]);
 
+  useEffect(() => {
+    if (!user || !profile || profile.accountStatus !== "deleted") {
+      return;
+    }
+
+    void signOut(auth);
+  }, [profile, user]);
+
   const loginWithEmailOrUsername = async (identifier: string, password: string) => {
     const normalizedIdentifier = identifier.trim();
     const email = normalizedIdentifier.includes("@")
       ? normalizeEmail(normalizedIdentifier)
       : await readUsernameEmail(normalizedIdentifier);
 
-    await signInWithEmailAndPassword(auth, email, password);
+    const credential = await signInWithEmailAndPassword(auth, email, password);
+
+    try {
+      await ensureAccountIsActive(credential.user.uid);
+    } catch (error) {
+      await signOut(auth);
+      throw error;
+    }
   };
 
   const requestPasswordReset = async (identifier: string) => {
@@ -423,7 +478,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         firstName: normalizedFirstName,
         lastName: normalizedLastName,
         email: normalizedEmail,
-        role: "user",
+        role: getEffectiveUserRole("user", normalizedEmail),
+        accountStatus: "active",
         provider: "password",
         displayName: normalizedDisplayName || generatedUsername,
         photoURL: null,
@@ -461,7 +517,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       firstName: payload.firstName,
       lastName: payload.lastName,
       email: normalizedEmail,
-      role: existingProfile.role || (isAdminEmail(normalizedEmail) ? "admin" : "user"),
+      role: getEffectiveUserRole(existingProfile.role, normalizedEmail),
+      accountStatus: existingProfile.accountStatus,
       provider: existingProfile.provider || resolveProvider(currentUser),
       displayName: `${payload.firstName.trim()} ${payload.lastName.trim()}`.trim(),
       photoURL: currentUser.photoURL ?? existingProfile.photoURL,
@@ -537,8 +594,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { firstName, lastName } = getNameParts(googleUser.displayName);
     const existingFirstName = readStringValue(existingProfile?.firstName);
     const existingLastName = readStringValue(existingProfile?.lastName);
-    const existingRole = normalizeRole(readStringValue(existingProfile?.role));
-    const effectiveRole = existingRole || (isAdminEmail(normalizedEmail) ? "admin" : "user");
+    const existingRole = readStringValue(existingProfile?.role);
+    const existingAccountStatus = normalizeAccountStatus(
+      readStringValue(existingProfile?.accountStatus)
+    );
+
+    if (existingAccountStatus === "deleted") {
+      await signOut(auth);
+      throw new Error("This account has been removed by admin.");
+    }
+
+    const effectiveRole = getEffectiveUserRole(existingRole, normalizedEmail);
     const effectiveFirstName = normalizeName(firstName || existingFirstName || candidate);
     const effectiveLastName = normalizeName(lastName || existingLastName);
     const effectiveDisplayName =
@@ -554,6 +620,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         lastName: effectiveLastName,
         email: normalizedEmail,
         role: effectiveRole,
+        accountStatus: "active",
         provider: "google",
         displayName: effectiveDisplayName,
         photoURL: googleUser.photoURL,
@@ -570,6 +637,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         lastName: effectiveLastName,
         email: normalizedEmail,
         role: effectiveRole,
+        accountStatus: "active",
         provider: "google",
         displayName: effectiveDisplayName,
         photoURL: googleUser.photoURL,
@@ -609,7 +677,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const value: AuthContextType = {
     user,
     profile,
+    role,
+    isOwner,
     isAdmin,
+    canManagePosts,
+    canManageUsers,
     isBootstrapping: !authReady,
     loginWithEmailOrUsername,
     requestPasswordReset,

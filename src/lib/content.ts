@@ -33,6 +33,10 @@ export type PostRecord = {
   uploadDate: string;
   status: PostStatus;
   category: string;
+  createdBy: string;
+  createdByEmail: string;
+  updatedBy: string;
+  updatedByEmail: string;
 };
 
 export const createSlug = (value: string) =>
@@ -186,6 +190,10 @@ export const mapPostRecord = (id: string, data: DocumentData): PostRecord => ({
   uploadDate: toDateString(data.uploadDate),
   status: parseStatus(data.status),
   category: typeof data.category === "string" && data.category ? data.category : "general",
+  createdBy: typeof data.createdBy === "string" ? data.createdBy : "",
+  createdByEmail: typeof data.createdByEmail === "string" ? data.createdByEmail : "",
+  updatedBy: typeof data.updatedBy === "string" ? data.updatedBy : "",
+  updatedByEmail: typeof data.updatedByEmail === "string" ? data.updatedByEmail : "",
 });
 
 export const getYouTubeThumbnailUrl = (youtubeVideoUrl: string) => {

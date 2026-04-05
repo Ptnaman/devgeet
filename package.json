@@ -1,7 +1,7 @@
 {
   "name": "devgeet",
   "main": "expo-router/entry",
-  "version": "1.0.32",
+  "version": "1.1",
   "scripts": {
     "start": "expo start",
     "reset-project": "node ./scripts/reset-project.js",
@@ -11,8 +11,6 @@
     "lint": "expo lint"
   },
   "dependencies": {
-    "@hugeicons/core-free-icons": "^3.3.0",
-    "@hugeicons/react-native": "^1.0.11",
     "@react-native-async-storage/async-storage": "2.2.0",
     "@react-native-google-signin/google-signin": "^16.1.2",
     "@react-navigation/bottom-tabs": "^7.7.3",

@@ -1,4 +1,4 @@
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { Redirect, useLocalSearchParams, useRouter } from "expo-router";
 import {
   collection,
   doc,
@@ -91,7 +91,7 @@ export default function AdminPostEditScreen() {
   const { isConnected } = useNetworkStatus();
   const router = useRouter();
   const { postId: postIdParam } = useLocalSearchParams<{ postId?: string }>();
-  const { user } = useAuth();
+  const { canManagePosts, isAdmin, user } = useAuth();
   const styles = createStyles(colors);
 
   const postId = resolvePostId(postIdParam);
@@ -210,6 +210,16 @@ export default function AdminPostEditScreen() {
           return;
         }
 
+        const isOwnedByCurrentUser =
+          post.createdBy === user?.uid || (!!user?.email && post.createdByEmail === user.email);
+
+        if (!isAdmin && !isOwnedByCurrentUser) {
+          setError("You can edit only the posts created by your account.");
+          setIsLoadingPost(false);
+          router.replace("/admin/posts");
+          return;
+        }
+
         setTitle(post.title);
         setSlugInput(post.slug);
         setIsSlugManuallyEdited(post.slug !== createSlug(post.title));
@@ -247,7 +257,7 @@ export default function AdminPostEditScreen() {
     return () => {
       active = false;
     };
-  }, [isConnected, isEditing, postId]);
+  }, [isAdmin, isConnected, isEditing, postId, router, user?.email, user?.uid]);
 
   useEffect(() => {
     if (!isSlugManuallyEdited) {
@@ -267,6 +277,10 @@ export default function AdminPostEditScreen() {
   }, [categories, category]);
 
   const isLoadingInitial = isLoadingCategories || isLoadingPost;
+
+  if (!canManagePosts) {
+    return <Redirect href="/settings" />;
+  }
 
   const getUniqueSlug = (base: string) => {
     const normalizedBase = base || "post";
@@ -337,7 +351,7 @@ export default function AdminPostEditScreen() {
     const normalizedYoutubeVideoUrl = youtubeVideoUrl.trim();
     const normalizedCategory = category.trim().toLowerCase();
     const normalizedStatus: PostStatus =
-      status === "published" ? "published" : "draft";
+      isAdmin && status === "published" ? "published" : "draft";
     const slugBase = createSlug(slugInput || trimmedTitle);
 
     if (!trimmedTitle) {
@@ -465,7 +479,9 @@ export default function AdminPostEditScreen() {
         {isEditing ? "Edit Post" : "Create Post"}
       </Text>
       <Text style={styles.subtitle}>
-        Save will write post data to Firebase collection `posts`.
+        {isAdmin
+          ? "Save will write post data to Firebase collection `posts`."
+          : "Your submission will save to Firebase as a draft for admin review."}
       </Text>
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
@@ -554,28 +570,42 @@ export default function AdminPostEditScreen() {
           Feature image blank hoga to YouTube thumbnail card me auto use hoga.
         </Text>
 
-        <Text style={styles.label}>Status</Text>
-        <View style={styles.chipRow}>
-          {POST_STATUSES.map((item) => (
-            <Pressable
-              key={item}
-              style={[
-                styles.chip,
-                status === item ? styles.chipActive : undefined,
-              ]}
-              onPress={() => setStatus(item)}
-            >
-              <Text
-                style={[
-                  styles.chipText,
-                  status === item ? styles.chipTextActive : undefined,
-                ]}
-              >
-                {item === "draft" ? "Draft" : "Published"}
-              </Text>
-            </Pressable>
-          ))}
-        </View>
+        {isAdmin ? (
+          <>
+            <Text style={styles.label}>Status</Text>
+            <View style={styles.chipRow}>
+              {POST_STATUSES.map((item) => (
+                <Pressable
+                  key={item}
+                  style={[
+                    styles.chip,
+                    status === item ? styles.chipActive : undefined,
+                  ]}
+                  onPress={() => setStatus(item)}
+                >
+                  <Text
+                    style={[
+                      styles.chipText,
+                      status === item ? styles.chipTextActive : undefined,
+                    ]}
+                  >
+                    {item === "draft" ? "Draft" : "Published"}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+          </>
+        ) : (
+          <>
+            <Text style={styles.label}>Status</Text>
+            <View style={styles.readonlyCard}>
+              <Text style={styles.readonlyValue}>Draft</Text>
+            </View>
+            <Text style={styles.helperText}>
+              Authors can submit drafts. Publishing is available only to admins.
+            </Text>
+          </>
+        )}
 
         <Text style={styles.label}>Category *</Text>
         <View
@@ -749,6 +779,20 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   input: {
     color: colors.text,
     fontSize: FONT_SIZE.button,
+  },
+  readonlyCard: {
+    minHeight: CONTROL_SIZE.inputHeight,
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceMuted,
+    paddingHorizontal: SPACING.md,
+    justifyContent: "center",
+  },
+  readonlyValue: {
+    color: colors.text,
+    fontSize: FONT_SIZE.button,
+    fontWeight: "600",
   },
   contentInput: {
     minHeight: 180,

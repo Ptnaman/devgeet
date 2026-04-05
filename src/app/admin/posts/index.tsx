@@ -10,7 +10,7 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { useRouter } from "expo-router";
+import { Redirect, useRouter } from "expo-router";
 import {
   collection,
   deleteDoc,
@@ -44,6 +44,7 @@ import {
 } from "@/lib/content";
 import { firestore } from "@/lib/firebase";
 import { getActionErrorMessage, getRequestErrorMessage } from "@/lib/network";
+import { useAuth } from "@/providers/auth-provider";
 import { useNetworkStatus } from "@/providers/network-provider";
 import { useAppTheme } from "@/providers/theme-provider";
 
@@ -55,6 +56,7 @@ export default function AdminPostsListScreen() {
   const { colors } = useAppTheme();
   const { isConnected } = useNetworkStatus();
   const router = useRouter();
+  const { canManagePosts, isAdmin, user } = useAuth();
   const styles = createStyles(colors);
   const [categories, setCategories] = useState<CategoryRecord[]>([]);
   const [posts, setPosts] = useState<PostRecord[]>([]);
@@ -130,10 +132,24 @@ export default function AdminPostsListScreen() {
 
   const isLoadingData = isLoadingCategories || isLoadingPosts;
 
+  const scopedPosts = useMemo(() => {
+    if (isAdmin) {
+      return posts;
+    }
+
+    if (!user?.uid) {
+      return [];
+    }
+
+    return posts.filter(
+      (post) => post.createdBy === user.uid || (!!user.email && post.createdByEmail === user.email)
+    );
+  }, [isAdmin, posts, user?.email, user?.uid]);
+
   const filteredPosts = useMemo(() => {
     const keyword = searchTerm.trim().toLowerCase();
 
-    return posts.filter((post) => {
+    return scopedPosts.filter((post) => {
       if (statusFilter !== "all" && post.status !== statusFilter) {
         return false;
       }
@@ -151,17 +167,21 @@ export default function AdminPostsListScreen() {
         .toLowerCase()
         .includes(keyword);
     });
-  }, [categoryFilter, posts, searchTerm, statusFilter]);
+  }, [categoryFilter, scopedPosts, searchTerm, statusFilter]);
 
   const hasActiveFilters =
     Boolean(searchTerm.trim()) || statusFilter !== "all" || categoryFilter !== "all";
 
   const postStats = useMemo(() => {
     return {
-      total: posts.length,
+      total: scopedPosts.length,
       visible: filteredPosts.length,
     };
-  }, [filteredPosts.length, posts]);
+  }, [filteredPosts.length, scopedPosts.length]);
+
+  if (!canManagePosts) {
+    return <Redirect href="/settings" />;
+  }
 
   const clearFeedback = () => {
     setError("");
@@ -169,6 +189,10 @@ export default function AdminPostsListScreen() {
   };
 
   const handleToggleStatus = async (post: PostRecord) => {
+    if (!isAdmin) {
+      return;
+    }
+
     try {
       clearFeedback();
       const postRef = doc(firestore, POSTS_COLLECTION, post.id);
@@ -226,11 +250,23 @@ export default function AdminPostsListScreen() {
     <ScrollView contentContainerStyle={styles.container}>
       <Text style={styles.title}>Post List</Text>
       <Text style={styles.subtitle}>
-        Filter, manage, and publish posts quickly.
+        {isAdmin
+          ? "Filter, manage, and publish posts quickly."
+          : "Create and manage only the posts assigned to your account."}
       </Text>
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
       {success ? <Text style={styles.success}>{success}</Text> : null}
+
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Quick Action</Text>
+        <Pressable
+          style={({ pressed }) => [styles.primaryButton, pressed && styles.buttonPressed]}
+          onPress={() => router.push("/admin/posts/edit")}
+        >
+          <Text style={styles.primaryButtonText}>Create Post</Text>
+        </Pressable>
+      </View>
 
       <View style={styles.section}>
         <View style={styles.filterHeader}>
@@ -411,6 +447,9 @@ export default function AdminPostsListScreen() {
                 <Text style={styles.postMeta}>Created {createdLabel}</Text>
                 <Text style={styles.postMeta}>Updated {updatedLabel}</Text>
               </View>
+              {isAdmin && post.createdByEmail ? (
+                <Text style={styles.postMeta}>Author: {post.createdByEmail}</Text>
+              ) : null}
               <Text style={styles.postMeta}>Slug: {post.slug}</Text>
               <Text style={styles.postMeta}>ID: {post.id}</Text>
 
@@ -426,20 +465,22 @@ export default function AdminPostsListScreen() {
                   <Text style={styles.secondaryButtonText}>Edit</Text>
                 </Pressable>
 
-                <Pressable
-                  style={({ pressed }) => [
-                    styles.secondaryButton,
-                    styles.flexButton,
-                    pressed && styles.buttonPressed,
-                  ]}
-                  onPress={() => {
-                    void handleToggleStatus(post);
-                  }}
-                >
-                  <Text style={styles.secondaryButtonText}>
-                    {post.status === "published" ? "Move to Draft" : "Publish"}
-                  </Text>
-                </Pressable>
+                {isAdmin ? (
+                  <Pressable
+                    style={({ pressed }) => [
+                      styles.secondaryButton,
+                      styles.flexButton,
+                      pressed && styles.buttonPressed,
+                    ]}
+                    onPress={() => {
+                      void handleToggleStatus(post);
+                    }}
+                  >
+                    <Text style={styles.secondaryButtonText}>
+                      {post.status === "published" ? "Move to Draft" : "Publish"}
+                    </Text>
+                  </Pressable>
+                ) : null}
 
                 <Pressable
                   style={({ pressed }) => [
@@ -495,6 +536,19 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     fontSize: 18,
     fontWeight: "700",
     color: colors.text,
+  },
+  primaryButton: {
+    minHeight: CONTROL_SIZE.inputHeight,
+    borderRadius: RADIUS.md,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.primary,
+    paddingHorizontal: SPACING.md,
+  },
+  primaryButtonText: {
+    color: colors.primaryText,
+    fontSize: FONT_SIZE.button,
+    fontWeight: "700",
   },
   filterHeader: {
     flexDirection: "row",

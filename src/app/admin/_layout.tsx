@@ -1,6 +1,4 @@
 import { Redirect, Stack, useRouter } from "expo-router";
-import { Logout01Icon } from "@hugeicons/core-free-icons";
-import { HugeiconsIcon } from "@hugeicons/react-native";
 import {
   ActivityIndicator,
   Pressable,
@@ -8,6 +6,7 @@ import {
   View,
 } from "react-native";
 
+import { LogoutActionIcon } from "@/components/icons/logout-action-icon";
 import { RADIUS, SPACING, type ThemeColors } from "@/constants/theme";
 import { useAuth } from "@/providers/auth-provider";
 import { useAppTheme } from "@/providers/theme-provider";
@@ -15,7 +14,7 @@ import { useAppTheme } from "@/providers/theme-provider";
 export default function AdminLayout() {
   const { colors } = useAppTheme();
   const router = useRouter();
-  const { isAdmin, isBootstrapping } = useAuth();
+  const { canManagePosts, isBootstrapping } = useAuth();
   const styles = createStyles(colors);
 
   if (isBootstrapping) {
@@ -26,7 +25,7 @@ export default function AdminLayout() {
     );
   }
 
-  if (!isAdmin) {
+  if (!canManagePosts) {
     return <Redirect href="/settings" />;
   }
 
@@ -45,7 +44,7 @@ export default function AdminLayout() {
             ]}
             onPress={() => router.replace("/home")}
           >
-            <HugeiconsIcon icon={Logout01Icon} size={18} color={colors.text} />
+            <LogoutActionIcon size={18} color={colors.text} />
           </Pressable>
         ),
       }}
@@ -59,7 +58,7 @@ export default function AdminLayout() {
       <Stack.Screen name="posts/index" options={{ title: "Posts" }} />
       <Stack.Screen name="posts/edit" options={{ title: "Post Editor" }} />
       <Stack.Screen name="categories" options={{ title: "Categories" }} />
-			
+      <Stack.Screen name="users" options={{ title: "Users" }} />
     </Stack>
   );
 }
