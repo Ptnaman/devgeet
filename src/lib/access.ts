@@ -72,5 +72,7 @@ export const getEffectiveUserRole = (
 
 export const canManagePosts = (role: UserRole) => role === "admin" || role === "author";
 
+export const canModeratePosts = (role: UserRole) => role === "admin";
+
 export const canManageUsers = (role: UserRole, email: string | null | undefined) =>
   role === "admin" && isOwnerEmail(email);

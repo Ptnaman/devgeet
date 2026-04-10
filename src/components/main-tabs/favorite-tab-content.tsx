@@ -13,7 +13,14 @@ import {
 import { FavoriteTabIcon } from "@/components/icons/favorite-tab-icon";
 import { MainTabScrollView } from "@/components/main-tabs/main-tab-scroll-view";
 import { TrashActionIcon } from "@/components/icons/trash-action-icon";
-import { FONT_SIZE, RADIUS, SHADOWS, SPACING, type ThemeColors } from "@/constants/theme";
+import {
+  FONT_SIZE,
+  RADIUS,
+  SHADOWS,
+  SPACING,
+  STATIC_COLORS,
+  type ThemeColors,
+} from "@/constants/theme";
 import { getPostCardThumbnailUrl, type PostRecord } from "@/lib/content";
 import {
   DEFAULT_OFFLINE_MESSAGE,
@@ -221,7 +228,7 @@ export function FavoriteTabContent() {
                 accessibilityRole="button"
                 accessibilityLabel={`Remove ${post.title} from favorites`}
               >
-                <TrashActionIcon size={17} color="#FFFFFF" />
+                <TrashActionIcon size={17} color={STATIC_COLORS.white} />
               </Pressable>
             </View>
           );
@@ -403,7 +410,7 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     borderRadius: 12,
     width: 42,
     height: 42,
-    backgroundColor: "#F56B98",
+    backgroundColor: colors.favoriteRemove,
   },
   removeButtonPressed: {
     opacity: 0.88,

@@ -1,21 +1,28 @@
 import { useEffect, useState } from "react";
-import { useRouter } from "expo-router";
+import { Link, useRouter } from "expo-router";
+import { StatusBar } from "expo-status-bar";
 import {
   ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import Svg, { Path } from "react-native-svg";
+import { SafeAreaView } from "react-native-safe-area-context";
 
+import { AuthSoftInput } from "@/components/auth-soft-field";
+import { CancelInputIcon } from "@/components/icons/cancel-input-icon";
 import { GoogleAuthButton } from "@/components/google-auth-button";
+import { ViewOffIcon } from "@/components/icons/view-off-icon";
+import { ViewOnIcon } from "@/components/icons/view-on-icon";
 import {
   CONTROL_SIZE,
   FONT_SIZE,
-  RADIUS,
   SHADOWS,
   SPACING,
   type ThemeColors,
@@ -25,7 +32,24 @@ import { useAuth } from "@/providers/auth-provider";
 import { useNetworkStatus } from "@/providers/network-provider";
 import { useAppTheme } from "@/providers/theme-provider";
 
+type LoginField = "identifier" | "password";
+type LoginFieldErrors = Partial<Record<LoginField, string>>;
+
 const LAST_LOGIN_IDENTIFIER_KEY = "auth:last_login_identifier";
+const REMEMBER_ME_PREFERENCE_KEY = "auth:remember_me";
+
+const readErrorCode = (error: unknown) => {
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    typeof (error as { code?: unknown }).code === "string"
+  ) {
+    return (error as { code: string }).code;
+  }
+
+  return "";
+};
 
 const getErrorMessage = (
   error: unknown,
@@ -38,381 +62,515 @@ const getErrorMessage = (
     fallbackMessage,
   });
 
+const resolveLoginErrorState = (error: unknown, isConnected: boolean) => {
+  const message = getErrorMessage(error, isConnected);
+  const code = readErrorCode(error);
+  const normalizedMessage = message.toLowerCase();
+
+  if (code === "auth/invalid-email") {
+    return { field: "identifier" as const, message };
+  }
+
+  if (code === "auth/wrong-password" || code === "auth/missing-password") {
+    return { field: "password" as const, message };
+  }
+
+  if (normalizedMessage.includes("username") || normalizedMessage.includes("email")) {
+    return { field: "identifier" as const, message };
+  }
+
+  if (normalizedMessage.includes("password")) {
+    return { field: "password" as const, message };
+  }
+
+  return { message };
+};
+
+function CheckIcon({ color }: { color: string }) {
+  return (
+    <Svg width={12} height={12} viewBox="0 0 12 12" fill="none">
+      <Path
+        d="M2 6.25L4.5 8.75L10 3.25"
+        stroke={color}
+        strokeWidth={2}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </Svg>
+  );
+}
+
 export default function LoginScreen() {
-  const { colors } = useAppTheme();
+  const { colors, resolvedTheme } = useAppTheme();
   const { isConnected, showOfflineToast } = useNetworkStatus();
   const router = useRouter();
-  const { loginWithEmailOrUsername, requestPasswordReset } = useAuth();
+  const { loginWithEmailOrUsername, setRememberSessionPersistence } = useAuth();
   const styles = createStyles(colors);
 
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [isPasswordVisible, setIsPasswordVisible] = useState(false);
-  const [error, setError] = useState("");
-  const [successMessage, setSuccessMessage] = useState("");
+  const [rememberMe, setRememberMe] = useState(true);
+  const [fieldErrors, setFieldErrors] = useState<LoginFieldErrors>({});
+  const [loginError, setLoginError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isResettingPassword, setIsResettingPassword] = useState(false);
-  const [isIdentifierFocused, setIsIdentifierFocused] = useState(false);
-  const [isPasswordFocused, setIsPasswordFocused] = useState(false);
+  const [hasHydratedScreenState, setHasHydratedScreenState] = useState(false);
 
   useEffect(() => {
     const hydrateScreenState = async () => {
       try {
-        const savedIdentifier = await AsyncStorage.getItem(LAST_LOGIN_IDENTIFIER_KEY);
-        if (savedIdentifier) {
+        const [savedIdentifier, savedRememberPreference] = await Promise.all([
+          AsyncStorage.getItem(LAST_LOGIN_IDENTIFIER_KEY),
+          AsyncStorage.getItem(REMEMBER_ME_PREFERENCE_KEY),
+        ]);
+        const nextRememberMe =
+          savedRememberPreference === null ? true : savedRememberPreference === "true";
+
+        setRememberMe(nextRememberMe);
+
+        if (nextRememberMe && savedIdentifier) {
           setIdentifier(savedIdentifier);
+        } else if (!nextRememberMe && savedIdentifier) {
+          await AsyncStorage.removeItem(LAST_LOGIN_IDENTIFIER_KEY);
         }
       } catch {
         // Ignore local storage read issues and keep blank field.
+      } finally {
+        setHasHydratedScreenState(true);
       }
     };
 
     void hydrateScreenState();
   }, []);
 
+  useEffect(() => {
+    if (!hasHydratedScreenState) {
+      return;
+    }
+
+    const persistRememberPreference = async () => {
+      try {
+        await AsyncStorage.setItem(REMEMBER_ME_PREFERENCE_KEY, String(rememberMe));
+      } catch {
+        // Ignore local storage write issues and keep the in-memory preference.
+      }
+    };
+
+    void persistRememberPreference();
+  }, [hasHydratedScreenState, rememberMe]);
+
   const handleLogin = async () => {
-    if (!identifier.trim() || !password) {
-      setError("Enter username/email and password.");
-      setSuccessMessage("");
+    const nextErrors: LoginFieldErrors = {};
+
+    if (!identifier.trim()) {
+      nextErrors.identifier = "Enter your email or username.";
+    }
+
+    if (!password) {
+      nextErrors.password = "Enter your password.";
+    }
+
+    if (Object.keys(nextErrors).length) {
+      setFieldErrors(nextErrors);
+      setLoginError("");
       return;
     }
 
     try {
       setIsSubmitting(true);
-      setError("");
-      setSuccessMessage("");
+      setFieldErrors({});
+      setLoginError("");
       const normalizedIdentifier = identifier.trim();
+      await setRememberSessionPersistence(rememberMe);
       await loginWithEmailOrUsername(normalizedIdentifier, password);
-      await AsyncStorage.setItem(LAST_LOGIN_IDENTIFIER_KEY, normalizedIdentifier);
+      if (rememberMe) {
+        await AsyncStorage.setItem(LAST_LOGIN_IDENTIFIER_KEY, normalizedIdentifier);
+      } else {
+        await AsyncStorage.removeItem(LAST_LOGIN_IDENTIFIER_KEY);
+      }
       router.replace("/home");
     } catch (loginError) {
       const message = getErrorMessage(loginError, isConnected);
       if (message === DEFAULT_OFFLINE_MESSAGE) {
         showOfflineToast();
       }
-      setError(message);
+      const nextError = resolveLoginErrorState(loginError, isConnected);
+
+      if (nextError.field) {
+        setFieldErrors({ [nextError.field]: nextError.message });
+        setLoginError("");
+      } else {
+        setFieldErrors({});
+        setLoginError(nextError.message);
+      }
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const handleForgotPassword = async () => {
-    if (!identifier.trim()) {
-      setError("Enter your email or username first.");
-      setSuccessMessage("");
-      return;
+  const clearFeedback = (field: LoginField) => {
+    if (loginError) {
+      setLoginError("");
     }
 
-    try {
-      setIsResettingPassword(true);
-      setError("");
-      setSuccessMessage("");
-      const normalizedIdentifier = identifier.trim();
-      await requestPasswordReset(normalizedIdentifier);
-      await AsyncStorage.setItem(LAST_LOGIN_IDENTIFIER_KEY, normalizedIdentifier);
-      setIdentifier(normalizedIdentifier);
-      setSuccessMessage("Password reset email sent. Check your inbox.");
-    } catch (passwordResetError) {
-      const message = getErrorMessage(
-        passwordResetError,
-        isConnected,
-        "Unable to send reset email. Please try again.",
-      );
-      if (message === DEFAULT_OFFLINE_MESSAGE) {
-        showOfflineToast();
+    setFieldErrors((current) => {
+      if (!current[field]) {
+        return current;
       }
-      setError(message);
-    } finally {
-      setIsResettingPassword(false);
-    }
+
+      const next = { ...current };
+      delete next[field];
+      return next;
+    });
   };
 
-  const clearFeedback = () => {
-    if (error) {
-      setError("");
-    }
-    if (successMessage) {
-      setSuccessMessage("");
-    }
-  };
-
-  const isLoginDisabled = isSubmitting || isResettingPassword || !identifier.trim() || !password;
-  const isPasswordResetDisabled = isSubmitting || isResettingPassword || !identifier.trim();
+  const isLoginDisabled = isSubmitting || !identifier.trim() || !password;
+  const hasIdentifierError = Boolean(fieldErrors.identifier);
+  const hasPasswordError = Boolean(fieldErrors.password);
 
   return (
-    <ScrollView
-      contentContainerStyle={styles.scroll}
-      keyboardShouldPersistTaps="handled"
-    >
-      <View style={styles.mainContent}>
-        <View style={styles.hero}>
-          <Text style={styles.title}>Login to DevGeet</Text>
-          <Text style={styles.subtitle}>Welcome back to DevGeet.</Text>
-        </View>
-
-        <View style={styles.formCard}>
-          <View style={styles.field}>
-            <Text style={styles.label}>Email or Username</Text>
-            <TextInput
-              value={identifier}
-              onChangeText={(value) => {
-                setIdentifier(value);
-                clearFeedback();
-              }}
-              onFocus={() => setIsIdentifierFocused(true)}
-              onBlur={() => setIsIdentifierFocused(false)}
-              placeholder="Enter your email or username"
-              placeholderTextColor={colors.mutedText}
-              autoCapitalize="none"
-              autoCorrect={false}
-              style={[styles.input, isIdentifierFocused && styles.inputFocused]}
-            />
-          </View>
-
-          <View style={styles.field}>
-            <Text style={styles.label}>Password</Text>
-            <View
-              style={[styles.inputWithAction, isPasswordFocused && styles.inputFocused]}
-            >
-              <TextInput
-                value={password}
-                onChangeText={(value) => {
-                  setPassword(value);
-                  clearFeedback();
-                }}
-                onFocus={() => setIsPasswordFocused(true)}
-                onBlur={() => setIsPasswordFocused(false)}
-                placeholder="Enter your password"
-                placeholderTextColor={colors.mutedText}
-                secureTextEntry={!isPasswordVisible}
-                autoCapitalize="none"
-                style={styles.inputWithActionText}
-                onSubmitEditing={() => {
-                  if (!isLoginDisabled) {
-                    void handleLogin();
-                  }
-                }}
-              />
-              <Pressable
-                style={styles.toggleButton}
-                onPress={() => setIsPasswordVisible((current) => !current)}
-                hitSlop={8}
-              >
-                <Text style={styles.toggleText}>
-                  {isPasswordVisible ? "Hide" : "Show"}
-                </Text>
-              </Pressable>
+    <SafeAreaView style={styles.safeArea} edges={["bottom"]}>
+      <StatusBar style={resolvedTheme === "dark" ? "light" : "dark"} />
+      <KeyboardAvoidingView
+        style={styles.keyboardAvoiding}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+      >
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
+        >
+          <View style={styles.content}>
+            <View style={styles.header}>
+              <Text style={styles.title}>Let&apos;s Sign You In</Text>
+              <Text style={styles.subtitle}>Welcome back, you&apos;ve been missed!</Text>
             </View>
-          </View>
 
-          {successMessage ? <Text style={styles.success}>{successMessage}</Text> : null}
-          {error ? <Text style={styles.error}>{error}</Text> : null}
+            <View style={styles.formStack}>
+              <View style={styles.fieldGroup}>
+                <AuthSoftInput
+                  label="Email or Username"
+                  value={identifier}
+                  onChangeText={(value) => {
+                    setIdentifier(value);
+                    clearFeedback("identifier");
+                  }}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  autoComplete="username"
+                  textContentType="username"
+                  tone={hasIdentifierError ? "error" : "default"}
+                  errorMessage={fieldErrors.identifier}
+                  trailingAccessory={
+                    identifier ? (
+                      <Pressable
+                        style={({ pressed }) => [
+                          styles.clearButton,
+                          pressed && styles.eyeButtonPressed,
+                        ]}
+                        onPress={() => {
+                          setIdentifier("");
+                          clearFeedback("identifier");
+                        }}
+                        hitSlop={8}
+                      >
+                        <CancelInputIcon
+                          color={hasIdentifierError ? colors.danger : colors.iconMuted}
+                        />
+                      </Pressable>
+                    ) : null
+                  }
+                  inputStyle={styles.inputText}
+                />
+              </View>
 
-          <Pressable
-            style={({ pressed }) => [
-              styles.primaryButton,
-              isLoginDisabled && styles.primaryButtonDisabled,
-              pressed && !isLoginDisabled && styles.buttonPressed,
-            ]}
-            onPress={handleLogin}
-            disabled={isLoginDisabled}
-          >
-            {isSubmitting ? (
-              <ActivityIndicator size="small" color={colors.primaryText} />
-            ) : (
-              <Text
-                style={[
-                  styles.primaryButtonText,
-                  isLoginDisabled && styles.primaryButtonTextDisabled,
+              <View style={styles.fieldGroup}>
+                <AuthSoftInput
+                  label="Password"
+                  value={password}
+                  onChangeText={(value) => {
+                    setPassword(value);
+                    clearFeedback("password");
+                  }}
+                  secureTextEntry={!isPasswordVisible}
+                  autoCapitalize="none"
+                  tone={hasPasswordError ? "error" : "default"}
+                  errorMessage={fieldErrors.password}
+                  inputStyle={styles.inputText}
+                  onSubmitEditing={() => {
+                    if (!isLoginDisabled) {
+                      void handleLogin();
+                    }
+                  }}
+                  trailingAccessory={
+                    <Pressable
+                    style={({ pressed }) => [styles.eyeButton, pressed && styles.eyeButtonPressed]}
+                    onPress={() => setIsPasswordVisible((current) => !current)}
+                    hitSlop={8}
+                  >
+                      {isPasswordVisible ? (
+                        <ViewOnIcon color={colors.iconMuted} />
+                      ) : (
+                        <ViewOffIcon color={colors.iconMuted} />
+                      )}
+                  </Pressable>
+                }
+              />
+              </View>
+
+              <View style={styles.optionsRow}>
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.rememberAction,
+                    isSubmitting && styles.auxiliaryActionDisabled,
+                    pressed && styles.rememberActionPressed,
+                  ]}
+                  onPress={() => setRememberMe((current) => !current)}
+                  disabled={isSubmitting}
+                >
+                  <View style={[styles.checkbox, rememberMe && styles.checkboxChecked]}>
+                    {rememberMe ? <CheckIcon color={colors.brandPrimaryText} /> : null}
+                  </View>
+                  <Text style={styles.rememberText}>Remember Me</Text>
+                </Pressable>
+
+                <Pressable
+                  style={isSubmitting ? styles.auxiliaryActionDisabled : undefined}
+                  onPress={() => {
+                    const normalizedIdentifier = identifier.trim();
+                    router.push({
+                      pathname: "/forgot-password",
+                      params: normalizedIdentifier ? { identifier: normalizedIdentifier } : {},
+                    });
+                  }}
+                  hitSlop={8}
+                  disabled={isSubmitting}
+                >
+                  <Text style={styles.forgotText}>Forgot Password?</Text>
+                </Pressable>
+              </View>
+
+              {loginError ? <Text style={styles.inlineError}>{loginError}</Text> : null}
+
+              <Pressable
+                style={({ pressed }) => [
+                  styles.primaryButton,
+                  isLoginDisabled && styles.primaryButtonDisabled,
+                  pressed && !isLoginDisabled && styles.buttonPressed,
                 ]}
+                onPress={handleLogin}
+                disabled={isLoginDisabled}
               >
-                Continue
-              </Text>
-            )}
-          </Pressable>
+                {isSubmitting ? (
+                  <ActivityIndicator size="small" color={colors.brandPrimaryText} />
+                ) : (
+                  <Text style={styles.primaryButtonText}>Login</Text>
+                )}
+              </Pressable>
 
-          <Pressable
-            style={({ pressed }) => [
-              styles.secondaryButton,
-              isPasswordResetDisabled && styles.secondaryButtonDisabled,
-              pressed && !isPasswordResetDisabled && styles.buttonPressed,
-            ]}
-            onPress={handleForgotPassword}
-            disabled={isPasswordResetDisabled}
-          >
-            {isResettingPassword ? (
-              <ActivityIndicator size="small" color={colors.text} />
-            ) : (
-              <Text style={styles.secondaryButtonText}>Forgot password?</Text>
-            )}
-          </Pressable>
-        </View>
+              <View style={styles.dividerRow}>
+                <View style={styles.dividerLine} />
+                <Text style={styles.dividerText}>OR</Text>
+                <View style={styles.dividerLine} />
+              </View>
 
-        <View style={styles.dividerRow}>
-          <View style={styles.dividerLine} />
-          <Text style={styles.dividerText}>OR</Text>
-          <View style={styles.dividerLine} />
-        </View>
+              <GoogleAuthButton
+                label="Continue with Google"
+                onError={(message) => {
+                  setFieldErrors({});
+                  setLoginError(message);
+                }}
+                showTrailingIcon={false}
+                rememberSession={rememberMe}
+                containerStyle={styles.googleButton}
+              />
+            </View>
 
-        <GoogleAuthButton label="Continue with Google" onError={setError} />
-      </View>
-    </ScrollView>
+            <Text style={styles.footerText}>
+              Don&apos;t have Account?{" "}
+              <Link href="/signup" style={styles.footerLink}>
+                Sign up
+              </Link>
+            </Text>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 
-const createStyles = (colors: ThemeColors) => StyleSheet.create({
-  scroll: {
-    flexGrow: 1,
-    justifyContent: "center",
-    paddingHorizontal: SPACING.xl,
-    paddingVertical: SPACING.xl,
-    backgroundColor: colors.background,
-  },
-  mainContent: {
-    gap: SPACING.lg,
-    width: "100%",
-    maxWidth: 440,
-    alignSelf: "center",
-  },
-  hero: {
-    alignItems: "center",
-    gap: SPACING.xs,
-  },
-  title: {
-    color: colors.text,
-    fontSize: FONT_SIZE.title,
-    fontWeight: "700",
-    textAlign: "center",
-  },
-  subtitle: {
-    color: colors.mutedText,
-    fontSize: FONT_SIZE.body + 1,
-    lineHeight: 20,
-    textAlign: "center",
-  },
-  formCard: {
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: RADIUS.card,
-    padding: SPACING.lg,
-    gap: SPACING.md,
-    ...SHADOWS.sm,
-  },
-  field: {
-    gap: SPACING.xs,
-  },
-  label: {
-    color: colors.text,
-    fontSize: 13,
-    fontWeight: "600",
-  },
-  input: {
-    minHeight: CONTROL_SIZE.inputHeight,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surfaceMuted,
-    borderRadius: RADIUS.md,
-    paddingHorizontal: SPACING.md,
-    color: colors.text,
-    fontSize: FONT_SIZE.button,
-  },
-  inputWithAction: {
-    minHeight: CONTROL_SIZE.inputHeight,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surfaceMuted,
-    borderRadius: RADIUS.md,
-    paddingLeft: SPACING.md,
-    paddingRight: SPACING.xs,
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  inputWithActionText: {
-    flex: 1,
-    color: colors.text,
-    fontSize: FONT_SIZE.button,
-  },
-  inputFocused: {
-    borderColor: colors.primary,
-  },
-  toggleButton: {
-    minWidth: 54,
-    height: 34,
-    borderRadius: RADIUS.pill,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: SPACING.sm,
-  },
-  toggleText: {
-    color: colors.primary,
-    fontSize: 13,
-    fontWeight: "700",
-  },
-  error: {
-    color: colors.danger,
-    fontSize: 13,
-    textAlign: "center",
-    lineHeight: 18,
-  },
-  success: {
-    color: colors.success,
-    fontSize: 13,
-    textAlign: "center",
-    lineHeight: 18,
-  },
-  primaryButton: {
-    minHeight: CONTROL_SIZE.inputHeight + 2,
-    borderRadius: RADIUS.pill,
-    backgroundColor: colors.primary,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  primaryButtonDisabled: {
-    backgroundColor: colors.surfaceSoft,
-  },
-  primaryButtonText: {
-    color: colors.primaryText,
-    fontWeight: "700",
-    fontSize: FONT_SIZE.button + 2,
-  },
-  primaryButtonTextDisabled: {
-    color: colors.subtleText,
-  },
-  secondaryButton: {
-    minHeight: CONTROL_SIZE.inputHeight + 2,
-    borderRadius: RADIUS.pill,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surfaceMuted,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  secondaryButtonText: {
-    color: colors.text,
-    fontWeight: "600",
-    fontSize: FONT_SIZE.button + 1,
-  },
-  secondaryButtonDisabled: {
-    opacity: 0.6,
-  },
-  dividerRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: SPACING.sm,
-  },
-  dividerLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: colors.border,
-  },
-  dividerText: {
-    textAlign: "center",
-    color: colors.mutedText,
-    fontSize: 12,
-    fontWeight: "600",
-  },
-  buttonPressed: {
-    opacity: 0.88,
-  },
-});
+const createStyles = (colors: ThemeColors) =>
+  StyleSheet.create({
+    safeArea: {
+      flex: 1,
+      backgroundColor: colors.surface,
+    },
+    keyboardAvoiding: {
+      flex: 1,
+    },
+    scrollContent: {
+      flexGrow: 1,
+      justifyContent: "center",
+      paddingHorizontal: SPACING.xl,
+      paddingTop: SPACING.xl,
+      paddingBottom: SPACING.xxl * 2,
+      backgroundColor: colors.surface,
+    },
+    content: {
+      width: "100%",
+      maxWidth: 420,
+      alignSelf: "center",
+      justifyContent: "center",
+      gap: SPACING.xxl,
+    },
+    header: {
+      width: "100%",
+      gap: SPACING.sm + 2,
+      alignItems: "flex-start",
+    },
+    title: {
+      color: colors.text,
+      fontSize: 36,
+      lineHeight: 42,
+      fontWeight: "800",
+      letterSpacing: -0.6,
+      textAlign: "left",
+      maxWidth: 320,
+    },
+    subtitle: {
+      color: colors.mutedText,
+      fontSize: 18,
+      lineHeight: 28,
+      fontWeight: "600",
+      maxWidth: 340,
+      textAlign: "left",
+    },
+    formStack: {
+      gap: SPACING.lg,
+    },
+    fieldGroup: {
+      gap: 6,
+    },
+    inputText: {
+      color: colors.text,
+      fontSize: FONT_SIZE.button,
+    },
+    eyeButton: {
+      width: 44,
+      height: 44,
+      borderRadius: 14,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    clearButton: {
+      width: 36,
+      height: 36,
+      borderRadius: 12,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    eyeButtonPressed: {
+      opacity: 0.72,
+    },
+    optionsRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: SPACING.md,
+      marginTop: SPACING.xs,
+    },
+    rememberAction: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: SPACING.sm + 2,
+    },
+    rememberActionPressed: {
+      opacity: 0.82,
+    },
+    auxiliaryActionDisabled: {
+      opacity: 0.52,
+    },
+    checkbox: {
+      width: 20,
+      height: 20,
+      borderRadius: 6,
+      borderWidth: 1.5,
+      borderColor: colors.inputBorder,
+      backgroundColor: colors.surface,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    checkboxChecked: {
+      backgroundColor: colors.brandPrimary,
+      borderColor: colors.brandPrimary,
+    },
+    rememberText: {
+      color: colors.iconMuted,
+      fontSize: FONT_SIZE.body,
+      fontWeight: "500",
+    },
+    forgotText: {
+      color: colors.brandAccent,
+      fontSize: FONT_SIZE.body,
+      fontWeight: "700",
+    },
+    inlineError: {
+      color: colors.danger,
+      fontSize: 12,
+      lineHeight: 18,
+      paddingHorizontal: 2,
+    },
+    primaryButton: {
+      minHeight: CONTROL_SIZE.inputHeight,
+      borderRadius: 16,
+      backgroundColor: colors.brandPrimary,
+      alignItems: "center",
+      justifyContent: "center",
+      ...SHADOWS.md,
+    },
+    primaryButtonDisabled: {
+      backgroundColor: colors.brandPrimaryDisabled,
+    },
+    primaryButtonText: {
+      color: colors.brandPrimaryText,
+      fontSize: FONT_SIZE.button,
+      fontWeight: "700",
+    },
+    buttonPressed: {
+      opacity: 0.9,
+    },
+    dividerRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: SPACING.md,
+      paddingVertical: SPACING.sm,
+      marginTop: SPACING.xs,
+    },
+    dividerLine: {
+      flex: 1,
+      height: 1,
+      backgroundColor: colors.inputBorder,
+    },
+    dividerText: {
+      color: colors.subtitleText,
+      fontSize: 13,
+      fontWeight: "700",
+      letterSpacing: 0.4,
+    },
+    googleButton: {
+      backgroundColor: colors.surfaceSoft,
+      borderRadius: 16,
+      borderWidth: 0,
+    },
+    footerText: {
+      textAlign: "center",
+      color: colors.iconMuted,
+      fontSize: 15,
+      lineHeight: 22,
+      paddingTop: SPACING.sm,
+    },
+    footerLink: {
+      color: colors.brandAccent,
+      fontWeight: "700",
+    },
+  });

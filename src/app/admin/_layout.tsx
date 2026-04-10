@@ -1,20 +1,13 @@
-import { Redirect, Stack, useRouter } from "expo-router";
-import {
-  ActivityIndicator,
-  Pressable,
-  StyleSheet,
-  View,
-} from "react-native";
+import { Redirect, Stack } from "expo-router";
+import { ActivityIndicator, StyleSheet, View } from "react-native";
 
-import { LogoutActionIcon } from "@/components/icons/logout-action-icon";
-import { RADIUS, SPACING, type ThemeColors } from "@/constants/theme";
+import { SHADOWS, type ThemeColors } from "@/constants/theme";
 import { useAuth } from "@/providers/auth-provider";
 import { useAppTheme } from "@/providers/theme-provider";
 
 export default function AdminLayout() {
   const { colors } = useAppTheme();
-  const router = useRouter();
-  const { canManagePosts, isBootstrapping } = useAuth();
+  const { canManagePosts, isAdmin, isBootstrapping } = useAuth();
   const styles = createStyles(colors);
 
   if (isBootstrapping) {
@@ -32,32 +25,26 @@ export default function AdminLayout() {
   return (
     <Stack
       screenOptions={{
-        headerStyle: { backgroundColor: colors.surface },
+        headerStyle: {
+          backgroundColor: colors.surface,
+          borderBottomWidth: 0,
+          ...SHADOWS.sm,
+        },
         headerTintColor: colors.text,
-        headerShadowVisible: false,
+        headerShadowVisible: true,
         contentStyle: { backgroundColor: colors.background },
-        headerRight: () => (
-          <Pressable
-            style={({ pressed }) => [
-              styles.logoutIconButton,
-              pressed && styles.iconButtonPressed,
-            ]}
-            onPress={() => router.replace("/home")}
-          >
-            <LogoutActionIcon size={18} color={colors.text} />
-          </Pressable>
-        ),
       }}
     >
       <Stack.Screen
         name="index"
         options={{
-          title: "Admin Panel",
+          title: isAdmin ? "Admin Panel" : "Post Studio",
         }}
       />
-      <Stack.Screen name="posts/index" options={{ title: "Posts" }} />
+      <Stack.Screen name="posts/index" options={{ title: isAdmin ? "Posts" : "My Posts" }} />
       <Stack.Screen name="posts/edit" options={{ title: "Post Editor" }} />
       <Stack.Screen name="categories" options={{ title: "Categories" }} />
+      <Stack.Screen name="notifications" options={{ title: "Custom Notifications" }} />
       <Stack.Screen name="users" options={{ title: "Users" }} />
     </Stack>
   );
@@ -69,19 +56,5 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: colors.background,
-  },
-  logoutIconButton: {
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: RADIUS.md,
-    backgroundColor: colors.surface,
-    width: 36,
-    height: 36,
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: SPACING.xs,
-  },
-  iconButtonPressed: {
-    opacity: 0.85,
   },
 });

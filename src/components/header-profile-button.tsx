@@ -210,7 +210,7 @@ export function HeaderProfileMenu({
             style={styles.backdropGlass}
             glassEffectStyle="regular"
             isInteractive={false}
-            tintColor="rgba(255, 255, 255, 0.08)"
+            tintColor={colors.backdropGlassTint}
           />
           <Pressable style={styles.backdropPressable} onPress={handleClose} />
         </View>
@@ -256,7 +256,7 @@ export function HeaderProfileMenu({
           {canManagePosts ? (
             <MenuAction
               icon={AdminPanelIcon}
-              label={isAdmin ? "Admin Panel" : "Post Manager"}
+              label={isAdmin ? "Admin Panel" : "My Posts"}
               onPress={openAdmin}
               disabled={isLoggingOut}
             />
@@ -318,7 +318,7 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   },
   backdropGlass: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(17, 24, 39, 0.12)",
+    backgroundColor: colors.backdropOverlay,
   },
   backdropPressable: {
     ...StyleSheet.absoluteFillObject,

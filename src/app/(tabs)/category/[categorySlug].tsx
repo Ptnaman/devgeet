@@ -21,6 +21,7 @@ import { FONT_SIZE, RADIUS, SHADOWS, SPACING, type ThemeColors } from "@/constan
 import {
   createSlug,
   getPostCardThumbnailUrl,
+  isPostTrashed,
   mapPostRecord,
   POSTS_COLLECTION,
   sortPostsByRecency,
@@ -70,6 +71,7 @@ export default function CategoryPostsScreen() {
     const postsQuery = query(
       collection(firestore, POSTS_COLLECTION),
       where("category", "==", categorySlug),
+      where("status", "==", "published"),
     );
 
     const unsubscribe = onSnapshot(
@@ -78,7 +80,7 @@ export default function CategoryPostsScreen() {
         const nextPosts = sortPostsByRecency(
           snapshot.docs
             .map((item) => mapPostRecord(item.id, item.data() as DocumentData))
-            .filter((item) => item.status === "published"),
+            .filter((item) => item.status === "published" && !isPostTrashed(item)),
         );
         setPosts(nextPosts);
         setError("");

@@ -38,6 +38,7 @@ import {
   RADIUS,
   SHADOWS,
   SPACING,
+  getFavoriteActionPalette,
   type ThemeColors,
   type ThemeMode,
 } from "@/constants/theme";
@@ -47,6 +48,7 @@ import {
   formatDate,
   getPostCardThumbnailUrl,
   getYouTubeVideoId,
+  isPostTrashed,
   mapPostRecord,
   POSTS_COLLECTION,
   sortPostsByRecency,
@@ -115,6 +117,7 @@ type PostDetailsPageProps = {
   onDecreaseLyricsFontSize: () => void;
   onIncreaseLyricsFontSize: () => void;
   onOpenCategory: (post: PostRecord) => void;
+  onOpenAuthor: (post: PostRecord) => void;
   onOpenInYouTube: (url: string) => Promise<void>;
   onToggleFavorite: (post: PostRecord) => Promise<void>;
   post: PostRecord;
@@ -132,6 +135,7 @@ function PostDetailsPage({
   onDecreaseLyricsFontSize,
   onIncreaseLyricsFontSize,
   onOpenCategory,
+  onOpenAuthor,
   onOpenInYouTube,
   onToggleFavorite,
   post,
@@ -144,11 +148,14 @@ function PostDetailsPage({
   const thumbnailUrl = getPostCardThumbnailUrl(post);
   const updateLabel = formatDate(post.uploadDate || post.createDate);
   const categoryLabel = formatCategoryLabel(post.category);
-  const favoriteIconColor = resolvedTheme === "dark" ? "#FFFFFF" : "#111111";
-  const favoriteFillColor = resolvedTheme === "dark" ? "#FFFFFF" : "#111111";
+  const favoritePalette = getFavoriteActionPalette(resolvedTheme);
   const youtubeVideoId = interactive ? getYouTubeVideoId(post.youtubeVideoUrl) : "";
   const canDecreaseLyricsSize = interactive && lyricsFontSize > MIN_LYRICS_FONT_SIZE;
   const canIncreaseLyricsSize = interactive && lyricsFontSize < MAX_LYRICS_FONT_SIZE;
+  const authorLabel = post.authorDisplayName || "Community Author";
+  const authorSubtitle = post.authorUsername
+    ? `@${post.authorUsername}`
+    : post.createdByEmail || "View public profile";
 
   return (
     <ScrollView
@@ -177,34 +184,7 @@ function PostDetailsPage({
         </Pressable>
         <Text style={styles.metaSeparator}>·</Text>
         <Text style={styles.meta}>{updateLabel}</Text>
-      </View>
-
-      <View style={styles.actionRow}>
-        <Pressable
-          style={({ pressed }) => [
-            styles.favoriteButton,
-            interactive && pressed && styles.favoriteButtonPressed,
-          ]}
-          onPress={() => {
-            void onToggleFavorite(post);
-          }}
-          accessibilityRole="button"
-          accessibilityLabel={
-            isFavoritePost ? "Remove from favorites" : "Add to favorites"
-          }
-          disabled={!interactive}
-        >
-          <FavoriteActionIcon
-            size={16}
-            color={favoriteIconColor}
-            filled={isFavoritePost}
-            fillColor={favoriteFillColor}
-            accentColor="#111111"
-            accentUnderlayColor={resolvedTheme === "dark" ? undefined : "#FFFFFF"}
-          />
-        </Pressable>
-
-        <View style={styles.fontControlsWrap}>
+        <View style={styles.metaFontControlsWrap}>
           <View style={styles.fontControlsActions}>
             <Pressable
               style={({ pressed }) => [
@@ -246,6 +226,62 @@ function PostDetailsPage({
           </View>
         </View>
       </View>
+
+      {post.authorId || post.createdBy ? (
+        <Pressable
+          style={({ pressed }) => [
+            styles.authorCard,
+            interactive && pressed && styles.authorCardPressed,
+          ]}
+          onPress={() => onOpenAuthor(post)}
+          disabled={!interactive}
+        >
+          {post.authorPhotoURL ? (
+            <Image source={{ uri: post.authorPhotoURL }} style={styles.authorAvatar} />
+          ) : (
+            <View style={[styles.authorAvatar, styles.authorAvatarFallback]}>
+              <Text style={styles.authorAvatarText}>
+                {authorLabel.charAt(0).toUpperCase()}
+              </Text>
+            </View>
+          )}
+
+          <View style={styles.authorTextWrap}>
+            <Text style={styles.authorLabel}>Published by</Text>
+            <Text style={styles.authorName} numberOfLines={1}>
+              {authorLabel}
+            </Text>
+            <Text style={styles.authorSubtitle} numberOfLines={1}>
+              {authorSubtitle}
+            </Text>
+          </View>
+
+          <Pressable
+            style={({ pressed }) => [
+              styles.favoriteButton,
+              styles.authorFavoriteButton,
+              interactive && pressed && styles.favoriteButtonPressed,
+            ]}
+            onPress={() => {
+              void onToggleFavorite(post);
+            }}
+            accessibilityRole="button"
+            accessibilityLabel={
+              isFavoritePost ? "Remove from favorites" : "Add to favorites"
+            }
+            disabled={!interactive}
+          >
+            <FavoriteActionIcon
+              size={16}
+              color={favoritePalette.color}
+              filled={isFavoritePost}
+              fillColor={favoritePalette.fillColor}
+              accentColor={favoritePalette.accentColor}
+              accentUnderlayColor={favoritePalette.accentUnderlayColor}
+            />
+          </Pressable>
+        </Pressable>
+      ) : null}
 
       <Text
         style={[
@@ -304,10 +340,11 @@ export default function PostDetailsScreen() {
   const { width } = useWindowDimensions();
   const { postId: postIdParam } = useLocalSearchParams<{ postId?: string }>();
   const { isFavorite, toggleFavorite } = useFavorites();
-  const styles = createStyles(colors, resolvedTheme);
+  const styles = createStyles(colors);
 
   const routePostId = resolvePostId(postIdParam);
   const scrollViewRef = useRef<ScrollView | null>(null);
+  const pendingRoutePostIdRef = useRef<string | null>(null);
   const [activePostId, setActivePostId] = useState(routePostId);
   const [post, setPost] = useState<PostRecord | null>(null);
   const [categoryPosts, setCategoryPosts] = useState<PostRecord[]>([]);
@@ -319,32 +356,67 @@ export default function PostDetailsScreen() {
   const isSwipeNavigating = useSharedValue(false);
   const previewDirectionValue = useSharedValue(0);
   const [previewDirection, setPreviewDirection] = useState<SwipeDirection | null>(null);
+  const [settlingPreviewPost, setSettlingPreviewPost] = useState<PostRecord | null>(null);
 
   useEffect(() => {
     translateX.value = 0;
-    isSwipeNavigating.value = false;
     previewDirectionValue.value = 0;
-    setPreviewDirection(null);
-  }, [activePostId, isSwipeNavigating, previewDirectionValue, translateX]);
+  }, [previewDirectionValue, translateX, width]);
 
   useEffect(() => {
-    if (!routePostId || routePostId === activePostId) {
+    const pendingRoutePostId = pendingRoutePostIdRef.current;
+
+    if (!routePostId) {
+      pendingRoutePostIdRef.current = null;
+      return;
+    }
+
+    if (pendingRoutePostId) {
+      if (routePostId === pendingRoutePostId) {
+        pendingRoutePostIdRef.current = null;
+      }
+      return;
+    }
+
+    if (routePostId === activePostId) {
       return;
     }
 
     setActivePostId(routePostId);
   }, [activePostId, routePostId]);
 
-  const cachedActivePost = useMemo(() => {
-    const categoryPostMatch =
-      categoryPosts.find((item) => item.id === activePostId) ?? null;
-
-    if (categoryPostMatch) {
-      return categoryPostMatch;
+  useEffect(() => {
+    if (!settlingPreviewPost) {
+      return;
     }
 
-    return post?.id === activePostId ? post : null;
-  }, [activePostId, categoryPosts, post]);
+    const targetPostId = settlingPreviewPost.id;
+    if (post?.id !== targetPostId || routePostId !== targetPostId) {
+      return;
+    }
+
+    let nestedFrame: number | null = null;
+    const frame = requestAnimationFrame(() => {
+      nestedFrame = requestAnimationFrame(() => {
+        setSettlingPreviewPost(null);
+        setPreviewDirection(null);
+        isSwipeNavigating.value = false;
+      });
+    });
+
+    return () => {
+      cancelAnimationFrame(frame);
+
+      if (nestedFrame !== null) {
+        cancelAnimationFrame(nestedFrame);
+      }
+    };
+  }, [isSwipeNavigating, post?.id, routePostId, settlingPreviewPost]);
+
+  const activeCategoryPost = useMemo(
+    () => categoryPosts.find((item) => item.id === activePostId) ?? null,
+    [activePostId, categoryPosts],
+  );
 
   useEffect(() => {
     if (!activePostId) {
@@ -354,13 +426,24 @@ export default function PostDetailsScreen() {
       return;
     }
 
-    if (cachedActivePost) {
+    if (activeCategoryPost) {
       setYoutubePlayerError("");
-      setPost(cachedActivePost);
+      setPost((currentPost) =>
+        currentPost?.id === activeCategoryPost.id ? currentPost : activeCategoryPost,
+      );
       setError("");
       setIsLoading(false);
-    } else {
+      return;
+    }
+
+    if (post?.id !== activePostId) {
       setIsLoading(true);
+    }
+  }, [activeCategoryPost, activePostId, post?.id]);
+
+  useEffect(() => {
+    if (!activePostId) {
+      return;
     }
 
     const postRef = doc(firestore, POSTS_COLLECTION, activePostId);
@@ -375,7 +458,7 @@ export default function PostDetailsScreen() {
         }
 
         const nextPost = mapPostRecord(snapshot.id, snapshot.data() as DocumentData);
-        if (nextPost.status !== "published") {
+        if (nextPost.status !== "published" || isPostTrashed(nextPost)) {
           setError("Post is not published.");
           setPost(null);
           setIsLoading(false);
@@ -401,7 +484,7 @@ export default function PostDetailsScreen() {
     );
 
     return unsubscribe;
-  }, [activePostId, cachedActivePost, isConnected]);
+  }, [activePostId, isConnected]);
 
   useEffect(() => {
     const categoryKey = post?.category.trim() || "";
@@ -413,6 +496,7 @@ export default function PostDetailsScreen() {
     const categoryPostsQuery = query(
       collection(firestore, POSTS_COLLECTION),
       where("category", "==", categoryKey),
+      where("status", "==", "published"),
     );
 
     const unsubscribe = onSnapshot(
@@ -421,7 +505,7 @@ export default function PostDetailsScreen() {
         const nextCategoryPosts = sortPostsByRecency(
           snapshot.docs
             .map((item) => mapPostRecord(item.id, item.data() as DocumentData))
-            .filter((item) => item.status === "published"),
+            .filter((item) => item.status === "published" && !isPostTrashed(item)),
         );
         setCategoryPosts(nextCategoryPosts);
       },
@@ -478,6 +562,19 @@ export default function PostDetailsScreen() {
     });
   };
 
+  const handleOpenAuthor = (targetPost: PostRecord) => {
+    const authorId = targetPost.authorId || targetPost.createdBy;
+
+    if (!authorId) {
+      return;
+    }
+
+    router.push({
+      pathname: "/author/[authorId]",
+      params: { authorId },
+    });
+  };
+
   const handleDecreaseLyricsFontSize = () => {
     setLyricsFontSize((value) => Math.max(MIN_LYRICS_FONT_SIZE, value - LYRICS_FONT_STEP));
   };
@@ -513,6 +610,8 @@ export default function PostDetailsScreen() {
   const currentPostId = post?.id ?? activePostId;
   const previousCategoryPostId = previousCategoryPost?.id ?? "";
   const nextCategoryPostId = nextCategoryPost?.id ?? "";
+  const canSwipeToPreviousPost = Boolean(previousCategoryPostId) && previousCategoryPostId !== currentPostId;
+  const canSwipeToNextPost = Boolean(nextCategoryPostId) && nextCategoryPostId !== currentPostId;
   const setActivePreview = (direction: SwipeDirection | null) => {
     setPreviewDirection((currentDirection) =>
       currentDirection === direction ? currentDirection : direction,
@@ -537,6 +636,8 @@ export default function PostDetailsScreen() {
     const targetPost =
       categoryPosts.find((item) => item.id === targetPostId) ?? null;
 
+    pendingRoutePostIdRef.current = targetPostId;
+    setSettlingPreviewPost(targetPost);
     setActivePostId(targetPostId);
     setYoutubePlayerError("");
     setError("");
@@ -547,14 +648,15 @@ export default function PostDetailsScreen() {
     }
 
     scrollViewRef.current?.scrollTo({ y: 0, animated: false });
-    translateX.value = 0;
-    previewDirectionValue.value = 0;
-    setPreviewDirection(null);
-    isSwipeNavigating.value = false;
+    router.setParams({ postId: targetPostId });
+    requestAnimationFrame(() => {
+      translateX.value = 0;
+      previewDirectionValue.value = 0;
+      setPreviewDirection(null);
 
-    router.replace({
-      pathname: "/post/[postId]",
-      params: { postId: targetPostId },
+      if (!targetPost) {
+        isSwipeNavigating.value = false;
+      }
     });
   };
 
@@ -647,30 +749,25 @@ export default function PostDetailsScreen() {
     const distance = Math.abs(translateX.value);
 
     return {
-      opacity: interpolate(distance, [0, safeWidth], [1, 0.92], Extrapolation.CLAMP),
+      opacity: interpolate(distance, [0, safeWidth], [1, 0.94], Extrapolation.CLAMP),
       transform: [
         { translateX: translateX.value },
         {
-          scale: interpolate(
-            distance,
-            [0, safeWidth],
-            [1, 0.992],
-            Extrapolation.CLAMP,
-          ),
+          scale: interpolate(distance, [0, safeWidth], [1, 0.992], Extrapolation.CLAMP),
         },
       ],
     };
   });
 
   const previousPageStyle = useAnimatedStyle(() => ({
-    opacity: previousCategoryPost
+    opacity: canSwipeToPreviousPost
       ? interpolate(translateX.value, [0, width * 0.25, width], [0.18, 0.75, 1], Extrapolation.CLAMP)
       : 0,
     transform: [{ translateX: -width + translateX.value }],
   }));
 
   const nextPageStyle = useAnimatedStyle(() => ({
-    opacity: nextCategoryPost
+    opacity: canSwipeToNextPost
       ? interpolate(-translateX.value, [0, width * 0.25, width], [0.18, 0.75, 1], Extrapolation.CLAMP)
       : 0,
     transform: [{ translateX: width + translateX.value }],
@@ -679,7 +776,15 @@ export default function PostDetailsScreen() {
   if (isLoading) {
     return (
       <View style={styles.screen}>
-        <Stack.Screen options={{ title: "Post Details", animation: "none" }} />
+        <Stack.Screen
+          options={{
+            title: "Post Details",
+            animation: "none",
+            headerStyle: {
+              backgroundColor: "#FFFFFF",
+            },
+          }}
+        />
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={colors.primary} />
         </View>
@@ -690,7 +795,15 @@ export default function PostDetailsScreen() {
   if (error || !post) {
     return (
       <View style={styles.screen}>
-        <Stack.Screen options={{ title: "Post Details", animation: "none" }} />
+        <Stack.Screen
+          options={{
+            title: "Post Details",
+            animation: "none",
+            headerStyle: {
+              backgroundColor: "#FFFFFF",
+            },
+          }}
+        />
         <View style={styles.errorContainer}>
           <Text style={styles.errorTitle}>{error || "Post not available."}</Text>
           <Pressable
@@ -706,37 +819,47 @@ export default function PostDetailsScreen() {
 
   return (
     <View style={styles.screen}>
-      <Stack.Screen options={{ title: "Post Details", animation: "none" }} />
-      {previewDirection === "right" && previousCategoryPost ? (
-        <Animated.View pointerEvents="none" style={[styles.page, previousPageStyle]}>
+      <Stack.Screen
+        options={{
+          title: "Post Details",
+          animation: "none",
+          headerStyle: {
+            backgroundColor: "#FFFFFF",
+          },
+        }}
+      />
+      {previewDirection === "right" && canSwipeToPreviousPost ? (
+        <Animated.View pointerEvents="none" style={[styles.page, styles.pageCard, previousPageStyle]}>
           <PostDetailsPage
             interactive={false}
-            isFavoritePost={isFavorite(previousCategoryPost.id)}
+            isFavoritePost={isFavorite(previousCategoryPostId)}
             lyricsFontSize={lyricsFontSize}
             onDecreaseLyricsFontSize={handleDecreaseLyricsFontSize}
             onIncreaseLyricsFontSize={handleIncreaseLyricsFontSize}
             onOpenCategory={handleOpenCategory}
+            onOpenAuthor={handleOpenAuthor}
             onOpenInYouTube={handleOpenInYouTube}
             onToggleFavorite={handleToggleFavorite}
-            post={previousCategoryPost}
+            post={previousCategoryPost as PostRecord}
             resolvedTheme={resolvedTheme}
             styles={styles}
           />
         </Animated.View>
       ) : null}
 
-      {previewDirection === "left" && nextCategoryPost ? (
-        <Animated.View pointerEvents="none" style={[styles.page, nextPageStyle]}>
+      {previewDirection === "left" && canSwipeToNextPost ? (
+        <Animated.View pointerEvents="none" style={[styles.page, styles.pageCard, nextPageStyle]}>
           <PostDetailsPage
             interactive={false}
-            isFavoritePost={isFavorite(nextCategoryPost.id)}
+            isFavoritePost={isFavorite(nextCategoryPostId)}
             lyricsFontSize={lyricsFontSize}
             onDecreaseLyricsFontSize={handleDecreaseLyricsFontSize}
             onIncreaseLyricsFontSize={handleIncreaseLyricsFontSize}
             onOpenCategory={handleOpenCategory}
+            onOpenAuthor={handleOpenAuthor}
             onOpenInYouTube={handleOpenInYouTube}
             onToggleFavorite={handleToggleFavorite}
-            post={nextCategoryPost}
+            post={nextCategoryPost as PostRecord}
             resolvedTheme={resolvedTheme}
             styles={styles}
           />
@@ -744,7 +867,7 @@ export default function PostDetailsScreen() {
       ) : null}
 
       <GestureDetector gesture={panGesture}>
-        <Animated.View style={[styles.page, currentPageStyle]}>
+        <Animated.View style={[styles.page, styles.pageCard, currentPageStyle]}>
           <PostDetailsPage
             interactive
             isFavoritePost={isFavorite(post.id)}
@@ -752,6 +875,7 @@ export default function PostDetailsScreen() {
             onDecreaseLyricsFontSize={handleDecreaseLyricsFontSize}
             onIncreaseLyricsFontSize={handleIncreaseLyricsFontSize}
             onOpenCategory={handleOpenCategory}
+            onOpenAuthor={handleOpenAuthor}
             onOpenInYouTube={handleOpenInYouTube}
             onToggleFavorite={handleToggleFavorite}
             post={post}
@@ -763,11 +887,30 @@ export default function PostDetailsScreen() {
           />
         </Animated.View>
       </GestureDetector>
+
+      {settlingPreviewPost ? (
+        <View pointerEvents="none" style={[styles.page, styles.pageCard]}>
+          <PostDetailsPage
+            interactive={false}
+            isFavoritePost={isFavorite(settlingPreviewPost.id)}
+            lyricsFontSize={lyricsFontSize}
+            onDecreaseLyricsFontSize={handleDecreaseLyricsFontSize}
+            onIncreaseLyricsFontSize={handleIncreaseLyricsFontSize}
+            onOpenCategory={handleOpenCategory}
+            onOpenAuthor={handleOpenAuthor}
+            onOpenInYouTube={handleOpenInYouTube}
+            onToggleFavorite={handleToggleFavorite}
+            post={settlingPreviewPost}
+            resolvedTheme={resolvedTheme}
+            styles={styles}
+          />
+        </View>
+      ) : null}
     </View>
   );
 }
 
-const createStyles = (colors: ThemeColors, resolvedTheme: ThemeMode) => StyleSheet.create({
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
   screen: {
     flex: 1,
     backgroundColor: colors.background,
@@ -795,11 +938,12 @@ const createStyles = (colors: ThemeColors, resolvedTheme: ThemeMode) => StyleShe
   },
   backButton: {
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: colors.inputBorderHover,
     borderRadius: RADIUS.md,
-    backgroundColor: colors.surfaceMuted,
+    backgroundColor: "#FFFFFF",
     paddingHorizontal: SPACING.lg,
     paddingVertical: SPACING.sm,
+    ...SHADOWS.sm,
   },
   backButtonPressed: {
     opacity: 0.85,
@@ -816,6 +960,11 @@ const createStyles = (colors: ThemeColors, resolvedTheme: ThemeMode) => StyleShe
   },
   page: {
     ...StyleSheet.absoluteFillObject,
+  },
+  pageCard: {
+    backgroundColor: colors.background,
+    overflow: "hidden",
+    ...SHADOWS.md,
   },
   thumbnail: {
     width: "100%",
@@ -855,12 +1004,54 @@ const createStyles = (colors: ThemeColors, resolvedTheme: ThemeMode) => StyleShe
     fontSize: 12,
     fontWeight: "700",
   },
-  actionRow: {
+  authorCard: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
     gap: SPACING.sm,
-    flexWrap: "wrap",
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceMuted,
+    padding: SPACING.md,
+    ...SHADOWS.lg,
+  },
+  authorCardPressed: {
+    opacity: 0.9,
+  },
+  authorAvatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 999,
+    backgroundColor: colors.surfaceSoft,
+  },
+  authorAvatarFallback: {
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  authorAvatarText: {
+    color: colors.text,
+    fontSize: 18,
+    fontWeight: "700",
+  },
+  authorTextWrap: {
+    flex: 1,
+    gap: 2,
+  },
+  authorLabel: {
+    color: colors.mutedText,
+    fontSize: 11,
+    fontWeight: "700",
+    textTransform: "uppercase",
+    letterSpacing: 0.4,
+  },
+  authorName: {
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  authorSubtitle: {
+    color: colors.mutedText,
+    fontSize: 12,
   },
   favoriteButton: {
     alignSelf: "flex-start",
@@ -869,15 +1060,26 @@ const createStyles = (colors: ThemeColors, resolvedTheme: ThemeMode) => StyleShe
     width: 30,
     height: 28,
     borderRadius: 10,
-    backgroundColor: resolvedTheme === "dark" ? "#2D2D30" : "#FFFFFF",
+    backgroundColor: colors.favoriteSurface,
     ...SHADOWS.lg,
+    shadowColor: "#00000040",
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.18,
+    shadowRadius: 22,
+    elevation: 12,
   },
   favoriteButtonPressed: {
     opacity: 0.85,
   },
-  fontControlsWrap: {
+  authorFavoriteButton: {
+    marginLeft: SPACING.xs,
+    alignSelf: "center",
+    flexShrink: 0,
+  },
+  metaFontControlsWrap: {
     marginLeft: "auto",
-    alignItems: "flex-end",
+    alignItems: "center",
+    justifyContent: "center",
   },
   fontControlsActions: {
     flexDirection: "row",
@@ -926,6 +1128,12 @@ const createStyles = (colors: ThemeColors, resolvedTheme: ThemeMode) => StyleShe
     backgroundColor: colors.surface,
     padding: SPACING.md,
     gap: SPACING.sm,
+    ...SHADOWS.lg,
+    shadowColor: "#00000036",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.14,
+    shadowRadius: 26,
+    elevation: 10,
   },
   videoTitle: {
     color: colors.text,
@@ -940,10 +1148,16 @@ const createStyles = (colors: ThemeColors, resolvedTheme: ThemeMode) => StyleShe
     overflow: "hidden",
     width: "100%",
     aspectRatio: 16 / 9,
+    ...SHADOWS.sm,
+    shadowColor: "#00000030",
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.12,
+    shadowRadius: 18,
+    elevation: 8,
   },
   video: {
     flex: 1,
-    backgroundColor: "#000000",
+    backgroundColor: colors.mediaSurface,
   },
   videoErrorWrap: {
     marginTop: SPACING.xs,

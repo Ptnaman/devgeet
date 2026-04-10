@@ -5,6 +5,8 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { GoogleAuthButton } from "@/components/google-auth-button";
+import { AppleAuthButton } from "@/components/apple-auth-button";
+import { MailInputIcon } from "@/components/icons/mail-input-icon";
 import {
   CONTROL_SIZE,
   FONT_SIZE,
@@ -28,26 +30,23 @@ export default function AuthChoiceScreen() {
         <View style={styles.hero}>
           <Text style={styles.heroTitle}>Let&apos;s get you in</Text>
           <Text style={styles.heroSubtitle}>
-            Use Google for quick access, or continue with your email flow.
+            Use Google or Apple for quick access, or continue with your email flow.
           </Text>
         </View>
 
         <View style={styles.sheet}>
           <Text style={styles.sectionTitle}>Continue with</Text>
           <GoogleAuthButton label="Continue with Google" onError={setError} />
+          <AppleAuthButton onError={setError} />
 
           <Pressable
-            style={({ pressed }) => [styles.signupButton, pressed && styles.buttonPressed]}
-            onPress={() => router.push("/signup")}
-          >
-            <Text style={styles.signupButtonText}>Sign up</Text>
-          </Pressable>
-
-          <Pressable
-            style={({ pressed }) => [styles.loginButton, pressed && styles.buttonPressed]}
+            style={({ pressed }) => [styles.emailButton, pressed && styles.buttonPressed]}
             onPress={() => router.push("/login")}
           >
-            <Text style={styles.loginButtonText}>Log in</Text>
+            <View style={styles.emailButtonContent}>
+              <MailInputIcon color={colors.primaryText} />
+              <Text style={styles.emailButtonText}>Continue with Email</Text>
+            </View>
           </Pressable>
 
           {error ? <Text style={styles.error}>{error}</Text> : null}
@@ -105,29 +104,21 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     textAlign: "center",
     fontWeight: "600",
   },
-  signupButton: {
+  emailButton: {
     minHeight: CONTROL_SIZE.inputHeight,
     borderRadius: RADIUS.md,
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: colors.primary,
   },
-  signupButtonText: {
-    color: colors.primaryText,
-    fontSize: FONT_SIZE.button,
-    fontWeight: "700",
-  },
-  loginButton: {
-    minHeight: CONTROL_SIZE.inputHeight,
-    borderRadius: RADIUS.md,
+  emailButtonContent: {
+    flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surfaceMuted,
+    gap: SPACING.sm,
   },
-  loginButtonText: {
-    color: colors.text,
+  emailButtonText: {
+    color: colors.primaryText,
     fontSize: FONT_SIZE.button,
     fontWeight: "700",
   },

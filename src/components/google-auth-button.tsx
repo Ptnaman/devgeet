@@ -1,10 +1,21 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Platform, Pressable, StyleSheet, Text } from "react-native";
+import {
+  ActivityIndicator,
+  Platform,
+  Pressable,
+  StyleProp,
+  StyleSheet,
+  Text,
+  TextStyle,
+  View,
+  ViewStyle,
+} from "react-native";
 import Constants from "expo-constants";
 import Svg, { Path } from "react-native-svg";
 
 import { ArrowRightIcon } from "@/components/icons/arrow-right-icon";
 import {
+  BRAND_COLORS,
   CONTROL_SIZE,
   FONT_SIZE,
   RADIUS,
@@ -24,6 +35,10 @@ type GoogleAuthButtonProps = {
   label: string;
   onError: (message: string) => void;
   autoPrompt?: boolean;
+  containerStyle?: StyleProp<ViewStyle>;
+  textStyle?: StyleProp<TextStyle>;
+  showTrailingIcon?: boolean;
+  rememberSession?: boolean;
 };
 
 type GoogleSignInResponse = {
@@ -40,19 +55,19 @@ function GoogleLogo({ size = 20 }: { size?: number }) {
   return (
     <Svg width={size} height={size} viewBox="0 0 18 18" accessibilityRole="image">
       <Path
-        fill="#EA4335"
+        fill={BRAND_COLORS.google.red}
         d="M9 3.48c1.69 0 2.84.73 3.49 1.34l2.54-2.54C13.46.83 11.42 0 9 0 5.48 0 2.44 2.02.96 4.96l2.96 2.3C4.64 5.1 6.62 3.48 9 3.48z"
       />
       <Path
-        fill="#4285F4"
+        fill={BRAND_COLORS.google.blue}
         d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84c-.21 1.12-.84 2.07-1.8 2.71v2.26h2.92c1.71-1.57 2.68-3.89 2.68-6.61z"
       />
       <Path
-        fill="#FBBC05"
+        fill={BRAND_COLORS.google.yellow}
         d="M3.92 10.74A5.41 5.41 0 0 1 3.62 9c0-.6.1-1.18.3-1.74V4.96H.96A8.98 8.98 0 0 0 0 9c0 1.45.35 2.82.96 4.04l2.96-2.3z"
       />
       <Path
-        fill="#34A853"
+        fill={BRAND_COLORS.google.green}
         d="M9 18c2.42 0 4.46-.8 5.95-2.18l-2.92-2.26c-.8.54-1.84.86-3.03.86-2.38 0-4.4-1.61-5.12-3.78l-2.96 2.3C2.44 15.98 5.48 18 9 18z"
       />
     </Svg>
@@ -108,10 +123,14 @@ export function GoogleAuthButton({
   label,
   onError,
   autoPrompt = false,
+  containerStyle,
+  textStyle,
+  showTrailingIcon = true,
+  rememberSession = true,
 }: GoogleAuthButtonProps) {
   const { colors } = useAppTheme();
   const { isConnected, showOfflineToast } = useNetworkStatus();
-  const { loginWithGoogleIdToken } = useAuth();
+  const { loginWithGoogleIdToken, setRememberSessionPersistence } = useAuth();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const hasAutoPromptedRef = useRef(false);
   const styles = createStyles(colors);
@@ -240,6 +259,8 @@ export function GoogleAuthButton({
         return;
       }
 
+      await setRememberSessionPersistence(rememberSession);
+
       if (hasOneTapApi) {
         const oneTapResponse = await runOneTapFlow(mode);
         if (!oneTapResponse) {
@@ -309,8 +330,10 @@ export function GoogleAuthButton({
     isGoogleConfigured,
     isWeb,
     loginWithGoogleIdToken,
+    rememberSession,
     onError,
     runOneTapFlow,
+    setRememberSessionPersistence,
     isConnected,
     showOfflineToast,
   ]);
@@ -347,6 +370,7 @@ export function GoogleAuthButton({
     <Pressable
       style={({ pressed }) => [
         styles.googleButton,
+        containerStyle,
         pressed && styles.buttonPressed,
         isSubmitting && styles.buttonDisabled,
       ]}
@@ -354,11 +378,13 @@ export function GoogleAuthButton({
       onPress={handlePress}
     >
       <GoogleLogo size={20} />
-      <Text style={styles.googleButtonText}>{label}</Text>
+      <Text style={[styles.googleButtonText, textStyle]}>{label}</Text>
       {isSubmitting ? (
-        <ActivityIndicator size="small" color={colors.primary} />
-      ) : (
+        <ActivityIndicator size="small" color={colors.text} />
+      ) : showTrailingIcon ? (
         <ArrowRightIcon size={18} color={colors.text} />
+      ) : (
+        <View style={styles.trailingSpacer} />
       )}
     </Pressable>
   );
@@ -367,9 +393,9 @@ export function GoogleAuthButton({
 const createStyles = (colors: ThemeColors) => StyleSheet.create({
   googleButton: {
     width: "100%",
-    borderColor: colors.border,
+    borderColor: colors.inputBorder,
     borderWidth: 1,
-    backgroundColor: colors.surfaceMuted,
+    backgroundColor: colors.surface,
     borderRadius: RADIUS.pill,
     minHeight: CONTROL_SIZE.inputHeight,
     paddingHorizontal: SPACING.md + 2,
@@ -389,5 +415,9 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   },
   buttonDisabled: {
     opacity: 0.6,
+  },
+  trailingSpacer: {
+    width: 20,
+    height: 20,
   },
 });

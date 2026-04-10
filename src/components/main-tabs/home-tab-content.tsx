@@ -9,12 +9,13 @@ import {
   RADIUS,
   SHADOWS,
   SPACING,
+  getFavoriteActionPalette,
   type ThemeColors,
-  type ThemeMode,
 } from "@/constants/theme";
 import { useFavorites } from "@/hooks/use-favorites";
 import {
   formatDate,
+  getContentPreviewLines,
   getPostCardThumbnailUrl,
   type PostRecord,
 } from "@/lib/content";
@@ -34,11 +35,10 @@ export function HomeTabContent() {
   const router = useRouter();
   const { isFavorite, toggleFavorite } = useFavorites();
   const { isConnected, showOfflineToast } = useNetworkStatus();
-  const styles = createStyles(colors, resolvedTheme);
+  const favoritePalette = getFavoriteActionPalette(resolvedTheme);
+  const styles = createStyles(colors);
   const isOfflineState = !isConnected || postsError === DEFAULT_OFFLINE_MESSAGE;
   const showInlineError = Boolean(postsError) && !isOfflineState;
-  const favoriteIconColor = resolvedTheme === "dark" ? "#FFFFFF" : "#111111";
-  const favoriteFillColor = resolvedTheme === "dark" ? "#FFFFFF" : "#111111";
 
   const openPost = (postId: string) => {
     router.push({ pathname: "/post/[postId]", params: { postId } });
@@ -65,7 +65,11 @@ export function HomeTabContent() {
 
   return (
     <View style={styles.screen}>
-      <MainTabScrollView tabName="home" contentContainerStyle={styles.container}>
+      <MainTabScrollView
+        tabName="home"
+        contentContainerStyle={styles.container}
+        showsVerticalScrollIndicator={false}
+      >
         {isLoadingPosts
           ? HOME_SKELETON_ITEMS.map((item) => (
             <View key={item} style={styles.card}>
@@ -93,6 +97,7 @@ export function HomeTabContent() {
             const thumbnailUrl = getPostCardThumbnailUrl(post);
             const favorite = isFavorite(post.id);
             const updatedLabel = formatDate(post.uploadDate || post.createDate);
+            const previewText = getContentPreviewLines(post.content);
 
             return (
               <View key={post.id} style={styles.card}>
@@ -131,11 +136,11 @@ export function HomeTabContent() {
                     >
                       <FavoriteActionIcon
                         size={16}
-                        color={favoriteIconColor}
+                        color={favoritePalette.color}
                         filled={favorite}
-                        fillColor={favoriteFillColor}
-                        accentColor="#111111"
-                        accentUnderlayColor={resolvedTheme === "dark" ? undefined : "#FFFFFF"}
+                        fillColor={favoritePalette.fillColor}
+                        accentColor={favoritePalette.accentColor}
+                        accentUnderlayColor={favoritePalette.accentUnderlayColor}
                       />
                     </Pressable>
                   </View>
@@ -147,7 +152,7 @@ export function HomeTabContent() {
                     numberOfLines={2}
                     ellipsizeMode="tail"
                   >
-                    {post.content.trim() || "-"}
+                    {previewText}
                   </Text>
                 </Pressable>
 
@@ -163,7 +168,7 @@ export function HomeTabContent() {
   );
 }
 
-const createStyles = (colors: ThemeColors, resolvedTheme: ThemeMode) => StyleSheet.create({
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
   screen: {
     flex: 1,
   },
@@ -230,7 +235,7 @@ const createStyles = (colors: ThemeColors, resolvedTheme: ThemeMode) => StyleShe
     borderRadius: 10,
     width: 32,
     height: 32,
-    backgroundColor: resolvedTheme === "dark" ? "#2D2D30" : "#FFFFFF",
+    backgroundColor: colors.favoriteSurface,
     ...SHADOWS.lg,
   },
   favoriteButtonPressed: {

@@ -26,7 +26,13 @@ import {
   RADIUS,
   SPACING,
   type ThemeColors,
+  type ThemeMode,
 } from "@/constants/theme";
+import {
+  POSTS_COLLECTION,
+  isPostTrashed,
+  mapPostRecord,
+} from "@/lib/content";
 import {
   USER_ROLES,
   getEffectiveUserRole,
@@ -83,12 +89,14 @@ const mapManagedUser = (uid: string, data: DocumentData): ManagedUser => {
 };
 
 export default function AdminUsersScreen() {
-  const { colors } = useAppTheme();
+  const { colors, resolvedTheme } = useAppTheme();
   const { isConnected } = useNetworkStatus();
   const { isOwner, profile } = useAuth();
-  const styles = createStyles(colors);
+  const styles = createStyles(colors, resolvedTheme);
   const [users, setUsers] = useState<ManagedUser[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [creatorUserIds, setCreatorUserIds] = useState<string[]>([]);
+  const [isLoadingUsers, setIsLoadingUsers] = useState(true);
+  const [isLoadingCreatorPosts, setIsLoadingCreatorPosts] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -96,8 +104,9 @@ export default function AdminUsersScreen() {
 
   useEffect(() => {
     const usersQuery = query(collection(firestore, USERS_COLLECTION));
+    const postsQuery = query(collection(firestore, POSTS_COLLECTION));
 
-    const unsubscribe = onSnapshot(
+    const unsubscribeUsers = onSnapshot(
       usersQuery,
       (snapshot) => {
         const nextUsers = snapshot.docs
@@ -105,28 +114,74 @@ export default function AdminUsersScreen() {
           .sort((left, right) => left.displayName.localeCompare(right.displayName));
 
         setUsers(nextUsers);
-        setIsLoading(false);
+        setIsLoadingUsers(false);
         setError("");
       },
       (snapshotError) => {
-        setIsLoading(false);
+        setIsLoadingUsers(false);
         setError(
           getRequestErrorMessage({
             error: snapshotError,
             isConnected,
-            onlineMessage: "Unable to load users.",
+            onlineMessage: "Unable to load creators.",
           })
         );
       }
     );
 
-    return unsubscribe;
+    const unsubscribePosts = onSnapshot(
+      postsQuery,
+      (snapshot) => {
+        const nextCreatorUserIds = new Set<string>();
+
+        snapshot.docs.forEach((item) => {
+          const post = mapPostRecord(item.id, item.data() as DocumentData);
+
+          if (isPostTrashed(post)) {
+            return;
+          }
+
+          if (post.authorId) {
+            nextCreatorUserIds.add(post.authorId);
+          }
+
+          if (post.createdBy) {
+            nextCreatorUserIds.add(post.createdBy);
+          }
+        });
+
+        setCreatorUserIds([...nextCreatorUserIds]);
+        setIsLoadingCreatorPosts(false);
+        setError("");
+      },
+      (snapshotError) => {
+        setIsLoadingCreatorPosts(false);
+        setError(
+          getRequestErrorMessage({
+            error: snapshotError,
+            isConnected,
+            onlineMessage: "Unable to load creators.",
+          })
+        );
+      }
+    );
+
+    return () => {
+      unsubscribeUsers();
+      unsubscribePosts();
+    };
   }, [isConnected]);
+
+  const creatorUsers = useMemo(() => {
+    const creatorUserIdsSet = new Set(creatorUserIds);
+
+    return users.filter((item) => creatorUserIdsSet.has(item.uid));
+  }, [creatorUserIds, users]);
 
   const filteredUsers = useMemo(() => {
     const keyword = searchTerm.trim().toLowerCase();
 
-    return users.filter((item) => {
+    return creatorUsers.filter((item) => {
       if (!keyword) {
         return true;
       }
@@ -136,16 +191,18 @@ export default function AdminUsersScreen() {
         .toLowerCase()
         .includes(keyword);
     });
-  }, [searchTerm, users]);
+  }, [creatorUsers, searchTerm]);
 
   const stats = useMemo(
     () => ({
-      total: users.length,
-      admins: users.filter((item) => item.role === "admin").length,
-      deleted: users.filter((item) => item.accountStatus === "deleted").length,
+      total: creatorUsers.length,
+      admins: creatorUsers.filter((item) => item.role === "admin").length,
+      deleted: creatorUsers.filter((item) => item.accountStatus === "deleted").length,
     }),
-    [users]
+    [creatorUsers]
   );
+
+  const isLoading = isLoadingUsers || isLoadingCreatorPosts;
 
   const clearFeedback = () => {
     setError("");
@@ -239,9 +296,9 @@ export default function AdminUsersScreen() {
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
-      <Text style={styles.title}>User Access</Text>
+      <Text style={styles.title}>Creator Access</Text>
       <Text style={styles.subtitle}>
-        Only owner can view every user and change roles from here.
+        Only users with at least one post appear here.
       </Text>
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
@@ -249,9 +306,10 @@ export default function AdminUsersScreen() {
 
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Overview</Text>
+        <View style={styles.sectionDivider} />
         <View style={styles.statsRow}>
           <View style={styles.statCard}>
-            <Text style={styles.statLabel}>Total Users</Text>
+            <Text style={styles.statLabel}>Total Creators</Text>
             <Text style={styles.statValue}>{stats.total}</Text>
           </View>
           <View style={styles.statCard}>
@@ -266,7 +324,8 @@ export default function AdminUsersScreen() {
       </View>
 
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Find User</Text>
+        <Text style={styles.sectionTitle}>Find Creator</Text>
+        <View style={styles.sectionDivider} />
         <View style={styles.inputWrap}>
           <TextInput
             value={searchTerm}
@@ -278,18 +337,19 @@ export default function AdminUsersScreen() {
           />
         </View>
         <Text style={styles.resultText}>
-          Showing {filteredUsers.length} of {users.length} users
+          Showing {filteredUsers.length} of {creatorUsers.length} creators
         </Text>
       </View>
 
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Users</Text>
+        <Text style={styles.sectionTitle}>Creators</Text>
+        <View style={styles.sectionDivider} />
         {isLoading ? <ActivityIndicator size="small" color={colors.primary} /> : null}
         {!isLoading && !filteredUsers.length ? (
-          <Text style={styles.emptyText}>No users match the current search.</Text>
+          <Text style={styles.emptyText}>No creators match the current search.</Text>
         ) : null}
 
-        {filteredUsers.map((managedUser) => {
+        {filteredUsers.map((managedUser, index) => {
           const isCurrentUser = managedUser.uid === profile?.uid;
           const isProtectedAdmin = isAdminEmail(managedUser.email);
           const isBusy = busyUserId === managedUser.uid;
@@ -301,7 +361,10 @@ export default function AdminUsersScreen() {
             managedUser.accountStatus !== "deleted";
 
           return (
-            <View key={managedUser.uid} style={styles.userCard}>
+            <View
+              key={managedUser.uid}
+              style={[styles.userCard, index > 0 ? styles.userCardDivider : undefined]}
+            >
               <View style={styles.cardHeader}>
                 <View style={styles.userMeta}>
                   <Text style={styles.userName}>{managedUser.displayName}</Text>
@@ -391,8 +454,10 @@ export default function AdminUsersScreen() {
   );
 }
 
-const createStyles = (colors: ThemeColors) =>
-  StyleSheet.create({
+const createStyles = (colors: ThemeColors, resolvedTheme: ThemeMode) => {
+  const outlineColor = resolvedTheme === "dark" ? colors.divider : colors.border;
+
+  return StyleSheet.create({
     container: {
       padding: SPACING.xl,
       gap: SPACING.md,
@@ -417,8 +482,6 @@ const createStyles = (colors: ThemeColors) =>
     },
     section: {
       backgroundColor: colors.surface,
-      borderWidth: 1,
-      borderColor: colors.border,
       borderRadius: RADIUS.lg,
       padding: SPACING.lg,
       gap: SPACING.sm,
@@ -428,6 +491,10 @@ const createStyles = (colors: ThemeColors) =>
       fontWeight: "700",
       color: colors.text,
     },
+    sectionDivider: {
+      height: StyleSheet.hairlineWidth,
+      backgroundColor: colors.divider,
+    },
     statsRow: {
       flexDirection: "row",
       flexWrap: "wrap",
@@ -436,12 +503,10 @@ const createStyles = (colors: ThemeColors) =>
     statCard: {
       width: "31%",
       minWidth: 96,
-      borderWidth: 1,
-      borderColor: colors.border,
       borderRadius: RADIUS.md,
       paddingHorizontal: SPACING.md,
       paddingVertical: SPACING.md,
-      backgroundColor: colors.surface,
+      backgroundColor: colors.surfaceMuted,
     },
     statLabel: {
       color: colors.mutedText,
@@ -457,7 +522,7 @@ const createStyles = (colors: ThemeColors) =>
       minHeight: CONTROL_SIZE.inputHeight,
       borderRadius: RADIUS.md,
       borderWidth: 1,
-      borderColor: colors.border,
+      borderColor: outlineColor,
       backgroundColor: colors.surface,
       paddingHorizontal: SPACING.md,
       justifyContent: "center",
@@ -475,12 +540,13 @@ const createStyles = (colors: ThemeColors) =>
       fontSize: FONT_SIZE.body,
     },
     userCard: {
-      borderWidth: 1,
-      borderColor: colors.border,
-      borderRadius: RADIUS.md,
-      padding: SPACING.md,
-      backgroundColor: colors.surface,
+      paddingVertical: SPACING.md,
+      backgroundColor: "transparent",
       gap: SPACING.sm,
+    },
+    userCardDivider: {
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: colors.divider,
     },
     cardHeader: {
       flexDirection: "row",
@@ -529,7 +595,7 @@ const createStyles = (colors: ThemeColors) =>
       minWidth: 88,
       minHeight: 42,
       borderWidth: 1,
-      borderColor: colors.border,
+      borderColor: outlineColor,
       borderRadius: 999,
       alignItems: "center",
       justifyContent: "center",
@@ -567,3 +633,4 @@ const createStyles = (colors: ThemeColors) =>
       opacity: 0.55,
     },
   });
+};

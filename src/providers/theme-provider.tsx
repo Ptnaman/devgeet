@@ -9,7 +9,12 @@ import {
 } from "react";
 import { Platform, useColorScheme } from "react-native";
 
-import { getThemeColors, type ThemeColors, type ThemeMode } from "@/constants/theme";
+import {
+  WEB_THEME_CSS_VARIABLES,
+  getThemeColors,
+  type ThemeColors,
+  type ThemeMode,
+} from "@/constants/theme";
 
 const THEME_PREFERENCE_KEY = "app:theme_preference";
 
@@ -27,12 +32,20 @@ const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 const isThemePreference = (value: string): value is ThemePreference =>
   value === "system" || value === "light" || value === "dark";
 
-const syncWebTheme = (resolvedTheme: ThemeMode) => {
+const syncWebTheme = (resolvedTheme: ThemeMode, colors: ThemeColors) => {
   if (Platform.OS !== "web" || typeof document === "undefined") {
     return;
   }
 
-  document.documentElement.dataset.theme = resolvedTheme;
+  const root = document.documentElement;
+  root.dataset.theme = resolvedTheme;
+  root.style.colorScheme = resolvedTheme;
+
+  (
+    Object.entries(WEB_THEME_CSS_VARIABLES) as [string, keyof ThemeColors][]
+  ).forEach(([variableName, colorKey]) => {
+    root.style.setProperty(variableName, colors[colorKey]);
+  });
 };
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
@@ -58,11 +71,11 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    syncWebTheme(resolvedTheme);
+    syncWebTheme(resolvedTheme, colors);
     void SystemUI.setBackgroundColorAsync(colors.background).catch(() => {
       // Ignore unsupported runtimes.
     });
-  }, [colors.background, resolvedTheme]);
+  }, [colors, resolvedTheme]);
 
   const setThemePreference = async (preference: ThemePreference) => {
     setThemePreferenceState(preference);

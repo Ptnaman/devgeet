@@ -13,24 +13,14 @@ import {
 } from "react-native";
 import Svg, { Circle, Path } from "react-native-svg";
 
+import { AdminPanelIcon } from "@/components/icons/admin-panel-icon";
 import { ArrowRightIcon } from "@/components/icons/arrow-right-icon";
 import { MainTabScrollView } from "@/components/main-tabs/main-tab-scroll-view";
+import { APP_LINKS } from "@/constants/app-links";
 import { RADIUS, SHADOWS, SPACING, type ThemeColors } from "@/constants/theme";
 import { useAuth } from "@/providers/auth-provider";
 import { useNetworkStatus } from "@/providers/network-provider";
 import { useAppTheme, type ThemePreference } from "@/providers/theme-provider";
-
-const APP_LINKS = {
-  terms: "https://devgeet.com/terms/",
-  disclaimer: "https://devgeet.com/disclaimer/",
-  privacy: "https://devgeet.com/privacy/",
-  whatsapp: "https://chat.whatsapp.com/DHaKK4v5UOJLTCI5JuMwY1",
-  email: "naman@devgeet.com",
-  playStore: "https://play.google.com/store/apps/details?id=com.panditnaman.devgeet",
-  playStoreReview: "market://details?id=com.panditnaman.devgeet&showAllReviews=true",
-  playStoreReviewWeb:
-    "https://play.google.com/store/apps/details?id=com.panditnaman.devgeet&showAllReviews=true",
-} as const;
 
 const THEME_OPTIONS: {
   key: ThemePreference;
@@ -191,7 +181,7 @@ export function SettingsTabContent() {
   const { colors, themePreference, setThemePreference } = useAppTheme();
   const { isConnected, showOfflineToast } = useNetworkStatus();
   const router = useRouter();
-  const { user, profile, logout } = useAuth();
+  const { canManagePosts, isAdmin, profile, logout, user } = useAuth();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const styles = createStyles(colors);
 
@@ -358,6 +348,26 @@ export function SettingsTabContent() {
 
         <ArrowRightIcon size={22} color={colors.subtleText} />
       </Pressable>
+
+      {canManagePosts ? (
+        <>
+          <Text style={styles.sectionLabel}>Creator</Text>
+          <View style={styles.groupCard}>
+            <SettingRow
+              item={{
+                key: "creator-studio",
+                title: isAdmin ? "Admin Panel" : "My Posts",
+                subtitle: isAdmin
+                  ? "Review, publish, and manage all posts"
+                  : "Create drafts and submit them for approval",
+                icon: <AdminPanelIcon color={colors.accent} size={18} />,
+                onPress: () => router.push(isAdmin ? "/admin" : "/admin/posts"),
+              }}
+              isLast
+            />
+          </View>
+        </>
+      ) : null}
 
       <Text style={styles.sectionLabel}>Appearance</Text>
       <View style={styles.groupCard}>

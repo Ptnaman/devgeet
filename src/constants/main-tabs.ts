@@ -7,9 +7,9 @@ export const MAIN_TAB_ORDER = [
 
 export type MainTabName = (typeof MAIN_TAB_ORDER)[number];
 
-export const MAIN_TAB_PATHS: Record<MainTabName, string> = {
+export const MAIN_TAB_PATHS = {
   home: "/(tabs)/(main)/home",
   categories: "/(tabs)/(main)/categories",
   favorite: "/(tabs)/(main)/favorite",
   settings: "/(tabs)/(main)/settings",
-};
+} as const satisfies Record<MainTabName, string>;

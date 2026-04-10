@@ -29,18 +29,13 @@ export default function AuthLayout() {
         headerStyle: { backgroundColor: colors.surface },
         headerTintColor: colors.text,
         headerShadowVisible: false,
-        contentStyle: { backgroundColor: colors.background },
+        contentStyle: { backgroundColor: colors.surface },
       }}
     >
       <Stack.Screen name="auth-choice" options={{ headerShown: false }} />
-      <Stack.Screen
-        name="login"
-        options={{ title: "Log in", headerBackButtonDisplayMode: "minimal" }}
-      />
-      <Stack.Screen
-        name="signup"
-        options={{ title: "Sign up", headerBackButtonDisplayMode: "minimal" }}
-      />
+      <Stack.Screen name="login" options={{ title: "Login" }} />
+      <Stack.Screen name="forgot-password" options={{ title: "Forgot Password" }} />
+      <Stack.Screen name="signup" options={{ title: "Sign Up" }} />
     </Stack>
   );
 }
@@ -50,6 +45,6 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: colors.background,
+    backgroundColor: colors.surface,
   },
 });

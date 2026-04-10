@@ -4,7 +4,7 @@ export const POSTS_COLLECTION = "posts";
 export const CATEGORIES_COLLECTION = "categories";
 export const FAVORITES_COLLECTION = "favorites";
 
-export type PostStatus = "draft" | "published";
+export type PostStatus = "draft" | "pending" | "published";
 
 export type CategoryRecord = {
   id: string;
@@ -31,12 +31,25 @@ export type PostRecord = {
   youtubeVideoUrl: string;
   createDate: string;
   uploadDate: string;
+  submittedAt: string;
+  publishedAt: string;
+  approvedAt: string;
   status: PostStatus;
   category: string;
+  authorId: string;
+  authorUsername: string;
+  authorDisplayName: string;
+  authorPhotoURL: string;
   createdBy: string;
   createdByEmail: string;
   updatedBy: string;
   updatedByEmail: string;
+  approvedBy: string;
+  approvedByEmail: string;
+  moderationNote: string;
+  deletedAt: string;
+  deletedBy: string;
+  deletedByEmail: string;
 };
 
 export const createSlug = (value: string) =>
@@ -77,8 +90,12 @@ const toDateString = (value: unknown) => {
 };
 
 const parseStatus = (value: unknown): PostStatus =>
-  typeof value === "string" && value.toLowerCase() === "published"
-    ? "published"
+  typeof value === "string"
+    ? value.trim().toLowerCase() === "published"
+      ? "published"
+      : value.trim().toLowerCase() === "pending"
+        ? "pending"
+        : "draft"
     : "draft";
 
 const normalizeHttpUrl = (value: unknown) => {
@@ -188,13 +205,38 @@ export const mapPostRecord = (id: string, data: DocumentData): PostRecord => ({
   youtubeVideoUrl: normalizeHttpUrl(data.youtubeVideoUrl),
   createDate: toDateString(data.createDate),
   uploadDate: toDateString(data.uploadDate),
+  submittedAt: toDateString(data.submittedAt),
+  publishedAt: toDateString(data.publishedAt),
+  approvedAt: toDateString(data.approvedAt),
   status: parseStatus(data.status),
   category: typeof data.category === "string" && data.category ? data.category : "general",
+  authorId:
+    typeof data.authorId === "string" && data.authorId
+      ? data.authorId
+      : typeof data.createdBy === "string"
+        ? data.createdBy
+        : "",
+  authorUsername: typeof data.authorUsername === "string" ? data.authorUsername : "",
+  authorDisplayName:
+    typeof data.authorDisplayName === "string" && data.authorDisplayName
+      ? data.authorDisplayName
+      : typeof data.createdByEmail === "string" && data.createdByEmail
+        ? data.createdByEmail
+        : "User",
+  authorPhotoURL: normalizeHttpUrl(data.authorPhotoURL),
   createdBy: typeof data.createdBy === "string" ? data.createdBy : "",
   createdByEmail: typeof data.createdByEmail === "string" ? data.createdByEmail : "",
   updatedBy: typeof data.updatedBy === "string" ? data.updatedBy : "",
   updatedByEmail: typeof data.updatedByEmail === "string" ? data.updatedByEmail : "",
+  approvedBy: typeof data.approvedBy === "string" ? data.approvedBy : "",
+  approvedByEmail: typeof data.approvedByEmail === "string" ? data.approvedByEmail : "",
+  moderationNote: typeof data.moderationNote === "string" ? data.moderationNote : "",
+  deletedAt: toDateString(data.deletedAt),
+  deletedBy: typeof data.deletedBy === "string" ? data.deletedBy : "",
+  deletedByEmail: typeof data.deletedByEmail === "string" ? data.deletedByEmail : "",
 });
+
+export const isPostTrashed = (post: Pick<PostRecord, "deletedAt">) => Boolean(post.deletedAt);
 
 export const getYouTubeThumbnailUrl = (youtubeVideoUrl: string) => {
   const videoId = getYouTubeVideoId(youtubeVideoUrl);
@@ -225,8 +267,8 @@ const toSortableTime = (value: string) => {
 
 export const sortPostsByRecency = (posts: PostRecord[]) =>
   [...posts].sort((left, right) => {
-    const leftTime = toSortableTime(left.uploadDate || left.createDate);
-    const rightTime = toSortableTime(right.uploadDate || right.createDate);
+    const leftTime = toSortableTime(left.publishedAt || left.uploadDate || left.createDate);
+    const rightTime = toSortableTime(right.publishedAt || right.uploadDate || right.createDate);
     return rightTime - leftTime;
   });
 
@@ -258,4 +300,17 @@ export const getPreviewText = (value: string, maxLength = 18) => {
   }
 
   return `${normalized.slice(0, maxLength)}...`;
+};
+
+export const getContentPreviewLines = (value: string, maxLines = 2) => {
+  const normalizedLines = value
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  if (!normalizedLines.length) {
+    return "-";
+  }
+
+  return normalizedLines.slice(0, maxLines).join("\n");
 };

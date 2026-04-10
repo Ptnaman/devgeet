@@ -134,11 +134,11 @@ const createStyles = (
       borderRadius: RADIUS.inputSm,
       paddingHorizontal: SPACING.xl,
       paddingVertical: 14,
-      backgroundColor: "#2d2d2dd1",
+      backgroundColor: colors.toastBackground,
       ...SHADOWS.md,
     },
     title: {
-      color: "#F5F5F5",
+      color: colors.toastText,
       fontSize: 15,
       fontWeight: "500",
       textAlign: "center",

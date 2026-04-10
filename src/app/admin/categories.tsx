@@ -27,6 +27,7 @@ import {
   RADIUS,
   SPACING,
   type ThemeColors,
+  type ThemeMode,
 } from "@/constants/theme";
 import {
   CATEGORIES_COLLECTION,
@@ -42,10 +43,10 @@ import { useNetworkStatus } from "@/providers/network-provider";
 import { useAppTheme } from "@/providers/theme-provider";
 
 export default function AdminCategoriesScreen() {
-  const { colors } = useAppTheme();
+  const { colors, resolvedTheme } = useAppTheme();
   const { isConnected } = useNetworkStatus();
   const { isAdmin, user } = useAuth();
-  const styles = createStyles(colors);
+  const styles = createStyles(colors, resolvedTheme);
   const [categories, setCategories] = useState<CategoryRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -161,6 +162,7 @@ export default function AdminCategoriesScreen() {
 
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Create Category</Text>
+        <View style={styles.sectionDivider} />
         <View style={styles.inputWrap}>
           <TextInput
             value={categoryName}
@@ -189,12 +191,13 @@ export default function AdminCategoriesScreen() {
 
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>All Categories ({categories.length})</Text>
+        <View style={styles.sectionDivider} />
         {isLoading ? <ActivityIndicator size="small" color={colors.primary} /> : null}
         {!isLoading && !categories.length ? (
           <Text style={styles.emptyText}>No categories yet.</Text>
         ) : null}
-        {categories.map((item) => (
-          <View key={item.id} style={styles.card}>
+        {categories.map((item, index) => (
+          <View key={item.id} style={[styles.card, index > 0 ? styles.cardDivider : undefined]}>
             <Text style={styles.cardTitle}>{item.name}</Text>
             <Text style={styles.cardMeta}>Slug: {item.slug}</Text>
             <Text style={styles.cardMeta}>Create Date: {formatDate(item.createDate)}</Text>
@@ -206,93 +209,99 @@ export default function AdminCategoriesScreen() {
   );
 }
 
-const createStyles = (colors: ThemeColors) => StyleSheet.create({
-  container: {
-    padding: SPACING.xl,
-    gap: SPACING.md,
-    backgroundColor: colors.background,
-  },
-  title: {
-    fontSize: FONT_SIZE.title,
-    fontWeight: "700",
-    color: colors.text,
-  },
-  subtitle: {
-    color: colors.mutedText,
-    fontSize: FONT_SIZE.body,
-  },
-  error: {
-    color: colors.danger,
-    fontSize: 13,
-  },
-  success: {
-    color: "#166534",
-    fontSize: 13,
-  },
-  section: {
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: RADIUS.lg,
-    padding: SPACING.lg,
-    gap: SPACING.sm,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: colors.text,
-  },
-  inputWrap: {
-    minHeight: CONTROL_SIZE.inputHeight,
-    borderRadius: RADIUS.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
-    paddingHorizontal: SPACING.md,
-    justifyContent: "center",
-  },
-  input: {
-    color: colors.text,
-    fontSize: FONT_SIZE.button,
-  },
-  primaryButton: {
-    minHeight: CONTROL_SIZE.inputHeight,
-    borderRadius: RADIUS.md,
-    backgroundColor: colors.primary,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: SPACING.md,
-  },
-  primaryButtonText: {
-    color: colors.primaryText,
-    fontSize: FONT_SIZE.button,
-    fontWeight: "700",
-  },
-  buttonPressed: {
-    opacity: 0.9,
-  },
-  buttonDisabled: {
-    opacity: 0.6,
-  },
-  emptyText: {
-    color: colors.mutedText,
-    fontSize: FONT_SIZE.body,
-  },
-  card: {
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: RADIUS.md,
-    padding: SPACING.md,
-    backgroundColor: colors.surface,
-    gap: SPACING.xs,
-  },
-  cardTitle: {
-    color: colors.text,
-    fontSize: 16,
-    fontWeight: "700",
-  },
-  cardMeta: {
-    color: colors.mutedText,
-    fontSize: 12,
-  },
-});
+const createStyles = (colors: ThemeColors, resolvedTheme: ThemeMode) => {
+  const outlineColor = resolvedTheme === "dark" ? colors.divider : colors.border;
+
+  return StyleSheet.create({
+    container: {
+      padding: SPACING.xl,
+      gap: SPACING.md,
+      backgroundColor: colors.background,
+    },
+    title: {
+      fontSize: FONT_SIZE.title,
+      fontWeight: "700",
+      color: colors.text,
+    },
+    subtitle: {
+      color: colors.mutedText,
+      fontSize: FONT_SIZE.body,
+    },
+    error: {
+      color: colors.danger,
+      fontSize: 13,
+    },
+    success: {
+      color: colors.success,
+      fontSize: 13,
+    },
+    section: {
+      backgroundColor: colors.surface,
+      borderRadius: RADIUS.lg,
+      padding: SPACING.lg,
+      gap: SPACING.sm,
+    },
+    sectionTitle: {
+      fontSize: 18,
+      fontWeight: "700",
+      color: colors.text,
+    },
+    sectionDivider: {
+      height: StyleSheet.hairlineWidth,
+      backgroundColor: colors.divider,
+    },
+    inputWrap: {
+      minHeight: CONTROL_SIZE.inputHeight,
+      borderRadius: RADIUS.md,
+      borderWidth: 1,
+      borderColor: outlineColor,
+      backgroundColor: colors.surface,
+      paddingHorizontal: SPACING.md,
+      justifyContent: "center",
+    },
+    input: {
+      color: colors.text,
+      fontSize: FONT_SIZE.button,
+    },
+    primaryButton: {
+      minHeight: CONTROL_SIZE.inputHeight,
+      borderRadius: RADIUS.md,
+      backgroundColor: colors.primary,
+      alignItems: "center",
+      justifyContent: "center",
+      paddingHorizontal: SPACING.md,
+    },
+    primaryButtonText: {
+      color: colors.primaryText,
+      fontSize: FONT_SIZE.button,
+      fontWeight: "700",
+    },
+    buttonPressed: {
+      opacity: 0.9,
+    },
+    buttonDisabled: {
+      opacity: 0.6,
+    },
+    emptyText: {
+      color: colors.mutedText,
+      fontSize: FONT_SIZE.body,
+    },
+    card: {
+      paddingVertical: SPACING.md,
+      gap: SPACING.xs,
+    },
+    cardDivider: {
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: colors.divider,
+    },
+    cardTitle: {
+      color: colors.text,
+      fontSize: 16,
+      fontWeight: "700",
+    },
+    cardMeta: {
+      color: colors.mutedText,
+      fontSize: 12,
+    },
+  });
+};

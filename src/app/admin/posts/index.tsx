@@ -8,6 +8,7 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  TouchableOpacity,
   View,
 } from "react-native";
 import { Redirect, useRouter } from "expo-router";
@@ -20,6 +21,7 @@ import {
   query,
   serverTimestamp,
   setDoc,
+  where,
   type DocumentData,
 } from "firebase/firestore";
 
@@ -35,6 +37,7 @@ import {
   POSTS_COLLECTION,
   formatDate,
   getPostCardThumbnailUrl,
+  isPostTrashed,
   mapCategoryRecord,
   mapPostRecord,
   sortPostsByRecency,
@@ -42,22 +45,41 @@ import {
   type PostRecord,
   type PostStatus,
 } from "@/lib/content";
+import { TrashActionIcon } from "@/components/icons/trash-action-icon";
 import { firestore } from "@/lib/firebase";
 import { getActionErrorMessage, getRequestErrorMessage } from "@/lib/network";
+import { notifyPostPublishedAsync } from "@/lib/notifications";
 import { useAuth } from "@/providers/auth-provider";
 import { useNetworkStatus } from "@/providers/network-provider";
 import { useAppTheme } from "@/providers/theme-provider";
 
-const POST_STATUSES: PostStatus[] = ["draft", "published"];
+const POST_STATUSES: PostStatus[] = ["draft", "pending", "published"];
 type PostStatusFilter = "all" | PostStatus;
 const DEFAULT_CATEGORY = "general";
 
+const getStatusLabel = (status: PostStatus) => {
+  if (status === "pending") {
+    return "Pending Review";
+  }
+
+  return status === "published" ? "Published" : "Draft";
+};
+
+const getPostPreview = (content: string) => {
+  const normalized = content.replace(/\s+/g, " ").trim();
+  if (!normalized) {
+    return "";
+  }
+
+  return normalized.length > 120 ? `${normalized.slice(0, 120)}...` : normalized;
+};
+
 export default function AdminPostsListScreen() {
-  const { colors } = useAppTheme();
-  const { isConnected } = useNetworkStatus();
+  const { colors, resolvedTheme } = useAppTheme();
+  const { isConnected, showToast } = useNetworkStatus();
   const router = useRouter();
-  const { canManagePosts, isAdmin, user } = useAuth();
-  const styles = createStyles(colors);
+  const { canManagePosts, canModeratePosts, isAdmin, user } = useAuth();
+  const styles = createStyles(colors, resolvedTheme);
   const [categories, setCategories] = useState<CategoryRecord[]>([]);
   const [posts, setPosts] = useState<PostRecord[]>([]);
   const [isLoadingCategories, setIsLoadingCategories] = useState(true);
@@ -68,13 +90,29 @@ export default function AdminPostsListScreen() {
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<PostStatusFilter>("all");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
+  const [isViewingRecycleBin, setIsViewingRecycleBin] = useState(false);
 
   useEffect(() => {
+    setIsLoadingCategories(true);
+    setIsLoadingPosts(true);
+
+    if (!canModeratePosts && !user?.uid) {
+      setPosts([]);
+      setIsLoadingCategories(false);
+      setIsLoadingPosts(false);
+      return;
+    }
+
     const categoriesQuery = query(
       collection(firestore, CATEGORIES_COLLECTION),
       orderBy("name", "asc")
     );
-    const postsQuery = query(collection(firestore, POSTS_COLLECTION));
+    const postsQuery = canModeratePosts
+      ? query(collection(firestore, POSTS_COLLECTION))
+      : query(
+          collection(firestore, POSTS_COLLECTION),
+          where("createdBy", "==", user?.uid ?? ""),
+        );
 
     const unsubscribeCategories = onSnapshot(
       categoriesQuery,
@@ -128,12 +166,12 @@ export default function AdminPostsListScreen() {
       unsubscribeCategories();
       unsubscribePosts();
     };
-  }, [isConnected]);
+  }, [canModeratePosts, isConnected, user?.uid]);
 
   const isLoadingData = isLoadingCategories || isLoadingPosts;
 
   const scopedPosts = useMemo(() => {
-    if (isAdmin) {
+    if (canModeratePosts) {
       return posts;
     }
 
@@ -144,12 +182,23 @@ export default function AdminPostsListScreen() {
     return posts.filter(
       (post) => post.createdBy === user.uid || (!!user.email && post.createdByEmail === user.email)
     );
-  }, [isAdmin, posts, user?.email, user?.uid]);
+  }, [canModeratePosts, posts, user?.email, user?.uid]);
+
+  const activePosts = useMemo(
+    () => scopedPosts.filter((post) => !isPostTrashed(post)),
+    [scopedPosts],
+  );
+
+  const trashedPosts = useMemo(
+    () => scopedPosts.filter((post) => isPostTrashed(post)),
+    [scopedPosts],
+  );
 
   const filteredPosts = useMemo(() => {
     const keyword = searchTerm.trim().toLowerCase();
+    const sourcePosts = isViewingRecycleBin ? trashedPosts : activePosts;
 
-    return scopedPosts.filter((post) => {
+    return sourcePosts.filter((post) => {
       if (statusFilter !== "all" && post.status !== statusFilter) {
         return false;
       }
@@ -162,22 +211,34 @@ export default function AdminPostsListScreen() {
         return true;
       }
 
-      return [post.title, post.content, post.slug, post.category]
+      return [
+        post.title,
+        post.content,
+        post.slug,
+        post.category,
+        post.authorDisplayName,
+        post.authorUsername,
+        post.createdByEmail,
+      ]
         .join(" ")
         .toLowerCase()
         .includes(keyword);
     });
-  }, [categoryFilter, scopedPosts, searchTerm, statusFilter]);
+  }, [activePosts, categoryFilter, isViewingRecycleBin, searchTerm, statusFilter, trashedPosts]);
 
   const hasActiveFilters =
     Boolean(searchTerm.trim()) || statusFilter !== "all" || categoryFilter !== "all";
 
   const postStats = useMemo(() => {
     return {
-      total: scopedPosts.length,
+      total: activePosts.length,
       visible: filteredPosts.length,
+      draft: activePosts.filter((post) => post.status === "draft").length,
+      pending: activePosts.filter((post) => post.status === "pending").length,
+      published: activePosts.filter((post) => post.status === "published").length,
+      trashed: trashedPosts.length,
     };
-  }, [filteredPosts.length, scopedPosts.length]);
+  }, [activePosts, filteredPosts.length, trashedPosts.length]);
 
   if (!canManagePosts) {
     return <Redirect href="/settings" />;
@@ -188,24 +249,50 @@ export default function AdminPostsListScreen() {
     setSuccess("");
   };
 
-  const handleToggleStatus = async (post: PostRecord) => {
-    if (!isAdmin) {
+  const handleModeratePost = async (post: PostRecord, nextStatus: PostStatus) => {
+    if (!canModeratePosts) {
       return;
     }
 
     try {
       clearFeedback();
       const postRef = doc(firestore, POSTS_COLLECTION, post.id);
-      const nextStatus: PostStatus = post.status === "published" ? "draft" : "published";
       await setDoc(
         postRef,
         {
           status: nextStatus,
           uploadDate: serverTimestamp(),
+          submittedAt:
+            nextStatus === "published" ? post.submittedAt || serverTimestamp() : null,
+          publishedAt: nextStatus === "published" ? serverTimestamp() : null,
+          approvedAt: nextStatus === "published" ? serverTimestamp() : null,
+          approvedBy: nextStatus === "published" ? user?.uid ?? "" : null,
+          approvedByEmail: nextStatus === "published" ? user?.email ?? "" : null,
         },
         { merge: true }
       );
-      setSuccess(`Post moved to ${nextStatus}.`);
+      setSuccess(
+        nextStatus === "published"
+          ? "Post approved and published."
+          : "Post moved back to draft."
+      );
+
+      if (
+        nextStatus === "published" &&
+        post.status !== "published"
+      ) {
+        void notifyPostPublishedAsync({
+          authorUid: post.authorId,
+          actorUid: user?.uid,
+          postId: post.id,
+          postTitle: post.title,
+          postContent: post.content,
+          imageUrl: getPostCardThumbnailUrl(post),
+        }).catch((notificationError) => {
+          console.warn("Unable to send publish notification.", notificationError);
+          showToast("Post published, but notification could not be delivered.");
+        });
+      }
     } catch (updateError) {
       setError(
         getActionErrorMessage({
@@ -217,30 +304,124 @@ export default function AdminPostsListScreen() {
     }
   };
 
-  const runDeletePost = async (post: PostRecord) => {
+  const handleSubmitForReview = async (post: PostRecord) => {
+    if (canModeratePosts) {
+      return;
+    }
+
     try {
       clearFeedback();
-      await deleteDoc(doc(firestore, POSTS_COLLECTION, post.id));
-      setSuccess("Post deleted.");
-    } catch (deleteError) {
+      await setDoc(
+        doc(firestore, POSTS_COLLECTION, post.id),
+        {
+          status: "pending",
+          submittedAt: serverTimestamp(),
+          uploadDate: serverTimestamp(),
+          approvedAt: null,
+          approvedBy: null,
+          approvedByEmail: null,
+        },
+        { merge: true }
+      );
+      setSuccess("Post submitted for admin approval.");
+    } catch (submitError) {
       setError(
         getActionErrorMessage({
-          error: deleteError,
+          error: submitError,
           isConnected,
-          fallbackMessage: "Unable to delete post.",
+          fallbackMessage: "Unable to submit post for review.",
         }),
       );
     }
   };
 
-  const handleDeletePost = (post: PostRecord) => {
-    Alert.alert("Delete Post", `Delete "${post.title}" permanently?`, [
+  const runMovePostToRecycleBin = async (post: PostRecord) => {
+    try {
+      clearFeedback();
+      await setDoc(
+        doc(firestore, POSTS_COLLECTION, post.id),
+        {
+          deletedAt: serverTimestamp(),
+          deletedBy: user?.uid ?? "",
+          deletedByEmail: user?.email ?? "",
+          uploadDate: serverTimestamp(),
+        },
+        { merge: true }
+      );
+      setSuccess("Post moved to recycle bin.");
+    } catch (deleteError) {
+      setError(
+        getActionErrorMessage({
+          error: deleteError,
+          isConnected,
+          fallbackMessage: "Unable to move post to recycle bin.",
+        }),
+      );
+    }
+  };
+
+  const runRestorePost = async (post: PostRecord) => {
+    try {
+      clearFeedback();
+      await setDoc(
+        doc(firestore, POSTS_COLLECTION, post.id),
+        {
+          deletedAt: null,
+          deletedBy: null,
+          deletedByEmail: null,
+          uploadDate: serverTimestamp(),
+        },
+        { merge: true }
+      );
+      setSuccess("Post restored from recycle bin.");
+    } catch (restoreError) {
+      setError(
+        getActionErrorMessage({
+          error: restoreError,
+          isConnected,
+          fallbackMessage: "Unable to restore post.",
+        }),
+      );
+    }
+  };
+
+  const runDeletePostPermanently = async (post: PostRecord) => {
+    try {
+      clearFeedback();
+      await deleteDoc(doc(firestore, POSTS_COLLECTION, post.id));
+      setSuccess("Post deleted permanently.");
+    } catch (deleteError) {
+      setError(
+        getActionErrorMessage({
+          error: deleteError,
+          isConnected,
+          fallbackMessage: "Unable to delete post permanently.",
+        }),
+      );
+    }
+  };
+
+  const handleMovePostToRecycleBin = (post: PostRecord) => {
+    Alert.alert("Move to Recycle Bin", `Move "${post.title}" to recycle bin?`, [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Move",
+        style: "destructive",
+        onPress: () => {
+          void runMovePostToRecycleBin(post);
+        },
+      },
+    ]);
+  };
+
+  const handleDeletePostPermanently = (post: PostRecord) => {
+    Alert.alert("Delete Permanently", `Delete "${post.title}" permanently? This cannot be undone.`, [
       { text: "Cancel", style: "cancel" },
       {
         text: "Delete",
         style: "destructive",
         onPress: () => {
-          void runDeletePost(post);
+          void runDeletePostPermanently(post);
         },
       },
     ]);
@@ -248,11 +429,11 @@ export default function AdminPostsListScreen() {
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
-      <Text style={styles.title}>Post List</Text>
+      <Text style={styles.title}>{isAdmin ? "Post List" : "My Posts"}</Text>
       <Text style={styles.subtitle}>
         {isAdmin
-          ? "Filter, manage, and publish posts quickly."
-          : "Create and manage only the posts assigned to your account."}
+          ? "Filter, review, and publish posts quickly."
+          : "Create posts, submit them for review, and track approval status."}
       </Text>
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
@@ -260,23 +441,54 @@ export default function AdminPostsListScreen() {
 
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Quick Action</Text>
-        <Pressable
-          style={({ pressed }) => [styles.primaryButton, pressed && styles.buttonPressed]}
-          onPress={() => router.push("/admin/posts/edit")}
-        >
-          <Text style={styles.primaryButtonText}>Create Post</Text>
-        </Pressable>
+        <View style={styles.sectionDivider} />
+        <View style={styles.quickActionStack}>
+          <TouchableOpacity
+            style={styles.primaryButton}
+            activeOpacity={0.85}
+            onPress={() => router.push("/admin/posts/edit")}
+          >
+            <Text style={styles.primaryButtonText}>Create Post</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[
+              styles.secondaryButton,
+              styles.quickActionButton,
+              isViewingRecycleBin && styles.recycleBinButtonActive,
+            ]}
+            activeOpacity={0.85}
+            onPress={() => {
+              setIsViewingRecycleBin((current) => !current);
+              clearFeedback();
+            }}
+          >
+            <View style={styles.recycleBinButtonContent}>
+              <TrashActionIcon
+                color={isViewingRecycleBin ? colors.primaryText : colors.danger}
+                size={18}
+              />
+              <Text
+                style={[
+                  styles.recycleBinButtonText,
+                  isViewingRecycleBin && styles.recycleBinButtonTextActive,
+                ]}
+              >
+                {isViewingRecycleBin ? "Back to Posts" : `Recycle Bin (${postStats.trashed})`}
+              </Text>
+            </View>
+          </TouchableOpacity>
+        </View>
       </View>
 
       <View style={styles.section}>
         <View style={styles.filterHeader}>
           <Text style={styles.sectionTitle}>Filters</Text>
-          <Pressable
-            style={({ pressed }) => [
+          <TouchableOpacity
+            style={[
               styles.resetInlineButton,
               !hasActiveFilters && styles.buttonDisabled,
-              pressed && styles.buttonPressed,
             ]}
+            activeOpacity={0.85}
             onPress={() => {
               setSearchTerm("");
               setStatusFilter("all");
@@ -286,15 +498,16 @@ export default function AdminPostsListScreen() {
             disabled={!hasActiveFilters}
           >
             <Text style={styles.resetInlineButtonText}>Reset</Text>
-          </Pressable>
+          </TouchableOpacity>
         </View>
+        <View style={styles.sectionDivider} />
         {isLoadingData ? <ActivityIndicator size="small" color={colors.primary} /> : null}
 
         <View style={styles.inputWrap}>
           <TextInput
             value={searchTerm}
             onChangeText={setSearchTerm}
-            placeholder="Search by title, slug, content, category"
+            placeholder="Search by title, slug, category"
             placeholderTextColor={colors.mutedText}
             autoCapitalize="none"
             style={styles.input}
@@ -383,370 +596,516 @@ export default function AdminPostsListScreen() {
         </View>
 
         <Text style={styles.resultText}>
-          Showing {postStats.visible} of {postStats.total} posts
+          Showing {postStats.visible} of {isViewingRecycleBin ? postStats.trashed : postStats.total}{" "}
+          {isViewingRecycleBin ? "trashed posts" : "posts"}
+        </Text>
+        <Text style={styles.resultText}>
+          Draft {postStats.draft} • Pending {postStats.pending} • Published {postStats.published} • Recycle Bin {postStats.trashed}
         </Text>
       </View>
 
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Posts</Text>
+      <View style={styles.postsSection}>
+        <Text style={styles.sectionTitle}>{isViewingRecycleBin ? "Recycle Bin" : "Posts"}</Text>
         {!filteredPosts.length ? (
-          <Text style={styles.emptyText}>No posts match current filters.</Text>
+          <Text style={styles.emptyText}>
+            {isViewingRecycleBin
+              ? "Recycle bin is empty or nothing matches current filters."
+              : "No posts match current filters."}
+          </Text>
         ) : null}
 
-        {filteredPosts.map((post) => {
-          const thumbnailUrl = getPostCardThumbnailUrl(post);
-          const updatedLabel = formatDate(post.uploadDate || post.createDate);
-          const createdLabel = formatDate(post.createDate);
-          const categoryLabel = (post.category.trim() || "general")
-            .split(/[\s-]+/)
-            .filter(Boolean)
-            .map((word) => `${word.charAt(0).toUpperCase()}${word.slice(1)}`)
-            .join(" ");
+        <View style={styles.postsStack}>
+          {filteredPosts.map((post) => {
+            const thumbnailUrl = getPostCardThumbnailUrl(post);
+            const isTrashed = isPostTrashed(post);
+            const updatedLabel = formatDate(post.uploadDate || post.createDate);
+            const createdLabel = formatDate(post.createDate);
+            const categoryLabel = post.category.trim() || DEFAULT_CATEGORY;
+            const postPreview = getPostPreview(post.content);
+            const activityLabel =
+              isTrashed && post.deletedAt
+                ? `Trashed ${formatDate(post.deletedAt)}`
+                : post.status === "pending" && post.submittedAt
+                ? `Submitted ${formatDate(post.submittedAt)}`
+                : post.status === "published" && post.approvedAt
+                  ? `Approved ${formatDate(post.approvedAt)}`
+                  : `Created ${createdLabel}`;
+            const authorLabel =
+              post.authorDisplayName ||
+              post.authorUsername ||
+              post.createdByEmail ||
+              "Unknown";
 
-          return (
-            <View key={post.id} style={styles.postCard}>
-              {thumbnailUrl ? (
-                <Image
-                  source={{ uri: thumbnailUrl }}
-                  style={styles.thumbnail}
-                  resizeMode="cover"
-                />
-              ) : null}
-              <View style={styles.postHeaderRow}>
-                <Text style={styles.categoryBadge}>{categoryLabel}</Text>
-                <View
+            return (
+              <View key={post.id} style={styles.postCard}>
+                <TouchableOpacity
                   style={[
-                    styles.statusBadge,
-                    post.status === "published"
-                      ? styles.statusBadgePublished
-                      : styles.statusBadgeDraft,
+                    styles.postCardContent,
+                    isTrashed && styles.postCardContentDisabled,
                   ]}
+                  activeOpacity={0.9}
+                  onPress={
+                    isTrashed ? undefined : () => router.push(`/admin/posts/edit?postId=${post.id}`)
+                  }
+                  disabled={isTrashed}
                 >
-                  <Text
-                    style={[
-                      styles.statusBadgeText,
-                      post.status === "published"
-                        ? styles.statusBadgeTextPublished
-                        : styles.statusBadgeTextDraft,
-                    ]}
+                  <View style={styles.postMainRow}>
+                    <View style={styles.postContentColumn}>
+                      <View style={styles.postTopRow}>
+                        <View style={styles.badgeRow}>
+                          <Text style={styles.categoryBadge}>{categoryLabel}</Text>
+                          {isTrashed ? (
+                            <View style={[styles.statusBadge, styles.statusBadgeTrashed]}>
+                              <Text style={[styles.statusBadgeText, styles.statusBadgeTextTrashed]}>
+                                Recycled
+                              </Text>
+                            </View>
+                          ) : null}
+                          <View
+                            style={[
+                              styles.statusBadge,
+                              post.status === "published"
+                                ? styles.statusBadgePublished
+                                : post.status === "pending"
+                                  ? styles.statusBadgePending
+                                  : styles.statusBadgeDraft,
+                            ]}
+                          >
+                            <Text
+                              style={[
+                                styles.statusBadgeText,
+                                post.status === "published"
+                                  ? styles.statusBadgeTextPublished
+                                  : post.status === "pending"
+                                    ? styles.statusBadgeTextPending
+                                    : styles.statusBadgeTextDraft,
+                              ]}
+                            >
+                              {getStatusLabel(post.status)}
+                            </Text>
+                          </View>
+                        </View>
+                        <Text style={styles.postMeta}>{updatedLabel}</Text>
+                      </View>
+
+                      <Text style={styles.postTitle} numberOfLines={2}>
+                        {post.title}
+                      </Text>
+
+                      {postPreview ? (
+                        <Text style={styles.postSummary} numberOfLines={2}>
+                          {postPreview}
+                        </Text>
+                      ) : null}
+
+                      <Text style={styles.postMeta} numberOfLines={1}>
+                        {authorLabel}
+                      </Text>
+                      <Text style={styles.postMeta} numberOfLines={1}>
+                        {post.slug} • {activityLabel}
+                      </Text>
+                    </View>
+
+                    {thumbnailUrl ? (
+                      <Image
+                        source={{ uri: thumbnailUrl }}
+                        style={styles.thumbnail}
+                        resizeMode="cover"
+                      />
+                    ) : null}
+                  </View>
+                </TouchableOpacity>
+
+                <View style={styles.cardActions}>
+                  {isTrashed ? (
+                    <TouchableOpacity
+                      style={[styles.primaryButton, styles.actionButton]}
+                      activeOpacity={0.85}
+                      onPress={() => {
+                        void runRestorePost(post);
+                      }}
+                    >
+                      <Text style={styles.primaryButtonText}>Restore</Text>
+                    </TouchableOpacity>
+                  ) : canModeratePosts ? (
+                    <TouchableOpacity
+                      style={[styles.primaryButton, styles.actionButton]}
+                      activeOpacity={0.85}
+                      onPress={() => {
+                        void handleModeratePost(
+                          post,
+                          post.status === "published" ? "draft" : "published"
+                        );
+                      }}
+                    >
+                      <Text style={styles.primaryButtonText}>
+                        {post.status === "published" ? "Move Draft" : "Publish"}
+                      </Text>
+                    </TouchableOpacity>
+                  ) : (
+                    <TouchableOpacity
+                      style={[
+                        styles.secondaryButton,
+                        styles.actionButton,
+                        (post.status === "pending" || post.status === "published") &&
+                          styles.buttonDisabled,
+                      ]}
+                      activeOpacity={0.85}
+                      onPress={() => {
+                        void handleSubmitForReview(post);
+                      }}
+                      disabled={post.status === "pending" || post.status === "published"}
+                    >
+                      <Text style={styles.secondaryButtonText}>
+                        {post.status === "pending"
+                          ? "In Review"
+                          : post.status === "published"
+                            ? "Published"
+                            : "Submit"}
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+
+                  <TouchableOpacity
+                    style={[styles.deleteButton, styles.actionButton]}
+                    activeOpacity={0.85}
+                    onPress={() =>
+                      isTrashed
+                        ? handleDeletePostPermanently(post)
+                        : handleMovePostToRecycleBin(post)
+                    }
                   >
-                    {post.status}
-                  </Text>
+                    <Text style={styles.deleteButtonText}>
+                      {isTrashed ? "Delete Forever" : "Trash"}
+                    </Text>
+                  </TouchableOpacity>
                 </View>
               </View>
-
-              <View style={styles.postHeaderRow}>
-                <Text style={styles.postTitle}>{post.title}</Text>
-              </View>
-
-              <Text style={styles.postBody}>
-                {post.content.length > 180 ? `${post.content.slice(0, 180)}...` : post.content}
-              </Text>
-
-              <View style={styles.metaRow}>
-                <Text style={styles.postMeta}>Created {createdLabel}</Text>
-                <Text style={styles.postMeta}>Updated {updatedLabel}</Text>
-              </View>
-              {isAdmin && post.createdByEmail ? (
-                <Text style={styles.postMeta}>Author: {post.createdByEmail}</Text>
-              ) : null}
-              <Text style={styles.postMeta}>Slug: {post.slug}</Text>
-              <Text style={styles.postMeta}>ID: {post.id}</Text>
-
-              <View style={styles.buttonRow}>
-                <Pressable
-                  style={({ pressed }) => [
-                    styles.secondaryButton,
-                    styles.flexButton,
-                    pressed && styles.buttonPressed,
-                  ]}
-                  onPress={() => router.push(`/admin/posts/edit?postId=${post.id}`)}
-                >
-                  <Text style={styles.secondaryButtonText}>Edit</Text>
-                </Pressable>
-
-                {isAdmin ? (
-                  <Pressable
-                    style={({ pressed }) => [
-                      styles.secondaryButton,
-                      styles.flexButton,
-                      pressed && styles.buttonPressed,
-                    ]}
-                    onPress={() => {
-                      void handleToggleStatus(post);
-                    }}
-                  >
-                    <Text style={styles.secondaryButtonText}>
-                      {post.status === "published" ? "Move to Draft" : "Publish"}
-                    </Text>
-                  </Pressable>
-                ) : null}
-
-                <Pressable
-                  style={({ pressed }) => [
-                    styles.deleteButton,
-                    styles.flexButton,
-                    pressed && styles.buttonPressed,
-                  ]}
-                  onPress={() => handleDeletePost(post)}
-                >
-                  <Text style={styles.deleteButtonText}>Delete</Text>
-                </Pressable>
-              </View>
-            </View>
-          );
-        })}
+            );
+          })}
+        </View>
       </View>
     </ScrollView>
   );
 }
 
-const createStyles = (colors: ThemeColors) => StyleSheet.create({
-  container: {
-    padding: SPACING.xl,
-    backgroundColor: colors.background,
-    gap: SPACING.md,
-  },
-  title: {
-    fontSize: FONT_SIZE.title,
-    fontWeight: "700",
-    color: colors.text,
-  },
-  subtitle: {
-    color: colors.mutedText,
-    fontSize: FONT_SIZE.body,
-  },
-  error: {
-    color: colors.danger,
-    fontSize: 13,
-  },
-  success: {
-    color: "#166534",
-    fontSize: 13,
-  },
-  section: {
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: RADIUS.lg,
-    padding: SPACING.lg,
-    gap: SPACING.sm,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: colors.text,
-  },
-  primaryButton: {
-    minHeight: CONTROL_SIZE.inputHeight,
-    borderRadius: RADIUS.md,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: colors.primary,
-    paddingHorizontal: SPACING.md,
-  },
-  primaryButtonText: {
-    color: colors.primaryText,
-    fontSize: FONT_SIZE.button,
-    fontWeight: "700",
-  },
-  filterHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: SPACING.sm,
-  },
-  inputWrap: {
-    minHeight: CONTROL_SIZE.inputHeight,
-    borderRadius: RADIUS.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
-    paddingHorizontal: SPACING.md,
-    justifyContent: "center",
-  },
-  input: {
-    color: colors.text,
-    fontSize: FONT_SIZE.button,
-  },
-  compactFilterRow: {
-    gap: SPACING.xs,
-  },
-  compactFilterLabel: {
-    color: colors.mutedText,
-    fontSize: 12,
-    fontWeight: "700",
-    textTransform: "uppercase",
-    letterSpacing: 0.3,
-  },
-  chipRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: SPACING.xs,
-    paddingRight: SPACING.md,
-  },
-  chip: {
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 999,
-    paddingHorizontal: SPACING.sm,
-    paddingVertical: 5,
-    backgroundColor: colors.surface,
-  },
-  chipActive: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
-  },
-  chipText: {
-    color: colors.text,
-    fontSize: 12,
-    fontWeight: "600",
-  },
-  chipTextActive: {
-    color: colors.primaryText,
-  },
-  resetInlineButton: {
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 999,
-    paddingHorizontal: SPACING.sm,
-    paddingVertical: 5,
-    backgroundColor: colors.surface,
-  },
-  resetInlineButtonText: {
-    color: colors.text,
-    fontSize: 12,
-    fontWeight: "700",
-  },
-  buttonRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: SPACING.sm,
-  },
-  flexButton: {
-    flex: 1,
-  },
-  secondaryButton: {
-    minHeight: CONTROL_SIZE.inputHeight,
-    borderRadius: RADIUS.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: colors.surface,
-    paddingHorizontal: SPACING.sm,
-  },
-  secondaryButtonText: {
-    color: colors.text,
-    fontSize: 14,
-    fontWeight: "600",
-    textAlign: "center",
-  },
-  deleteButton: {
-    minHeight: CONTROL_SIZE.inputHeight,
-    borderRadius: RADIUS.md,
-    borderWidth: 1,
-    borderColor: "#DC2626",
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#FEF2F2",
-    paddingHorizontal: SPACING.sm,
-  },
-  deleteButtonText: {
-    color: "#B91C1C",
-    fontSize: 14,
-    fontWeight: "700",
-    textAlign: "center",
-  },
-  buttonPressed: {
-    opacity: 0.9,
-  },
-  buttonDisabled: {
-    opacity: 0.55,
-  },
-  resultText: {
-    color: colors.mutedText,
-    fontSize: 13,
-  },
-  emptyText: {
-    color: colors.mutedText,
-    fontSize: FONT_SIZE.body,
-  },
-  postCard: {
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: RADIUS.md,
-    padding: SPACING.md,
-    backgroundColor: colors.surface,
-    gap: SPACING.xs,
-  },
-  thumbnail: {
-    width: "100%",
-    height: 180,
-    borderRadius: RADIUS.md,
-    backgroundColor: "#E5E7EB",
-    marginBottom: SPACING.xs,
-  },
-  postHeaderRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: SPACING.sm,
-  },
-  categoryBadge: {
-    borderWidth: 1,
-    borderColor: "#BFDBFE",
-    borderRadius: 999,
-    paddingHorizontal: SPACING.sm,
-    paddingVertical: 3,
-    backgroundColor: "#EFF6FF",
-    color: "#1D4ED8",
-    fontSize: 11,
-    fontWeight: "700",
-  },
-  postTitle: {
-    color: colors.text,
-    fontSize: 16,
-    fontWeight: "700",
-    flex: 1,
-  },
-  postBody: {
-    color: colors.text,
-    fontSize: FONT_SIZE.body,
-  },
-  metaRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: SPACING.sm,
-  },
-  postMeta: {
-    color: colors.mutedText,
-    fontSize: 12,
-  },
-  statusBadge: {
-    borderWidth: 1,
-    borderRadius: 999,
-    paddingHorizontal: SPACING.sm,
-    paddingVertical: 3,
-  },
-  statusBadgePublished: {
-    borderColor: "#16A34A",
-    backgroundColor: "#F0FDF4",
-  },
-  statusBadgeDraft: {
-    borderColor: "#D97706",
-    backgroundColor: "#FFFBEB",
-  },
-  statusBadgeText: {
-    fontSize: 11,
-    fontWeight: "700",
-    textTransform: "uppercase",
-  },
-  statusBadgeTextPublished: {
-    color: "#166534",
-  },
-  statusBadgeTextDraft: {
-    color: "#92400E",
-  },
-});
+const createStyles = (colors: ThemeColors, resolvedTheme: "light" | "dark") => {
+  const outlineColor = resolvedTheme === "dark" ? colors.divider : colors.border;
+
+  return StyleSheet.create({
+    container: {
+      padding: SPACING.xl,
+      backgroundColor: colors.background,
+      gap: SPACING.md,
+    },
+    title: {
+      fontSize: FONT_SIZE.title,
+      fontWeight: "700",
+      color: colors.text,
+    },
+    subtitle: {
+      color: colors.mutedText,
+      fontSize: FONT_SIZE.body,
+    },
+    error: {
+      color: colors.danger,
+      fontSize: 13,
+    },
+    success: {
+      color: colors.success,
+      fontSize: 13,
+    },
+    section: {
+      backgroundColor: colors.surface,
+      borderRadius: RADIUS.lg,
+      padding: SPACING.lg,
+      gap: SPACING.sm,
+    },
+    sectionTitle: {
+      fontSize: 18,
+      fontWeight: "700",
+      color: colors.text,
+    },
+    sectionDivider: {
+      height: StyleSheet.hairlineWidth,
+      backgroundColor: colors.divider,
+    },
+    primaryButton: {
+      minHeight: CONTROL_SIZE.inputHeight,
+      borderRadius: RADIUS.md,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: colors.primary,
+      paddingHorizontal: SPACING.md,
+    },
+    quickActionStack: {
+      gap: SPACING.sm,
+    },
+    quickActionButton: {
+      minHeight: CONTROL_SIZE.inputHeight,
+      paddingHorizontal: SPACING.md,
+    },
+    recycleBinButtonActive: {
+      backgroundColor: colors.primary,
+      borderColor: colors.primary,
+    },
+    recycleBinButtonContent: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: SPACING.xs,
+    },
+    recycleBinButtonText: {
+      color: colors.text,
+      fontSize: 14,
+      fontWeight: "700",
+      textAlign: "center",
+    },
+    recycleBinButtonTextActive: {
+      color: colors.primaryText,
+    },
+    primaryButtonText: {
+      color: colors.primaryText,
+      fontSize: FONT_SIZE.button,
+      fontWeight: "700",
+      textAlign: "center",
+    },
+    filterHeader: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: SPACING.sm,
+    },
+    inputWrap: {
+      minHeight: CONTROL_SIZE.inputHeight,
+      borderRadius: RADIUS.md,
+      borderWidth: 1,
+      borderColor: outlineColor,
+      backgroundColor: colors.surfaceMuted,
+      paddingHorizontal: SPACING.md,
+      justifyContent: "center",
+    },
+    input: {
+      color: colors.text,
+      fontSize: FONT_SIZE.button,
+    },
+    compactFilterRow: {
+      gap: SPACING.xs,
+    },
+    compactFilterLabel: {
+      color: colors.mutedText,
+      fontSize: 12,
+      fontWeight: "700",
+      textTransform: "uppercase",
+      letterSpacing: 0.3,
+    },
+    chipRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: SPACING.xs,
+      paddingRight: SPACING.md,
+    },
+    chip: {
+      borderWidth: 1,
+      borderColor: outlineColor,
+      borderRadius: 999,
+      paddingHorizontal: SPACING.sm,
+      paddingVertical: 5,
+      backgroundColor: colors.surface,
+    },
+    chipActive: {
+      backgroundColor: colors.primary,
+      borderColor: colors.primary,
+    },
+    chipText: {
+      color: colors.text,
+      fontSize: 12,
+      fontWeight: "600",
+    },
+    chipTextActive: {
+      color: colors.primaryText,
+    },
+    resetInlineButton: {
+      borderWidth: 1,
+      borderColor: outlineColor,
+      borderRadius: 999,
+      paddingHorizontal: SPACING.sm,
+      paddingVertical: 5,
+      backgroundColor: colors.surface,
+    },
+    resetInlineButtonText: {
+      color: colors.text,
+      fontSize: 12,
+      fontWeight: "700",
+    },
+    buttonDisabled: {
+      opacity: 0.55,
+    },
+    resultText: {
+      color: colors.mutedText,
+      fontSize: 13,
+    },
+    emptyText: {
+      color: colors.mutedText,
+      fontSize: FONT_SIZE.body,
+    },
+    postsSection: {
+      gap: SPACING.sm,
+    },
+    postsStack: {
+      gap: SPACING.sm,
+    },
+    postCard: {
+      borderWidth: 1,
+      borderColor: outlineColor,
+      borderRadius: RADIUS.md,
+      backgroundColor: colors.surface,
+      overflow: "hidden",
+    },
+    postCardContent: {
+      padding: SPACING.sm + 2,
+    },
+    postCardContentDisabled: {
+      opacity: 0.88,
+    },
+    postMainRow: {
+      flexDirection: "row",
+      alignItems: "flex-start",
+      gap: SPACING.sm,
+    },
+    postContentColumn: {
+      flex: 1,
+      gap: 6,
+    },
+    thumbnail: {
+      width: 88,
+      height: 88,
+      borderRadius: RADIUS.sm,
+      backgroundColor: colors.surfaceMuted,
+    },
+    postTopRow: {
+      flexDirection: "row",
+      alignItems: "flex-start",
+      justifyContent: "space-between",
+      gap: SPACING.sm,
+    },
+    badgeRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      flexWrap: "wrap",
+      gap: SPACING.xs,
+      flex: 1,
+    },
+    categoryBadge: {
+      borderWidth: 1,
+      borderColor: colors.accentBorder,
+      borderRadius: 999,
+      paddingHorizontal: SPACING.sm,
+      paddingVertical: 3,
+      backgroundColor: colors.accentSoft,
+      color: colors.accent,
+      fontSize: 11,
+      fontWeight: "700",
+    },
+    postTitle: {
+      color: colors.text,
+      fontSize: 15,
+      fontWeight: "700",
+      lineHeight: 21,
+    },
+    postSummary: {
+      color: colors.mutedText,
+      fontSize: 12,
+      lineHeight: 18,
+    },
+    postMeta: {
+      color: colors.mutedText,
+      fontSize: 11,
+    },
+    statusBadge: {
+      borderWidth: 1,
+      borderRadius: 999,
+      paddingHorizontal: SPACING.sm,
+      paddingVertical: 3,
+    },
+    statusBadgePublished: {
+      borderColor: colors.successBorder,
+      backgroundColor: colors.successSoft,
+    },
+    statusBadgeDraft: {
+      borderColor: colors.warningBorder,
+      backgroundColor: colors.warningSoft,
+    },
+    statusBadgePending: {
+      borderColor: colors.accentBorder,
+      backgroundColor: colors.accentSoft,
+    },
+    statusBadgeTrashed: {
+      borderColor: colors.dangerBorder,
+      backgroundColor: colors.dangerSoft,
+    },
+    statusBadgeText: {
+      fontSize: 11,
+      fontWeight: "700",
+      textTransform: "uppercase",
+    },
+    statusBadgeTextPublished: {
+      color: colors.success,
+    },
+    statusBadgeTextDraft: {
+      color: colors.warning,
+    },
+    statusBadgeTextPending: {
+      color: colors.accent,
+    },
+    statusBadgeTextTrashed: {
+      color: colors.danger,
+    },
+    cardActions: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: SPACING.xs,
+      borderTopWidth: 1,
+      borderTopColor: outlineColor,
+      padding: SPACING.sm + 2,
+      backgroundColor: colors.surfaceMuted,
+    },
+    secondaryButton: {
+      minHeight: 38,
+      borderRadius: RADIUS.md,
+      borderWidth: 1,
+      borderColor: outlineColor,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: colors.surface,
+      paddingHorizontal: SPACING.sm,
+    },
+    secondaryButtonText: {
+      color: colors.text,
+      fontSize: 13,
+      fontWeight: "600",
+      textAlign: "center",
+    },
+    deleteButton: {
+      minHeight: 38,
+      borderRadius: RADIUS.md,
+      borderWidth: 1,
+      borderColor: colors.dangerBorder,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: colors.dangerSoft,
+      paddingHorizontal: SPACING.sm,
+    },
+    deleteButtonText: {
+      color: colors.danger,
+      fontSize: 13,
+      fontWeight: "700",
+      textAlign: "center",
+    },
+    actionButton: {
+      flex: 1,
+      minHeight: 38,
+      minWidth: 0,
+    },
+  });
+};

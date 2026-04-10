@@ -1,30 +1,52 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useRouter } from "expo-router";
-import { useHeaderHeight } from "@react-navigation/elements";
 import {
   ActivityIndicator,
-  Keyboard,
-  KeyboardAvoidingView,
+  Alert,
+  Linking,
   Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from "react-native";
+import Svg, { Path } from "react-native-svg";
 
-import {
-  CONTROL_SIZE,
-  FONT_SIZE,
-  RADIUS,
-  SPACING,
-  type ThemeColors,
-} from "@/constants/theme";
+import { AuthScreenShell } from "@/components/auth-screen-shell";
+import { AuthSoftInput } from "@/components/auth-soft-field";
+import { CancelInputIcon } from "@/components/icons/cancel-input-icon";
+import { ViewOffIcon } from "@/components/icons/view-off-icon";
+import { ViewTwotoneRoundedIcon } from "@/components/icons/view-twotone-rounded-icon";
+import { APP_LINKS } from "@/constants/app-links";
+import { CONTROL_SIZE, FONT_SIZE, SPACING, type ThemeColors } from "@/constants/theme";
 import { DEFAULT_OFFLINE_MESSAGE, getActionErrorMessage } from "@/lib/network";
+import {
+  EMAIL_VALIDATION_MESSAGE,
+  PASSWORD_MIN_LENGTH,
+  PASSWORD_VALIDATION_MESSAGE,
+  USERNAME_VALIDATION_MESSAGE,
+  isValidEmailAddress,
+  isValidUsername,
+  normalizeEmailAddress,
+  normalizeUsernameValue,
+  validateUsername,
+} from "@/lib/auth-validation";
 import { useAuth } from "@/providers/auth-provider";
 import { useNetworkStatus } from "@/providers/network-provider";
 import { useAppTheme } from "@/providers/theme-provider";
+
+type SignupField =
+  | "firstName"
+  | "lastName"
+  | "email"
+  | "username"
+  | "password"
+  | "confirmPassword"
+  | "terms"
+  | "form";
+type SignupFieldErrors = Partial<Record<SignupField, string>>;
+type UsernameAvailabilityState = "idle" | "checking" | "available" | "taken";
 
 const getErrorMessage = (error: unknown, isConnected: boolean) =>
   getActionErrorMessage({
@@ -33,89 +55,222 @@ const getErrorMessage = (error: unknown, isConnected: boolean) =>
     fallbackMessage: "Unable to create account. Please try again.",
   });
 
-type FocusedField =
-  | "firstName"
-  | "lastName"
-  | "email"
-  | "password"
-  | "confirmPassword";
+const stripWhitespace = (value: string) => value.replace(/\s+/g, "");
+
+function CheckIcon({ color }: { color: string }) {
+  return (
+    <Svg width={14} height={14} viewBox="0 0 14 14" fill="none">
+      <Path
+        d="M3 7.2L5.7 9.9L11 4.6"
+        stroke={color}
+        strokeWidth={2}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </Svg>
+  );
+}
 
 export default function SignupScreen() {
   const { colors } = useAppTheme();
   const { isConnected, showOfflineToast } = useNetworkStatus();
   const router = useRouter();
-  const headerHeight = useHeaderHeight();
-  const { signupWithEmail } = useAuth();
+  const { isUsernameAvailable, signupWithEmail } = useAuth();
   const styles = createStyles(colors);
+  const scrollViewRef = useRef<ScrollView>(null);
 
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [isPasswordVisible, setIsPasswordVisible] = useState(false);
   const [isConfirmPasswordVisible, setIsConfirmPasswordVisible] = useState(false);
-  const [error, setError] = useState("");
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState<SignupFieldErrors>({});
+  const [usernameAvailability, setUsernameAvailability] =
+    useState<UsernameAvailabilityState>("idle");
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [focusedField, setFocusedField] = useState<FocusedField | null>(null);
-  const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
 
   const hasPasswordMismatch = confirmPassword.length > 0 && password !== confirmPassword;
-  const isPasswordTooShort = password.length > 0 && password.length < 6;
+  const hasPasswordMatch = confirmPassword.length > 0 && password === confirmPassword;
+  const isPasswordTooShort = password.length > 0 && password.length < PASSWORD_MIN_LENGTH;
+  const normalizedEmail = normalizeEmailAddress(email);
+  const normalizedUsername = normalizeUsernameValue(username);
+  const emailFormatError =
+    normalizedEmail && !isValidEmailAddress(normalizedEmail)
+      ? EMAIL_VALIDATION_MESSAGE
+      : undefined;
+  const usernameFormatError =
+    normalizedUsername && !isValidUsername(normalizedUsername)
+      ? USERNAME_VALIDATION_MESSAGE
+      : undefined;
 
   useEffect(() => {
-    const showEvent = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
-    const hideEvent = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
+    if (!normalizedUsername || usernameFormatError) {
+      setUsernameAvailability("idle");
+      return;
+    }
 
-    const showSubscription = Keyboard.addListener(showEvent, () => {
-      setIsKeyboardVisible(true);
-    });
-    const hideSubscription = Keyboard.addListener(hideEvent, () => {
-      setIsKeyboardVisible(false);
-    });
+    let isActive = true;
+    setUsernameAvailability("checking");
+    const timeoutId = setTimeout(() => {
+      void (async () => {
+        try {
+          const available = await isUsernameAvailable(normalizedUsername);
+
+          if (!isActive) {
+            return;
+          }
+
+          setUsernameAvailability(available ? "available" : "taken");
+        } catch {
+          if (isActive) {
+            setUsernameAvailability("idle");
+          }
+        }
+      })();
+    }, 350);
 
     return () => {
-      showSubscription.remove();
-      hideSubscription.remove();
+      isActive = false;
+      clearTimeout(timeoutId);
     };
-  }, []);
+  }, [isUsernameAvailable, normalizedUsername, usernameFormatError]);
+
+  const confirmPasswordTone = hasPasswordMismatch
+    ? "error"
+    : hasPasswordMatch
+      ? "success"
+      : "default";
+
+  const clearError = (field?: SignupField | SignupField[]) => {
+    setFieldErrors((current) => {
+      if (!Object.keys(current).length) {
+        return current;
+      }
+
+      if (!field) {
+        return {};
+      }
+
+      const fields = Array.isArray(field) ? field : [field];
+      const hasTargetFieldError = fields.some((item) => current[item]);
+
+      if (!hasTargetFieldError && !current.form) {
+        return current;
+      }
+
+      const next = { ...current };
+      for (const item of fields) {
+        delete next[item];
+      }
+      delete next.form;
+      return next;
+    });
+  };
+
+  const getSignupErrorField = (message: string): SignupField => {
+    const normalizedMessage = message.toLowerCase();
+
+    if (normalizedMessage.includes("username")) {
+      return "username";
+    }
+
+    if (normalizedMessage.includes("email")) {
+      return "email";
+    }
+
+    if (normalizedMessage.includes("password")) {
+      return "password";
+    }
+
+    return "form";
+  };
 
   const handleSignup = async () => {
-    if (!firstName.trim() || !lastName.trim() || !email.trim() || !password || !confirmPassword) {
-      setError("Fill first name, last name, email and password.");
-      return;
+    const normalizedFirstName = firstName.trim().replace(/\s+/g, " ");
+    const normalizedLastName = lastName.trim().replace(/\s+/g, " ");
+    const nextErrors: SignupFieldErrors = {};
+
+    if (!normalizedFirstName) {
+      nextErrors.firstName = "Enter your first name.";
     }
 
-    if (password.length < 6) {
-      setError("Password must be at least 6 characters.");
-      return;
+    if (!normalizedLastName) {
+      nextErrors.lastName = "Enter your last name.";
     }
 
-    if (password !== confirmPassword) {
-      setError("Passwords do not match.");
+    if (!normalizedEmail) {
+      nextErrors.email = "Enter your email address.";
+    } else if (!isValidEmailAddress(normalizedEmail)) {
+      nextErrors.email = EMAIL_VALIDATION_MESSAGE;
+    }
+
+    if (!normalizedUsername) {
+      nextErrors.username = "Enter a username.";
+    } else {
+      try {
+        validateUsername(normalizedUsername);
+      } catch (error) {
+        nextErrors.username =
+          error instanceof Error ? error.message : "Enter a valid username.";
+      }
+
+      if (!nextErrors.username) {
+        try {
+          const available = await isUsernameAvailable(normalizedUsername);
+
+          if (!available) {
+            nextErrors.username = "Username is already taken.";
+          }
+        } catch {
+          nextErrors.username = "Unable to verify username right now.";
+        }
+      }
+    }
+
+    if (!password) {
+      nextErrors.password = "Enter your password.";
+    } else if (password.length < PASSWORD_MIN_LENGTH) {
+      nextErrors.password = PASSWORD_VALIDATION_MESSAGE;
+    }
+
+    if (!confirmPassword) {
+      nextErrors.confirmPassword = "Confirm your password.";
+    } else if (password !== confirmPassword) {
+      nextErrors.confirmPassword = "Passwords do not match.";
+    }
+
+    if (!acceptedTerms) {
+      nextErrors.terms = "Accept the Terms and Conditions to continue.";
+    }
+
+    if (Object.keys(nextErrors).length) {
+      setFieldErrors(nextErrors);
       return;
     }
 
     try {
       setIsSubmitting(true);
-      setError("");
-      const normalizedFirstName = firstName.trim();
-      const normalizedLastName = lastName.trim();
-      const normalizedEmail = email.trim().toLowerCase();
+      setFieldErrors({});
 
       await signupWithEmail({
         firstName: normalizedFirstName,
         lastName: normalizedLastName,
         email: normalizedEmail,
+        username: normalizedUsername,
         password,
       });
+
       router.replace("/home");
     } catch (signupError) {
       const message = getErrorMessage(signupError, isConnected);
       if (message === DEFAULT_OFFLINE_MESSAGE) {
         showOfflineToast();
       }
-      setError(message);
+      setFieldErrors({ [getSignupErrorField(message)]: message });
     } finally {
       setIsSubmitting(false);
     }
@@ -125,398 +280,413 @@ export default function SignupScreen() {
     isSubmitting ||
     !firstName.trim() ||
     !lastName.trim() ||
-    !email.trim() ||
+    !normalizedEmail ||
+    !normalizedUsername ||
     !password ||
     !confirmPassword ||
+    !acceptedTerms ||
+    Boolean(emailFormatError) ||
+    Boolean(usernameFormatError) ||
+    usernameAvailability === "checking" ||
+    usernameAvailability === "taken" ||
     isPasswordTooShort ||
     hasPasswordMismatch;
 
-  const clearError = () => {
-    if (error) {
-      setError("");
+  const firstNameError = fieldErrors.firstName;
+  const lastNameError = fieldErrors.lastName;
+  const emailError = fieldErrors.email ?? emailFormatError;
+  const usernameAvailabilityError =
+    !fieldErrors.username && !usernameFormatError && usernameAvailability === "taken"
+      ? "Username is already taken."
+      : undefined;
+  const usernameError = fieldErrors.username ?? usernameFormatError ?? usernameAvailabilityError;
+  const usernameSupportingText =
+    !normalizedUsername || usernameError
+      ? undefined
+      : usernameAvailability === "checking"
+        ? "Checking username..."
+        : usernameAvailability === "available"
+          ? "Username is available."
+          : undefined;
+  const usernameSupportingTone = usernameAvailability === "available" ? "success" : "default";
+  const passwordError =
+    fieldErrors.password ?? (isPasswordTooShort ? PASSWORD_VALIDATION_MESSAGE : undefined);
+  const confirmPasswordError =
+    fieldErrors.confirmPassword ?? (hasPasswordMismatch ? "Passwords do not match." : undefined);
+  const emailIconColor = emailError ? colors.danger : colors.iconMuted;
+  const passwordIconColor = passwordError ? colors.danger : colors.iconMuted;
+  const confirmPasswordIconColor = confirmPasswordError ? colors.danger : colors.iconMuted;
+
+  const openTermsAndConditions = async () => {
+    if (!isConnected) {
+      showOfflineToast();
+      return;
+    }
+
+    try {
+      await Linking.openURL(APP_LINKS.terms);
+    } catch {
+      Alert.alert("Terms & Conditions", "Unable to open Terms & Conditions right now.");
     }
   };
 
+  const revealPasswordFields = () => {
+    const delay = Platform.OS === "android" ? 180 : 80;
+
+    setTimeout(() => {
+      scrollViewRef.current?.scrollToEnd({ animated: true });
+    }, delay);
+  };
+
   return (
-    <KeyboardAvoidingView
-      style={styles.keyboardAvoiding}
-      behavior={Platform.OS === "ios" ? "padding" : "height"}
-      keyboardVerticalOffset={headerHeight}
+    <AuthScreenShell
+      eyebrow="Register"
+      title="Getting Started"
+      subtitle={"Seems you are new here.\nLet\u2019s set up your profile."}
+      showTopBar={false}
+      topAligned
+      backgroundColor={colors.surface}
+      scrollViewRef={scrollViewRef}
+      heroStyle={styles.heroBlock}
+      titleStyle={styles.heroTitle}
+      subtitleStyle={styles.heroSubtitle}
+      footer={
+        <Text style={styles.footerText}>
+          Already have an account?{" "}
+          <Link href="/login" style={styles.footerLink}>
+            Login
+          </Link>
+        </Text>
+      }
     >
-      <ScrollView
-        contentContainerStyle={[
-          styles.scroll,
-          isKeyboardVisible && styles.scrollKeyboardOpen,
-        ]}
-        keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
-        keyboardShouldPersistTaps="handled"
-      >
-        <View style={styles.mainContent}>
-          <View style={styles.hero}>
-            <Text style={styles.title}>Create your account</Text>
-          </View>
+      <View style={styles.formStack}>
+        <View style={styles.nameRow}>
+          <AuthSoftInput
+            label="First Name"
+            value={firstName}
+            onChangeText={(value) => {
+              setFirstName(stripWhitespace(value));
+              clearError("firstName");
+            }}
+            autoCapitalize="words"
+            autoComplete="given-name"
+            textContentType="givenName"
+            tone={firstNameError ? "error" : "default"}
+            errorMessage={firstNameError}
+            containerStyle={styles.nameField}
+          />
 
-          <View style={styles.formLayout}>
-            <View style={styles.formIntro}>
-              <Text style={styles.formTitle}>Basic details</Text>
-              <Text style={styles.formSubtitle}>
-                You can update profile details later from settings.
-              </Text>
-            </View>
+          <AuthSoftInput
+            label="Last Name"
+            value={lastName}
+            onChangeText={(value) => {
+              setLastName(stripWhitespace(value));
+              clearError("lastName");
+            }}
+            autoCapitalize="words"
+            autoComplete="family-name"
+            textContentType="familyName"
+            tone={lastNameError ? "error" : "default"}
+            errorMessage={lastNameError}
+            containerStyle={styles.nameField}
+          />
+        </View>
 
-            <View style={styles.field}>
-              <Text style={styles.label}>Your name</Text>
-              <View style={styles.nameRow}>
-                <TextInput
-                  value={firstName}
-                  onChangeText={(value) => {
-                    setFirstName(value);
-                    clearError();
-                  }}
-                  onFocus={() => setFocusedField("firstName")}
-                  onBlur={() => setFocusedField(null)}
-                  placeholder="First name"
-                  placeholderTextColor={colors.mutedText}
-                  autoCapitalize="words"
-                  autoComplete="name-given"
-                  returnKeyType="next"
-                  style={[
-                    styles.input,
-                    styles.nameInput,
-                    focusedField === "firstName" && styles.inputFocused,
-                  ]}
-                />
-
-                <TextInput
-                  value={lastName}
-                  onChangeText={(value) => {
-                    setLastName(value);
-                    clearError();
-                  }}
-                  onFocus={() => setFocusedField("lastName")}
-                  onBlur={() => setFocusedField(null)}
-                  placeholder="Last name"
-                  placeholderTextColor={colors.mutedText}
-                  autoCapitalize="words"
-                  autoComplete="name-family"
-                  returnKeyType="next"
-                  style={[
-                    styles.input,
-                    styles.nameInput,
-                    focusedField === "lastName" && styles.inputFocused,
-                  ]}
-                />
-              </View>
-            </View>
-
-            <View style={styles.field}>
-              <Text style={styles.label}>Email Address</Text>
-              <TextInput
-                value={email}
-                onChangeText={(value) => {
-                  setEmail(value);
-                  clearError();
+        <AuthSoftInput
+          label="Email Address"
+          value={email}
+          onChangeText={(value) => {
+            setEmail(stripWhitespace(value));
+            clearError("email");
+          }}
+          keyboardType="email-address"
+          autoCapitalize="none"
+          autoCorrect={false}
+          autoComplete="email"
+          tone={emailError ? "error" : "default"}
+          errorMessage={emailError}
+          trailingAccessory={
+            email ? (
+              <Pressable
+                style={({ pressed }) => [
+                  styles.inputAccessoryButton,
+                  pressed ? styles.pressed : undefined,
+                ]}
+                onPress={() => {
+                  setEmail("");
+                  clearError("email");
                 }}
-                onFocus={() => setFocusedField("email")}
-                onBlur={() => setFocusedField(null)}
-                placeholder="you@example.com"
-                placeholderTextColor={colors.mutedText}
-                keyboardType="email-address"
-                autoCapitalize="none"
-                autoCorrect={false}
-                autoComplete="email"
-                returnKeyType="next"
-                style={[styles.input, focusedField === "email" && styles.inputFocused]}
-              />
-            </View>
-
-            <View style={styles.field}>
-              <Text style={styles.label}>Password</Text>
-              <View
-                style={[
-                  styles.inputWithAction,
-                  focusedField === "password" && styles.inputFocused,
-                ]}
+                hitSlop={8}
+                accessibilityRole="button"
+                accessibilityLabel="Clear email address"
               >
-                <TextInput
-                  value={password}
-                  onChangeText={(value) => {
-                    setPassword(value);
-                    clearError();
-                  }}
-                  onFocus={() => setFocusedField("password")}
-                  onBlur={() => setFocusedField(null)}
-                  placeholder="Create a strong password"
-                  placeholderTextColor={colors.mutedText}
-                  secureTextEntry={!isPasswordVisible}
-                  autoCapitalize="none"
-                  autoComplete="new-password"
-                  returnKeyType="next"
-                  style={styles.inputWithActionText}
-                />
-                <Pressable
-                  style={styles.toggleButton}
-                  onPress={() => setIsPasswordVisible((current) => !current)}
-                  hitSlop={8}
-                >
-                  <Text style={styles.toggleText}>{isPasswordVisible ? "Hide" : "Show"}</Text>
-                </Pressable>
-              </View>
-              <Text
-                style={[
-                  styles.helperText,
-                  isPasswordTooShort && styles.helperTextError,
-                ]}
-              >
-                {isPasswordTooShort
-                  ? "Use at least 6 characters."
-                  : "Use at least 6 characters for your password."}
-              </Text>
-            </View>
+                <CancelInputIcon color={emailIconColor} />
+              </Pressable>
+            ) : null
+          }
+        />
 
-            <View style={styles.field}>
-              <Text style={styles.label}>Confirm Password</Text>
-              <View
-                style={[
-                  styles.inputWithAction,
-                  focusedField === "confirmPassword" && styles.inputFocused,
-                ]}
-              >
-                <TextInput
-                  value={confirmPassword}
-                  onChangeText={(value) => {
-                    setConfirmPassword(value);
-                    clearError();
-                  }}
-                  onFocus={() => setFocusedField("confirmPassword")}
-                  onBlur={() => setFocusedField(null)}
-                  placeholder="Re-enter your password"
-                  placeholderTextColor={colors.mutedText}
-                  secureTextEntry={!isConfirmPasswordVisible}
-                  autoCapitalize="none"
-                  autoComplete="new-password"
-                  returnKeyType="done"
-                  style={styles.inputWithActionText}
-                  onSubmitEditing={() => {
-                    if (!isSignupDisabled) {
-                      void handleSignup();
-                    }
-                  }}
-                />
-                <Pressable
-                  style={styles.toggleButton}
-                  onPress={() => setIsConfirmPasswordVisible((current) => !current)}
-                  hitSlop={8}
-                >
-                  <Text style={styles.toggleText}>
-                    {isConfirmPasswordVisible ? "Hide" : "Show"}
-                  </Text>
-                </Pressable>
-              </View>
-              {hasPasswordMismatch ? (
-                <Text style={styles.helperTextError}>Passwords should match.</Text>
-              ) : null}
-            </View>
+        <AuthSoftInput
+          label="Username"
+          value={username}
+          onChangeText={(value) => {
+            setUsername(stripWhitespace(value).toLowerCase());
+            clearError("username");
+          }}
+          autoCapitalize="none"
+          autoCorrect={false}
+          tone={usernameError ? "error" : "default"}
+          errorMessage={usernameError}
+          supportingText={usernameSupportingText}
+          supportingTone={usernameSupportingTone}
+        />
 
-            {error ? (
-              <View style={styles.errorBanner}>
-                <Text style={styles.error}>{error}</Text>
-              </View>
-            ) : null}
-
+        <AuthSoftInput
+          label="Password"
+          value={password}
+          onChangeText={(value) => {
+            setPassword(stripWhitespace(value));
+            clearError(["password", "confirmPassword"]);
+          }}
+          secureTextEntry={!isPasswordVisible}
+          autoCapitalize="none"
+          autoComplete="new-password"
+          tone={passwordError ? "error" : "default"}
+          errorMessage={passwordError}
+          onFocus={revealPasswordFields}
+          trailingAccessory={
             <Pressable
               style={({ pressed }) => [
-                styles.primaryButton,
-                isSignupDisabled && styles.buttonDisabled,
-                pressed && !isSignupDisabled && styles.buttonPressed,
+                styles.inputAccessoryButton,
+                pressed ? styles.pressed : undefined,
               ]}
-              onPress={handleSignup}
-              disabled={isSignupDisabled}
+              onPress={() => setIsPasswordVisible((current) => !current)}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel={isPasswordVisible ? "Hide password" : "Show password"}
             >
-              {isSubmitting ? (
-                <ActivityIndicator size="small" color={colors.primaryText} />
+              {isPasswordVisible ? (
+                <ViewOffIcon color={passwordIconColor} />
               ) : (
-                <Text style={styles.primaryButtonText}>Create account</Text>
+                <ViewTwotoneRoundedIcon color={passwordIconColor} />
               )}
             </Pressable>
+          }
+        />
 
-            <Text style={styles.formFootnote}>
-              Signing up takes less than a minute.
+        <AuthSoftInput
+          label="Confirm Password"
+          value={confirmPassword}
+          onChangeText={(value) => {
+            setConfirmPassword(stripWhitespace(value));
+            clearError("confirmPassword");
+          }}
+          secureTextEntry={!isConfirmPasswordVisible}
+          autoCapitalize="none"
+          autoComplete="new-password"
+          tone={confirmPasswordError ? "error" : confirmPasswordTone}
+          errorMessage={confirmPasswordError}
+          onFocus={revealPasswordFields}
+          trailingAccessory={
+            <Pressable
+              style={({ pressed }) => [
+                styles.inputAccessoryButton,
+                pressed ? styles.pressed : undefined,
+              ]}
+              onPress={() => setIsConfirmPasswordVisible((current) => !current)}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel={
+                isConfirmPasswordVisible ? "Hide confirm password" : "Show confirm password"
+              }
+            >
+              {isConfirmPasswordVisible ? (
+                <ViewOffIcon color={confirmPasswordIconColor} />
+              ) : (
+                <ViewTwotoneRoundedIcon color={confirmPasswordIconColor} />
+              )}
+            </Pressable>
+          }
+          onSubmitEditing={() => {
+            if (!isSignupDisabled) {
+              void handleSignup();
+            }
+          }}
+        />
+
+        {fieldErrors.form ? <Text style={styles.inlineError}>{fieldErrors.form}</Text> : null}
+
+        <View style={[styles.termsBlock, fieldErrors.terms ? styles.termsRowError : undefined]}>
+          <View style={styles.termsRow}>
+            <Pressable
+              style={({ pressed }) => [pressed ? styles.pressed : undefined]}
+              onPress={() => {
+                setAcceptedTerms((current) => !current);
+                clearError("terms");
+              }}
+              hitSlop={8}
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked: acceptedTerms }}
+            >
+              <View
+                style={[
+                  styles.checkbox,
+                  acceptedTerms ? styles.checkboxChecked : undefined,
+                  fieldErrors.terms ? styles.checkboxError : undefined,
+                ]}
+              >
+                {acceptedTerms ? <CheckIcon color={colors.brandPrimaryText} /> : null}
+              </View>
+            </Pressable>
+            <Text style={styles.termsText}>
+              By creating an account, you agree to our{" "}
+              <Text
+                style={styles.termsHighlight}
+                accessibilityRole="link"
+                suppressHighlighting
+                onPress={() => {
+                  void openTermsAndConditions();
+                }}
+              >
+                Terms and Conditions
+              </Text>
+              .
             </Text>
           </View>
-
-          <Text style={styles.switchText}>
-            Already have an account?{" "}
-            <Link href="/login" style={styles.switchLink}>
-              Login
-            </Link>
-          </Text>
         </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+        {fieldErrors.terms ? <Text style={styles.inlineError}>{fieldErrors.terms}</Text> : null}
+
+        <Pressable
+          style={({ pressed }) => [
+            styles.primaryButton,
+            isSignupDisabled ? styles.primaryButtonDisabled : undefined,
+            pressed && !isSignupDisabled ? styles.pressed : undefined,
+          ]}
+          onPress={handleSignup}
+          disabled={isSignupDisabled}
+        >
+          {isSubmitting ? (
+            <ActivityIndicator size="small" color={colors.brandPrimaryText} />
+          ) : (
+            <Text style={styles.primaryButtonText}>Continue</Text>
+          )}
+        </Pressable>
+      </View>
+    </AuthScreenShell>
   );
 }
 
-const createStyles = (colors: ThemeColors) => StyleSheet.create({
-  keyboardAvoiding: {
-    flex: 1,
-  },
-  scroll: {
-    flexGrow: 1,
-    justifyContent: "center",
-    paddingHorizontal: SPACING.lg,
-    paddingVertical: SPACING.xl,
-    backgroundColor: colors.background,
-  },
-  scrollKeyboardOpen: {
-    justifyContent: "flex-start",
-    paddingTop: SPACING.lg,
-    paddingBottom: SPACING.xxl + SPACING.md,
-  },
-  mainContent: {
-    width: "100%",
-    maxWidth: 410,
-    alignSelf: "center",
-    gap: SPACING.lg,
-  },
-  hero: {
-    alignItems: "center",
-    gap: SPACING.xs,
-  },
-  title: {
-    fontSize: FONT_SIZE.title,
-    fontWeight: "700",
-    color: colors.text,
-    textAlign: "center",
-  },
-  formLayout: {
-    gap: SPACING.md,
-  },
-  formIntro: {
-    gap: SPACING.xs,
-    paddingBottom: SPACING.sm,
-  },
-  formTitle: {
-    color: colors.text,
-    fontSize: FONT_SIZE.button,
-    fontWeight: "700",
-  },
-  formSubtitle: {
-    color: colors.mutedText,
-    fontSize: 13,
-    lineHeight: 18,
-  },
-  field: {
-    gap: SPACING.xs,
-  },
-  label: {
-    color: colors.text,
-    fontSize: 13,
-    fontWeight: "600",
-  },
-  nameRow: {
-    flexDirection: "row",
-    gap: SPACING.sm,
-  },
-  input: {
-    minHeight: CONTROL_SIZE.inputHeight - 8,
-    borderRadius: RADIUS.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surfaceMuted,
-    paddingHorizontal: SPACING.md,
-    color: colors.text,
-    fontSize: FONT_SIZE.button,
-  },
-  nameInput: {
-    flex: 1,
-  },
-  inputWithAction: {
-    minHeight: CONTROL_SIZE.inputHeight - 8,
-    borderRadius: RADIUS.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surfaceMuted,
-    paddingLeft: SPACING.md,
-    paddingRight: SPACING.xs,
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  inputWithActionText: {
-    flex: 1,
-    color: colors.text,
-    fontSize: FONT_SIZE.button,
-  },
-  inputFocused: {
-    borderColor: colors.primary,
-  },
-  toggleButton: {
-    minWidth: 54,
-    height: 32,
-    borderRadius: RADIUS.pill,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: SPACING.sm,
-  },
-  toggleText: {
-    color: colors.primary,
-    fontSize: 13,
-    fontWeight: "700",
-  },
-  helperText: {
-    color: colors.mutedText,
-    fontSize: 12,
-    lineHeight: 17,
-  },
-  helperTextError: {
-    color: colors.danger,
-    fontSize: 12,
-    lineHeight: 17,
-  },
-  errorBanner: {
-    borderRadius: RADIUS.md,
-    borderWidth: 1,
-    borderColor: colors.dangerBorder,
-    backgroundColor: colors.dangerSoft,
-    paddingHorizontal: SPACING.md - 2,
-    paddingVertical: SPACING.sm,
-  },
-  error: {
-    color: colors.danger,
-    fontSize: 13,
-    lineHeight: 18,
-    textAlign: "center",
-  },
-  primaryButton: {
-    minHeight: CONTROL_SIZE.inputHeight - 6,
-    borderRadius: RADIUS.pill,
-    backgroundColor: colors.primary,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  primaryButtonText: {
-    color: colors.primaryText,
-    fontWeight: "700",
-    fontSize: FONT_SIZE.button,
-  },
-  formFootnote: {
-    color: colors.mutedText,
-    fontSize: 12,
-    textAlign: "center",
-  },
-  switchText: {
-    textAlign: "center",
-    color: colors.mutedText,
-    fontSize: FONT_SIZE.body,
-  },
-  switchLink: {
-    color: colors.text,
-    fontWeight: "700",
-  },
-  buttonPressed: {
-    opacity: 0.9,
-  },
-  buttonDisabled: {
-    opacity: 0.6,
-  },
-});
+const createStyles = (colors: ThemeColors) =>
+  StyleSheet.create({
+    heroBlock: {
+      width: "100%",
+      gap: SPACING.sm + 2,
+      paddingTop: SPACING.xs,
+      paddingBottom: SPACING.xs,
+    },
+    heroTitle: {
+      color: colors.text,
+      fontSize: 36,
+      lineHeight: 42,
+      fontWeight: "800",
+      letterSpacing: -0.6,
+      maxWidth: 280,
+    },
+    heroSubtitle: {
+      color: colors.mutedText,
+      fontSize: 17,
+      lineHeight: 28,
+      fontWeight: "600",
+      maxWidth: 340,
+    },
+    formStack: {
+      gap: SPACING.lg,
+    },
+    nameRow: {
+      flexDirection: "row",
+      alignItems: "flex-start",
+      gap: SPACING.md,
+    },
+    nameField: {
+      flex: 1,
+    },
+    inlineError: {
+      color: colors.danger,
+      fontSize: 12,
+      lineHeight: 18,
+    },
+    termsBlock: {
+      gap: SPACING.xs,
+    },
+    termsRow: {
+      flexDirection: "row",
+      alignItems: "flex-start",
+      gap: SPACING.sm,
+    },
+    termsRowError: {
+      paddingBottom: 2,
+    },
+    checkbox: {
+      width: 22,
+      height: 22,
+      borderRadius: 7,
+      backgroundColor: colors.surface,
+      borderWidth: 1.5,
+      borderColor: colors.brandAccentBorder,
+      alignItems: "center",
+      justifyContent: "center",
+      marginTop: 2,
+    },
+    checkboxError: {
+      borderColor: colors.danger,
+    },
+    checkboxChecked: {
+      backgroundColor: colors.brandAccent,
+      borderColor: colors.brandAccent,
+    },
+    termsText: {
+      flex: 1,
+      color: colors.subtitleText,
+      fontSize: 13,
+      lineHeight: 20,
+    },
+    termsHighlight: {
+      color: colors.brandAccent,
+      fontWeight: "700",
+    },
+    primaryButton: {
+      minHeight: CONTROL_SIZE.inputHeight,
+      borderRadius: 14,
+      backgroundColor: colors.brandPrimary,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    inputAccessoryButton: {
+      width: 40,
+      height: 40,
+      borderRadius: 12,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    primaryButtonDisabled: {
+      opacity: 0.55,
+    },
+    primaryButtonText: {
+      color: colors.brandPrimaryText,
+      fontSize: FONT_SIZE.button,
+      fontWeight: "700",
+    },
+    footerText: {
+      textAlign: "center",
+      color: colors.subtitleText,
+      fontSize: 14,
+      lineHeight: 20,
+    },
+    footerLink: {
+      color: colors.brandPrimary,
+      fontWeight: "700",
+    },
+    pressed: {
+      opacity: 0.82,
+    },
+  });

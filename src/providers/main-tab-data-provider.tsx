@@ -3,6 +3,7 @@ import {
   onSnapshot,
   orderBy,
   query,
+  where,
   type DocumentData,
 } from "firebase/firestore";
 import {
@@ -16,6 +17,7 @@ import {
 
 import {
   CATEGORIES_COLLECTION,
+  isPostTrashed,
   mapCategoryRecord,
   mapPostRecord,
   POSTS_COLLECTION,
@@ -57,7 +59,10 @@ export function MainTabDataProvider({ children }: { children: ReactNode }) {
       collection(firestore, CATEGORIES_COLLECTION),
       orderBy("name", "asc"),
     );
-    const postsQuery = query(collection(firestore, POSTS_COLLECTION));
+    const postsQuery = query(
+      collection(firestore, POSTS_COLLECTION),
+      where("status", "==", "published"),
+    );
 
     const unsubscribeCategories = onSnapshot(
       categoriesQuery,
@@ -88,7 +93,7 @@ export function MainTabDataProvider({ children }: { children: ReactNode }) {
         const nextPosts = sortPostsByRecency(
           snapshot.docs
             .map((item) => mapPostRecord(item.id, item.data() as DocumentData))
-            .filter((post) => post.status === "published"),
+            .filter((post) => post.status === "published" && !isPostTrashed(post)),
         );
 
         setPublishedPosts(nextPosts);

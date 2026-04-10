@@ -2,8 +2,11 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { getApp, getApps, initializeApp, type FirebaseApp } from "firebase/app";
 import * as FirebaseAuth from "firebase/auth";
 import {
+  browserLocalPersistence,
+  browserSessionPersistence,
   getAuth,
   initializeAuth,
+  inMemoryPersistence,
   type Auth,
   type Persistence,
 } from "firebase/auth";
@@ -37,6 +40,18 @@ const getNativePersistence = (): Persistence | undefined => {
   }
 
   return undefined;
+};
+
+export const getAuthPersistenceForRememberMe = (remember: boolean): Persistence => {
+  if (Platform.OS === "web") {
+    return remember ? browserLocalPersistence : browserSessionPersistence;
+  }
+
+  if (!remember) {
+    return inMemoryPersistence;
+  }
+
+  return getNativePersistence() ?? inMemoryPersistence;
 };
 
 const createAuthInstance = (): Auth => {

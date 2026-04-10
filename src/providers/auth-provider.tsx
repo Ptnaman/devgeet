@@ -6,10 +6,15 @@ import {
   type ReactNode,
 } from "react";
 import {
+  EmailAuthProvider,
   createUserWithEmailAndPassword,
+  deleteUser,
   GoogleAuthProvider,
+  OAuthProvider,
   onAuthStateChanged,
+  reauthenticateWithCredential,
   sendPasswordResetEmail,
+  setPersistence,
   signInWithCredential,
   signInWithEmailAndPassword,
   signOut,
@@ -18,17 +23,30 @@ import {
 } from "firebase/auth";
 import { Platform } from "react-native";
 import {
+  collection,
   doc,
   getDoc,
+  getDocs,
   onSnapshot,
+  query,
   runTransaction,
   serverTimestamp,
-  setDoc,
+  where,
+  writeBatch,
+  type DocumentReference,
   type DocumentData,
 } from "firebase/firestore";
 
 import {
-  canManagePosts as canManagePostsForRole,
+  EMAIL_VALIDATION_MESSAGE,
+  PASSWORD_VALIDATION_MESSAGE,
+  normalizeEmailAddress as normalizeEmail,
+  normalizeUsernameValue as normalizeUsername,
+  sanitizeUsername,
+  validateUsername,
+} from "@/lib/auth-validation";
+import {
+  canModeratePosts as canModeratePostsForRole,
   canManageUsers as canManageUsersForRole,
   getEffectiveUserRole,
   isOwnerEmail,
@@ -36,11 +54,17 @@ import {
   type AccountStatus,
   type UserRole,
 } from "@/lib/access";
-import { auth, firestore } from "@/lib/firebase";
+import { auth, firestore, getAuthPersistenceForRememberMe } from "@/lib/firebase";
 import { loadGoogleSignInModule } from "@/lib/google-signin-loader";
 
 const USERNAMES_COLLECTION = "usernames";
 const USERS_COLLECTION = "users";
+const FAVORITES_COLLECTION = "favorites";
+const PUSH_TOKENS_COLLECTION = "pushTokens";
+const USER_NOTIFICATIONS_SUBCOLLECTION = "notifications";
+const MAX_BATCH_DELETE_COUNT = 400;
+const RECENT_LOGIN_WINDOW_MS = 5 * 60 * 1000;
+type AuthProviderName = "password" | "google" | "apple";
 type UserProfile = {
   uid: string;
   username: string;
@@ -53,6 +77,12 @@ type UserProfile = {
   provider: string;
   displayName: string;
   photoURL: string;
+  bio: string;
+  location: string;
+  website: string;
+  instagramUrl: string;
+  youtubeUrl: string;
+  facebookUrl: string;
 };
 
 type AuthContextType = {
@@ -62,33 +92,60 @@ type AuthContextType = {
   isOwner: boolean;
   isAdmin: boolean;
   canManagePosts: boolean;
+  canModeratePosts: boolean;
   canManageUsers: boolean;
   isBootstrapping: boolean;
+  setRememberSessionPersistence: (remember: boolean) => Promise<void>;
+  isUsernameAvailable: (username: string, excludeUid?: string) => Promise<boolean>;
   loginWithEmailOrUsername: (identifier: string, password: string) => Promise<void>;
   requestPasswordReset: (identifier: string) => Promise<void>;
   signupWithEmail: (payload: {
     firstName: string;
     lastName: string;
     email: string;
+    username?: string;
     password: string;
+    location?: string;
   }) => Promise<void>;
   updateCurrentUserProfile: (payload: {
     firstName: string;
     lastName: string;
     username: string;
+    photoURL: string;
+    bio: string;
+    location: string;
+    website: string;
+    instagramUrl: string;
+    youtubeUrl: string;
+    facebookUrl: string;
   }) => Promise<void>;
   loginWithGoogleIdToken: (idToken: string) => Promise<void>;
+  loginWithAppleCredential: (payload: {
+    idToken: string;
+    rawNonce: string;
+    email?: string | null;
+    firstName?: string | null;
+    lastName?: string | null;
+  }) => Promise<void>;
+  deleteCurrentUserAccount: (currentPassword?: string) => Promise<void>;
   logout: () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const normalizeEmail = (value: string) => value.trim().toLowerCase();
-const normalizeUsername = (value: string) => value.trim().toLowerCase();
 const normalizeName = (value: string) => value.trim();
+const normalizeOptionalValue = (value: string | null | undefined) => value?.trim() ?? "";
 const normalizePhotoUrl = (value: string | null | undefined) => value?.trim() ?? "";
-const sanitizeUsername = (value: string) =>
-  value.trim().toLowerCase().replace(/[^a-z0-9._-]/g, "").slice(0, 20);
+const pickFirstNonEmptyValue = (...values: (string | null | undefined)[]) => {
+  for (const value of values) {
+    const normalizedValue = value?.trim() ?? "";
+    if (normalizedValue) {
+      return normalizedValue;
+    }
+  }
+
+  return "";
+};
 const readStringValue = (value: unknown) => (typeof value === "string" ? value.trim() : "");
 
 const readUsernameEmail = async (username: string) => {
@@ -109,14 +166,25 @@ const readUsernameEmail = async (username: string) => {
   return normalizeEmail(email);
 };
 
-const validateUsername = (username: string) => {
-  const candidate = username.trim();
-  const isValid = /^[a-zA-Z0-9._-]{3,20}$/.test(candidate);
-  if (!isValid) {
-    throw new Error(
-      "Username must be 3-20 chars and can use letters, numbers, dot, underscore, hyphen."
-    );
+const isUsernameAvailableRecord = async (username: string, excludeUid?: string) => {
+  const normalizedUsername = normalizeUsername(username);
+
+  if (!normalizedUsername) {
+    return false;
   }
+
+  const usernameSnapshot = await getDoc(doc(firestore, USERNAMES_COLLECTION, normalizedUsername));
+
+  if (!usernameSnapshot.exists()) {
+    return true;
+  }
+
+  if (!excludeUid) {
+    return false;
+  }
+
+  const existingUid = (usernameSnapshot.data() as DocumentData)?.uid;
+  return existingUid === excludeUid;
 };
 
 const validateName = (label: "First name" | "Last name", value: string) => {
@@ -139,7 +207,7 @@ const getEmailSignupUsername = (email: string, uid: string) => {
   return `${head}_${suffix}`;
 };
 
-const ensureUniqueGoogleUsername = (uid: string, email: string | null) => {
+const ensureUniqueProviderUsername = (uid: string, email: string | null) => {
   const base = getFallbackUsername(email, uid);
   const suffix = uid.slice(0, 4).toLowerCase();
   const head = base.slice(0, Math.max(0, 20 - suffix.length - 1));
@@ -160,9 +228,11 @@ const getNameParts = (displayName: string | null) => {
 };
 
 const resolveProvider = (currentUser: User | null | undefined) =>
-  currentUser?.providerData.some((item) => item.providerId === "google.com")
-    ? "google"
-    : "password";
+  currentUser?.providerData.some((item) => item.providerId === "apple.com")
+    ? "apple"
+    : currentUser?.providerData.some((item) => item.providerId === "google.com")
+      ? "google"
+      : "password";
 
 const buildUserProfileRecord = (payload: {
   uid: string;
@@ -175,6 +245,12 @@ const buildUserProfileRecord = (payload: {
   provider: string;
   displayName?: string | null;
   photoURL?: string | null;
+  bio?: string | null;
+  location?: string | null;
+  website?: string | null;
+  instagramUrl?: string | null;
+  youtubeUrl?: string | null;
+  facebookUrl?: string | null;
 }): UserProfile => {
   const normalizedUsername = payload.username.trim();
   const usernameLower = normalizeUsername(normalizedUsername);
@@ -200,6 +276,12 @@ const buildUserProfileRecord = (payload: {
     provider: normalizedProvider,
     displayName: normalizedDisplayName,
     photoURL: normalizePhotoUrl(payload.photoURL),
+    bio: normalizeOptionalValue(payload.bio),
+    location: normalizeOptionalValue(payload.location),
+    website: normalizeOptionalValue(payload.website),
+    instagramUrl: normalizeOptionalValue(payload.instagramUrl),
+    youtubeUrl: normalizeOptionalValue(payload.youtubeUrl),
+    facebookUrl: normalizeOptionalValue(payload.facebookUrl),
   };
 };
 
@@ -221,6 +303,12 @@ const createFallbackUserProfile = (currentUser: User): UserProfile => {
     provider: resolveProvider(currentUser),
     displayName: currentUser.displayName,
     photoURL: currentUser.photoURL,
+    bio: "",
+    location: "",
+    website: "",
+    instagramUrl: "",
+    youtubeUrl: "",
+    facebookUrl: "",
   });
 };
 
@@ -242,6 +330,12 @@ const mapUserProfile = (uid: string, data: DocumentData): UserProfile => {
     provider: readStringValue(data?.provider) || "password",
     displayName: readStringValue(data?.displayName),
     photoURL: readStringValue(data?.photoURL),
+    bio: readStringValue(data?.bio),
+    location: readStringValue(data?.location),
+    website: readStringValue(data?.website),
+    instagramUrl: readStringValue(data?.instagramUrl),
+    youtubeUrl: readStringValue(data?.youtubeUrl),
+    facebookUrl: readStringValue(data?.facebookUrl),
   });
 };
 
@@ -275,6 +369,18 @@ const mapEmailSignupError = (error: unknown) => {
 
   if (code === "auth/email-already-in-use") {
     return new Error("This email is already registered. Please login instead.");
+  }
+
+  if (code === "auth/invalid-email") {
+    return new Error(EMAIL_VALIDATION_MESSAGE);
+  }
+
+  if (code === "auth/weak-password") {
+    return new Error(PASSWORD_VALIDATION_MESSAGE);
+  }
+
+  if (code === "auth/operation-not-allowed") {
+    return new Error("Email signup is not available right now.");
   }
 
   if (error instanceof Error) {
@@ -312,6 +418,93 @@ const mapPasswordResetError = (error: unknown) => {
   return new Error("Unable to send reset email. Please try again.");
 };
 
+const mapAccountDeletionError = (error: unknown) => {
+  const code =
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    typeof (error as { code?: unknown }).code === "string"
+      ? (error as { code: string }).code
+      : "";
+
+  if (
+    code === "auth/wrong-password" ||
+    code === "auth/invalid-credential" ||
+    code === "auth/invalid-login-credentials"
+  ) {
+    return new Error("Enter your current password to delete your account.");
+  }
+
+  if (code === "auth/requires-recent-login") {
+    return new Error("Login again and then retry deleting your account.");
+  }
+
+  if (code === "auth/network-request-failed") {
+    return new Error("Check your internet connection and try again.");
+  }
+
+  if (error instanceof Error) {
+    return error;
+  }
+
+  return new Error("Unable to delete your account right now.");
+};
+
+const clearGoogleSessionsAsync = async () => {
+  if (Platform.OS === "web") {
+    return;
+  }
+
+  try {
+    const googleSignInModule = loadGoogleSignInModule();
+    if (!googleSignInModule) {
+      return;
+    }
+
+    const signOutOperations = [googleSignInModule.GoogleSignin.signOut()];
+
+    if (googleSignInModule.GoogleOneTapSignIn) {
+      signOutOperations.push(googleSignInModule.GoogleOneTapSignIn.signOut());
+    }
+
+    await Promise.allSettled(signOutOperations);
+  } catch {
+    // Ignore if Google sign-in is not active on this device/session.
+  }
+};
+
+const deleteDocumentRefsInChunks = async (
+  refs: DocumentReference<DocumentData>[],
+) => {
+  if (!refs.length) {
+    return;
+  }
+
+  for (let index = 0; index < refs.length; index += MAX_BATCH_DELETE_COUNT) {
+    const batch = writeBatch(firestore);
+    refs.slice(index, index + MAX_BATCH_DELETE_COUNT).forEach((ref) => {
+      batch.delete(ref);
+    });
+    await batch.commit();
+  }
+};
+
+const hasRecentLogin = (currentUser: User) => {
+  const lastSignInTime = currentUser.metadata.lastSignInTime;
+
+  if (!lastSignInTime) {
+    return false;
+  }
+
+  const parsedLastSignInAt = Date.parse(lastSignInTime);
+
+  if (Number.isNaN(parsedLastSignInAt)) {
+    return false;
+  }
+
+  return Date.now() - parsedLastSignInAt <= RECENT_LOGIN_WINDOW_MS;
+};
+
 const writeUserProfile = async (payload: {
   uid: string;
   username: string;
@@ -320,40 +513,197 @@ const writeUserProfile = async (payload: {
   email: string;
   role: string;
   accountStatus?: string;
-  provider: "password" | "google";
+  provider: AuthProviderName;
   displayName?: string | null;
   photoURL?: string | null;
+  bio?: string | null;
+  location?: string | null;
+  website?: string | null;
+  instagramUrl?: string | null;
+  youtubeUrl?: string | null;
+  facebookUrl?: string | null;
 }) => {
   const profileRecord = buildUserProfileRecord(payload);
   const usernameRef = doc(firestore, USERNAMES_COLLECTION, profileRecord.usernameLower);
-  const usernameSnapshot = await getDoc(usernameRef);
+  const userRef = doc(firestore, USERS_COLLECTION, profileRecord.uid);
 
-  if (usernameSnapshot.exists()) {
-    const existingUid = (usernameSnapshot.data() as DocumentData)?.uid;
-    if (existingUid && existingUid !== profileRecord.uid) {
-      throw new Error("Username is already taken.");
+  await runTransaction(firestore, async (transaction) => {
+    const usernameSnapshot = await transaction.get(usernameRef);
+
+    if (usernameSnapshot.exists()) {
+      const existingUid = (usernameSnapshot.data() as DocumentData)?.uid;
+      if (existingUid && existingUid !== profileRecord.uid) {
+        throw new Error("Username is already taken.");
+      }
     }
+
+    const persistedProfile = {
+      uid: profileRecord.uid,
+      username: profileRecord.username,
+      usernameLower: profileRecord.usernameLower,
+      firstName: profileRecord.firstName,
+      lastName: profileRecord.lastName,
+      email: profileRecord.email,
+      provider: profileRecord.provider,
+      displayName: profileRecord.displayName,
+      photoURL: profileRecord.photoURL || null,
+      bio: profileRecord.bio,
+      location: profileRecord.location,
+      website: profileRecord.website,
+      instagramUrl: profileRecord.instagramUrl,
+      youtubeUrl: profileRecord.youtubeUrl,
+      facebookUrl: profileRecord.facebookUrl,
+      // Keep privileged fields out of client-owned profile sync writes.
+      // Effective role is already derived from email when needed, and
+      // account status should only be changed by privileged flows.
+      updatedAt: serverTimestamp(),
+      lastLoginAt: serverTimestamp(),
+    };
+    const usernameMapping = {
+      uid: profileRecord.uid,
+      username: profileRecord.username,
+      usernameLower: profileRecord.usernameLower,
+      email: profileRecord.email,
+      updatedAt: serverTimestamp(),
+    };
+
+    if (!usernameSnapshot.exists()) {
+      transaction.set(usernameRef, usernameMapping);
+    }
+    transaction.set(userRef, persistedProfile, { merge: true });
+  });
+};
+
+const persistFederatedUserProfile = async (payload: {
+  authUser: User;
+  provider: Exclude<AuthProviderName, "password">;
+  email?: string | null;
+  firstName?: string | null;
+  lastName?: string | null;
+  displayName?: string | null;
+  photoURL?: string | null;
+}) => {
+  const { authUser, provider } = payload;
+  const existingUserSnapshot = await getDoc(doc(firestore, USERS_COLLECTION, authUser.uid));
+  const existingProfile = existingUserSnapshot.exists()
+    ? (existingUserSnapshot.data() as DocumentData)
+    : null;
+  const existingUsername = readStringValue(existingProfile?.username);
+  const existingDisplayName = readStringValue(existingProfile?.displayName);
+  const existingFirstName = readStringValue(existingProfile?.firstName);
+  const existingLastName = readStringValue(existingProfile?.lastName);
+  const existingEmail = readStringValue(existingProfile?.email);
+  const existingPhotoURL = readStringValue(existingProfile?.photoURL);
+  const existingRole = readStringValue(existingProfile?.role);
+  const existingAccountStatus = normalizeAccountStatus(
+    readStringValue(existingProfile?.accountStatus)
+  );
+
+  if (existingAccountStatus === "deleted") {
+    await signOut(auth);
+    throw new Error("This account has been removed by admin.");
   }
 
-  const persistedProfile = {
-    ...profileRecord,
-    photoURL: profileRecord.photoURL || null,
-    accountStatus: profileRecord.accountStatus,
-    updatedAt: serverTimestamp(),
-    lastLoginAt: serverTimestamp(),
-  };
-
-  await setDoc(
-    usernameRef,
-    persistedProfile,
-    { merge: true }
+  const effectiveEmail = normalizeEmail(
+    pickFirstNonEmptyValue(payload.email, authUser.email, existingEmail)
   );
 
-  await setDoc(
-    doc(firestore, USERS_COLLECTION, profileRecord.uid),
-    persistedProfile,
-    { merge: true }
+  if (!effectiveEmail) {
+    throw new Error(
+      provider === "apple"
+        ? "Apple account did not return an email."
+        : "Google account did not return an email."
+    );
+  }
+
+  const baseDisplayName = pickFirstNonEmptyValue(
+    payload.displayName,
+    authUser.displayName,
+    existingDisplayName,
+    `${payload.firstName ?? ""} ${payload.lastName ?? ""}`.trim()
   );
+  const generatedUsername = baseDisplayName
+    ? sanitizeUsername(baseDisplayName)
+    : getFallbackUsername(effectiveEmail || null, authUser.uid);
+  const candidate =
+    existingUsername ||
+    generatedUsername ||
+    getFallbackUsername(effectiveEmail || null, authUser.uid);
+  const { firstName, lastName } = getNameParts(baseDisplayName);
+  const effectiveRole = getEffectiveUserRole(existingRole, effectiveEmail);
+  const effectiveFirstName = normalizeName(
+    pickFirstNonEmptyValue(payload.firstName, firstName, existingFirstName, candidate)
+  );
+  const effectiveLastName = normalizeName(
+    pickFirstNonEmptyValue(payload.lastName, lastName, existingLastName)
+  );
+  const effectiveDisplayName =
+    normalizeName(
+      pickFirstNonEmptyValue(
+        payload.displayName,
+        baseDisplayName,
+        `${effectiveFirstName} ${effectiveLastName}`.trim(),
+        candidate
+      )
+    ) || candidate;
+  const effectivePhotoURL =
+    normalizePhotoUrl(
+      pickFirstNonEmptyValue(payload.photoURL, authUser.photoURL, existingPhotoURL)
+    ) || null;
+
+  try {
+    await writeUserProfile({
+      uid: authUser.uid,
+      username: candidate,
+      firstName: effectiveFirstName,
+      lastName: effectiveLastName,
+      email: effectiveEmail,
+      role: effectiveRole,
+      accountStatus: "active",
+      provider,
+      displayName: effectiveDisplayName,
+      photoURL: effectivePhotoURL,
+      bio: readStringValue(existingProfile?.bio),
+      location: readStringValue(existingProfile?.location),
+      website: readStringValue(existingProfile?.website),
+      instagramUrl: readStringValue(existingProfile?.instagramUrl),
+      youtubeUrl: readStringValue(existingProfile?.youtubeUrl),
+      facebookUrl: readStringValue(existingProfile?.facebookUrl),
+    });
+  } catch (error) {
+    if (existingUsername || !isUsernameTakenError(error)) {
+      throw error;
+    }
+
+    await writeUserProfile({
+      uid: authUser.uid,
+      username: ensureUniqueProviderUsername(authUser.uid, effectiveEmail),
+      firstName: effectiveFirstName,
+      lastName: effectiveLastName,
+      email: effectiveEmail,
+      role: effectiveRole,
+      accountStatus: "active",
+      provider,
+      displayName: effectiveDisplayName,
+      photoURL: effectivePhotoURL,
+      bio: readStringValue(existingProfile?.bio),
+      location: readStringValue(existingProfile?.location),
+      website: readStringValue(existingProfile?.website),
+      instagramUrl: readStringValue(existingProfile?.instagramUrl),
+      youtubeUrl: readStringValue(existingProfile?.youtubeUrl),
+      facebookUrl: readStringValue(existingProfile?.facebookUrl),
+    });
+  }
+
+  if (
+    authUser.displayName !== effectiveDisplayName ||
+    normalizePhotoUrl(authUser.photoURL) !== normalizePhotoUrl(effectivePhotoURL)
+  ) {
+    await updateProfile(authUser, {
+      displayName: effectiveDisplayName,
+      photoURL: effectivePhotoURL,
+    });
+  }
 };
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -364,7 +714,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const role = getEffectiveUserRole(profile?.role, accountEmail);
   const isOwner = isOwnerEmail(accountEmail);
   const isAdmin = role === "admin";
-  const canManagePosts = canManagePostsForRole(role);
+  const canManagePosts = Boolean(user) && (!profile || profile.accountStatus !== "deleted");
+  const canModeratePosts = canModeratePostsForRole(role);
   const canManageUsers = canManageUsersForRole(role, accountEmail);
 
   useEffect(() => {
@@ -412,6 +763,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     void signOut(auth);
   }, [profile, user]);
 
+  const setRememberSessionPersistence = async (remember: boolean) => {
+    await setPersistence(auth, getAuthPersistenceForRememberMe(remember));
+  };
+
+  const isUsernameAvailable = async (username: string, excludeUid?: string) =>
+    isUsernameAvailableRecord(username, excludeUid);
+
   const loginWithEmailOrUsername = async (identifier: string, password: string) => {
     const normalizedIdentifier = identifier.trim();
     const email = normalizedIdentifier.includes("@")
@@ -450,14 +808,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     firstName: string;
     lastName: string;
     email: string;
+    username?: string;
     password: string;
+    location?: string;
   }) => {
-    const { firstName, lastName, email, password } = payload;
+    const { firstName, lastName, email, username, password, location } = payload;
     validateName("First name", firstName);
     validateName("Last name", lastName);
     const normalizedFirstName = normalizeName(firstName);
     const normalizedLastName = normalizeName(lastName);
     const normalizedEmail = normalizeEmail(email);
+    const normalizedUsername = normalizeUsername(username ?? "");
+    const normalizedLocation = normalizeOptionalValue(location);
+    const requestedUsername = normalizedUsername || "";
+
+    if (requestedUsername) {
+      validateUsername(requestedUsername);
+      if (!(await isUsernameAvailableRecord(requestedUsername))) {
+        throw new Error("Username is already taken.");
+      }
+    }
+
+    let createdUser: User | null = null;
 
     try {
       const credential = await createUserWithEmailAndPassword(
@@ -465,7 +837,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         normalizedEmail,
         password
       );
-      const generatedUsername = getEmailSignupUsername(normalizedEmail, credential.user.uid);
+      createdUser = credential.user;
+      const generatedUsername =
+        requestedUsername || getEmailSignupUsername(normalizedEmail, credential.user.uid);
       validateUsername(generatedUsername);
       const normalizedDisplayName = `${normalizedFirstName} ${normalizedLastName}`.trim();
 
@@ -483,8 +857,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         provider: "password",
         displayName: normalizedDisplayName || generatedUsername,
         photoURL: null,
+        location: normalizedLocation,
       });
     } catch (error) {
+      if (createdUser) {
+        try {
+          await deleteUser(createdUser);
+        } catch {
+          // Keep the original signup error if cleanup fails.
+        }
+      }
       throw mapEmailSignupError(error);
     }
   };
@@ -493,6 +875,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     firstName: string;
     lastName: string;
     username: string;
+    photoURL: string;
+    bio: string;
+    location: string;
+    website: string;
+    instagramUrl: string;
+    youtubeUrl: string;
+    facebookUrl: string;
   }) => {
     const currentUser = auth.currentUser;
 
@@ -521,7 +910,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       accountStatus: existingProfile.accountStatus,
       provider: existingProfile.provider || resolveProvider(currentUser),
       displayName: `${payload.firstName.trim()} ${payload.lastName.trim()}`.trim(),
-      photoURL: currentUser.photoURL ?? existingProfile.photoURL,
+      photoURL: payload.photoURL,
+      bio: payload.bio,
+      location: payload.location,
+      website: payload.website,
+      instagramUrl: payload.instagramUrl,
+      youtubeUrl: payload.youtubeUrl,
+      facebookUrl: payload.facebookUrl,
     });
 
     await runTransaction(firestore, async (transaction) => {
@@ -555,9 +950,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         updatedAt: serverTimestamp(),
         lastLoginAt,
       };
+      const usernameMapping = {
+        uid: nextProfile.uid,
+        username: nextProfile.username,
+        usernameLower: nextProfile.usernameLower,
+        email: nextProfile.email,
+        updatedAt: serverTimestamp(),
+      };
 
       transaction.set(userRef, persistedProfile, { merge: true });
-      transaction.set(nextUsernameRef, persistedProfile, { merge: true });
+      if (!nextUsernameSnapshot.exists() || existingUsernameLower !== nextProfile.usernameLower) {
+        transaction.set(nextUsernameRef, usernameMapping, { merge: true });
+      }
 
       if (existingUsernameLower && existingUsernameLower !== nextProfile.usernameLower) {
         transaction.delete(doc(firestore, USERNAMES_COLLECTION, existingUsernameLower));
@@ -566,108 +970,153 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     await updateProfile(currentUser, {
       displayName: nextProfile.displayName,
+      photoURL: nextProfile.photoURL || null,
     });
     setProfile(nextProfile);
-  };
-
-  const persistGoogleUserProfile = async (googleUser: User) => {
-    const normalizedEmail = normalizeEmail(googleUser.email ?? "");
-
-    if (!normalizedEmail) {
-      throw new Error("Google account did not return an email.");
-    }
-
-    const existingUserSnapshot = await getDoc(doc(firestore, USERS_COLLECTION, googleUser.uid));
-    const existingProfile = existingUserSnapshot.exists()
-      ? (existingUserSnapshot.data() as DocumentData)
-      : null;
-
-    const existingUsername = readStringValue(existingProfile?.username);
-    const generatedUsername = googleUser.displayName?.trim()
-      ? sanitizeUsername(googleUser.displayName)
-      : getFallbackUsername(googleUser.email, googleUser.uid);
-    const candidate =
-      existingUsername ||
-      generatedUsername ||
-      getFallbackUsername(googleUser.email, googleUser.uid);
-
-    const { firstName, lastName } = getNameParts(googleUser.displayName);
-    const existingFirstName = readStringValue(existingProfile?.firstName);
-    const existingLastName = readStringValue(existingProfile?.lastName);
-    const existingRole = readStringValue(existingProfile?.role);
-    const existingAccountStatus = normalizeAccountStatus(
-      readStringValue(existingProfile?.accountStatus)
-    );
-
-    if (existingAccountStatus === "deleted") {
-      await signOut(auth);
-      throw new Error("This account has been removed by admin.");
-    }
-
-    const effectiveRole = getEffectiveUserRole(existingRole, normalizedEmail);
-    const effectiveFirstName = normalizeName(firstName || existingFirstName || candidate);
-    const effectiveLastName = normalizeName(lastName || existingLastName);
-    const effectiveDisplayName =
-      normalizeName(
-        googleUser.displayName ?? `${effectiveFirstName} ${effectiveLastName}`.trim()
-      ) || candidate;
-
-    try {
-      await writeUserProfile({
-        uid: googleUser.uid,
-        username: candidate,
-        firstName: effectiveFirstName,
-        lastName: effectiveLastName,
-        email: normalizedEmail,
-        role: effectiveRole,
-        accountStatus: "active",
-        provider: "google",
-        displayName: effectiveDisplayName,
-        photoURL: googleUser.photoURL,
-      });
-    } catch (error) {
-      if (existingUsername || !isUsernameTakenError(error)) {
-        throw error;
-      }
-
-      await writeUserProfile({
-        uid: googleUser.uid,
-        username: ensureUniqueGoogleUsername(googleUser.uid, googleUser.email),
-        firstName: effectiveFirstName,
-        lastName: effectiveLastName,
-        email: normalizedEmail,
-        role: effectiveRole,
-        accountStatus: "active",
-        provider: "google",
-        displayName: effectiveDisplayName,
-        photoURL: googleUser.photoURL,
-      });
-    }
   };
 
   const loginWithGoogleIdToken = async (idToken: string) => {
     const credential = GoogleAuthProvider.credential(idToken);
     const result = await signInWithCredential(auth, credential);
-    await persistGoogleUserProfile(result.user);
+    await persistFederatedUserProfile({
+      authUser: result.user,
+      provider: "google",
+      email: result.user.email,
+      displayName: result.user.displayName,
+      photoURL: result.user.photoURL,
+    });
+  };
+
+  const loginWithAppleCredential = async (payload: {
+    idToken: string;
+    rawNonce: string;
+    email?: string | null;
+    firstName?: string | null;
+    lastName?: string | null;
+  }) => {
+    const provider = new OAuthProvider("apple.com");
+    const credential = provider.credential({
+      idToken: payload.idToken,
+      rawNonce: payload.rawNonce,
+    });
+    const result = await signInWithCredential(auth, credential);
+    await persistFederatedUserProfile({
+      authUser: result.user,
+      provider: "apple",
+      email: payload.email ?? result.user.email,
+      firstName: payload.firstName,
+      lastName: payload.lastName,
+      displayName: `${payload.firstName ?? ""} ${payload.lastName ?? ""}`.trim(),
+      photoURL: result.user.photoURL,
+    });
+  };
+
+  const deleteCurrentUserAccount = async (currentPassword?: string) => {
+    const currentUser = auth.currentUser;
+
+    if (!currentUser) {
+      throw new Error("You must be logged in to delete your account.");
+    }
+
+    const existingProfile = profile ?? createFallbackUserProfile(currentUser);
+    const provider = existingProfile.provider || resolveProvider(currentUser);
+    const normalizedEmail = normalizeEmail(existingProfile.email || currentUser.email || "");
+    const normalizedPassword = currentPassword?.trim() ?? "";
+
+    try {
+      if (provider === "password" && normalizedPassword) {
+        if (!normalizedEmail) {
+          throw new Error("Unable to determine your account email.");
+        }
+
+        await reauthenticateWithCredential(
+          currentUser,
+          EmailAuthProvider.credential(normalizedEmail, normalizedPassword),
+        );
+      }
+
+      if (!hasRecentLogin(currentUser)) {
+        throw new Error("Login again and then retry deleting your account.");
+      }
+
+      const [favoritesSnapshot, pushTokensSnapshot, notificationsSnapshot] =
+        await Promise.all([
+          getDocs(
+            query(
+              collection(firestore, FAVORITES_COLLECTION),
+              where("uid", "==", currentUser.uid),
+            ),
+          ),
+          getDocs(
+            query(
+              collection(firestore, PUSH_TOKENS_COLLECTION),
+              where("uid", "==", currentUser.uid),
+            ),
+          ),
+          getDocs(
+            collection(
+              firestore,
+              USERS_COLLECTION,
+              currentUser.uid,
+              USER_NOTIFICATIONS_SUBCOLLECTION,
+            ),
+          ),
+        ]);
+
+      await Promise.all([
+        deleteDocumentRefsInChunks(favoritesSnapshot.docs.map((item) => item.ref)),
+        deleteDocumentRefsInChunks(pushTokensSnapshot.docs.map((item) => item.ref)),
+        deleteDocumentRefsInChunks(notificationsSnapshot.docs.map((item) => item.ref)),
+      ]);
+
+      await runTransaction(firestore, async (transaction) => {
+        const userRef = doc(firestore, USERS_COLLECTION, currentUser.uid);
+        const usernameLower =
+          existingProfile.usernameLower || normalizeUsername(existingProfile.username);
+
+        if (usernameLower) {
+          transaction.delete(doc(firestore, USERNAMES_COLLECTION, usernameLower));
+        }
+
+        transaction.set(
+          userRef,
+          {
+            uid: currentUser.uid,
+            username: "",
+            usernameLower: "",
+            firstName: "",
+            lastName: "",
+            email: "",
+            role: "user",
+            accountStatus: "deleted",
+            provider,
+            displayName: "Deleted User",
+            photoURL: null,
+            bio: "",
+            location: "",
+            website: "",
+            instagramUrl: "",
+            youtubeUrl: "",
+            facebookUrl: "",
+            updatedAt: serverTimestamp(),
+            deletedAt: serverTimestamp(),
+            deletedBy: currentUser.uid,
+            deletedByEmail: "",
+          },
+          { merge: true },
+        );
+      });
+
+      await deleteUser(currentUser);
+      await clearGoogleSessionsAsync();
+      setProfile(null);
+    } catch (error) {
+      throw mapAccountDeletionError(error);
+    }
   };
 
   const logout = async () => {
-    if (Platform.OS !== "web") {
-      try {
-        const googleSignInModule = loadGoogleSignInModule();
-        if (googleSignInModule) {
-          const signOutOperations = [googleSignInModule.GoogleSignin.signOut()];
-
-          if (googleSignInModule.GoogleOneTapSignIn) {
-            signOutOperations.push(googleSignInModule.GoogleOneTapSignIn.signOut());
-          }
-
-          await Promise.allSettled(signOutOperations);
-        }
-      } catch {
-        // Ignore if Google sign-in is not active on this device/session.
-      }
-    }
+    await clearGoogleSessionsAsync();
 
     if (auth.currentUser) {
       await signOut(auth);
@@ -681,13 +1130,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     isOwner,
     isAdmin,
     canManagePosts,
+    canModeratePosts,
     canManageUsers,
     isBootstrapping: !authReady,
+    setRememberSessionPersistence,
+    isUsernameAvailable,
     loginWithEmailOrUsername,
     requestPasswordReset,
     signupWithEmail,
     updateCurrentUserProfile,
     loginWithGoogleIdToken,
+    loginWithAppleCredential,
+    deleteCurrentUserAccount,
     logout,
   };
 

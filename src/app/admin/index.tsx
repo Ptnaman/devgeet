@@ -22,9 +22,11 @@ import {
   RADIUS,
   SPACING,
   type ThemeColors,
+  type ThemeMode,
 } from "@/constants/theme";
 import {
   CATEGORIES_COLLECTION,
+  isPostTrashed,
   POSTS_COLLECTION,
   mapCategoryRecord,
   mapPostRecord,
@@ -39,11 +41,11 @@ import { useNetworkStatus } from "@/providers/network-provider";
 import { useAppTheme } from "@/providers/theme-provider";
 
 export default function AdminOverviewScreen() {
-  const { colors } = useAppTheme();
+  const { colors, resolvedTheme } = useAppTheme();
   const { isConnected } = useNetworkStatus();
   const router = useRouter();
   const { isAdmin, isOwner } = useAuth();
-  const styles = createStyles(colors);
+  const styles = createStyles(colors, resolvedTheme);
   const [categories, setCategories] = useState<CategoryRecord[]>([]);
   const [posts, setPosts] = useState<PostRecord[]>([]);
   const [isLoadingCategories, setIsLoadingCategories] = useState(true);
@@ -112,13 +114,18 @@ export default function AdminOverviewScreen() {
   }, [isConnected]);
 
   const stats = useMemo(() => {
-    const published = posts.filter((item) => item.status === "published").length;
-    const draft = posts.length - published;
+    const activePosts = posts.filter((item) => !isPostTrashed(item));
+    const published = activePosts.filter((item) => item.status === "published").length;
+    const pending = activePosts.filter((item) => item.status === "pending").length;
+    const draft = activePosts.filter((item) => item.status === "draft").length;
+    const trashed = posts.length - activePosts.length;
 
     return {
-      totalPosts: posts.length,
+      totalPosts: activePosts.length,
       published,
+      pending,
       draft,
+      trashed,
       categories: categories.length,
     };
   }, [categories.length, posts]);
@@ -141,6 +148,7 @@ export default function AdminOverviewScreen() {
 
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Overview</Text>
+        <View style={styles.sectionDivider} />
         <View style={styles.statsGrid}>
           <View style={styles.statCard}>
             <Text style={styles.statLabel}>Total Posts</Text>
@@ -151,6 +159,10 @@ export default function AdminOverviewScreen() {
             <Text style={styles.statValue}>{stats.published}</Text>
           </View>
           <View style={styles.statCard}>
+            <Text style={styles.statLabel}>Pending</Text>
+            <Text style={styles.statValue}>{stats.pending}</Text>
+          </View>
+          <View style={styles.statCard}>
             <Text style={styles.statLabel}>Drafts</Text>
             <Text style={styles.statValue}>{stats.draft}</Text>
           </View>
@@ -158,11 +170,16 @@ export default function AdminOverviewScreen() {
             <Text style={styles.statLabel}>Categories</Text>
             <Text style={styles.statValue}>{stats.categories}</Text>
           </View>
+          <View style={styles.statCard}>
+            <Text style={styles.statLabel}>Recycle Bin</Text>
+            <Text style={styles.statValue}>{stats.trashed}</Text>
+          </View>
         </View>
       </View>
 
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Quick Actions</Text>
+        <View style={styles.sectionDivider} />
         <View style={styles.quickGrid}>
           <Pressable
             style={({ pressed }) => [styles.quickCardPrimary, pressed && styles.buttonPressed]}
@@ -191,6 +208,16 @@ export default function AdminOverviewScreen() {
           {isOwner ? (
             <Pressable
               style={({ pressed }) => [styles.quickCard, pressed && styles.buttonPressed]}
+              onPress={() => router.push("/admin/notifications")}
+            >
+              <Text style={styles.quickCardTitle}>Notifications</Text>
+              <Text style={styles.quickCardMeta}>Send owner-only custom push alerts</Text>
+            </Pressable>
+          ) : null}
+
+          {isOwner ? (
+            <Pressable
+              style={({ pressed }) => [styles.quickCard, pressed && styles.buttonPressed]}
               onPress={() => router.push("/admin/users")}
             >
               <Text style={styles.quickCardTitle}>Users</Text>
@@ -203,7 +230,8 @@ export default function AdminOverviewScreen() {
   );
 }
 
-const createStyles = (colors: ThemeColors) => StyleSheet.create({
+const createStyles = (colors: ThemeColors, resolvedTheme: ThemeMode) => {
+  return StyleSheet.create({
   container: {
     padding: SPACING.xl,
     gap: SPACING.md,
@@ -224,8 +252,6 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   },
   section: {
     backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
     borderRadius: RADIUS.lg,
     padding: SPACING.lg,
     gap: SPACING.sm,
@@ -235,6 +261,10 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     fontWeight: "700",
     color: colors.text,
   },
+  sectionDivider: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: colors.divider,
+  },
   statsGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -242,12 +272,10 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   },
   statCard: {
     width: "48%",
-    borderWidth: 1,
-    borderColor: colors.border,
     borderRadius: RADIUS.md,
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.md,
-    backgroundColor: colors.surface,
+    backgroundColor: colors.surfaceMuted,
   },
   statLabel: {
     fontSize: 12,
@@ -266,8 +294,6 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     minHeight: CONTROL_SIZE.inputHeight,
     borderRadius: RADIUS.md,
     backgroundColor: colors.primary,
-    borderWidth: 1,
-    borderColor: colors.primary,
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.md,
     gap: 2,
@@ -278,15 +304,13 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     fontWeight: "700",
   },
   quickCardMetaPrimary: {
-    color: "#DBEAFE",
+    color: colors.primaryMutedText,
     fontSize: 12,
   },
   quickCard: {
     minHeight: CONTROL_SIZE.inputHeight,
     borderRadius: RADIUS.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
+    backgroundColor: colors.surfaceMuted,
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.md,
     gap: 2,
@@ -303,4 +327,5 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   buttonPressed: {
     opacity: 0.9,
   },
-});
+  });
+};

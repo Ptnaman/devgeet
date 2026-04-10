@@ -1,28 +1,20 @@
 :root {
-  --color-bg: #f3f6fb;
-  --color-surface: #ffffff;
-  --color-text: #0f172a;
-  --color-muted: rgba(15, 23, 42, 0.8);
-  --color-border: #d8e0ea;
-  --color-primary: #0f172a;
-  --color-primary-text: #ffffff;
-  --color-bg-glow-start: rgba(228, 238, 251, 0.95);
-  --color-bg-glow-end: rgba(238, 243, 249, 0.95);
+  --color-bg: Canvas;
+  --color-surface: Canvas;
+  --color-text: CanvasText;
+  --color-muted: CanvasText;
+  --color-border: transparent;
+  --color-primary: CanvasText;
+  --color-primary-text: Canvas;
+  --color-bg-glow-start: transparent;
+  --color-bg-glow-end: transparent;
   --radius-lg: 20px;
   --radius-md: 12px;
+  --font-sans: "Google Sans", sans-serif;
   color-scheme: light;
 }
 
 :root[data-theme="dark"] {
-  --color-bg: #1e1e1e;
-  --color-surface: #2d2d30;
-  --color-text: #fffdfc;
-  --color-muted: rgba(255, 253, 252, 0.8);
-  --color-border: transparent;
-  --color-primary: #e2e8f0;
-  --color-primary-text: #0f172a;
-  --color-bg-glow-start: rgba(29, 78, 216, 0.2);
-  --color-bg-glow-end: rgba(15, 23, 42, 0.88);
   color-scheme: dark;
 }
 
@@ -45,5 +37,5 @@ body {
     radial-gradient(circle at 0% 0%, var(--color-bg-glow-start) 0%, transparent 40%),
     radial-gradient(circle at 100% 100%, var(--color-bg-glow-end) 0%, transparent 45%),
     var(--color-bg);
-  font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  font-family: var(--font-sans);
 }
