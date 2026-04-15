@@ -1,0 +1,659 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function userDocPath(uid) {
+      return /databases/$(database)/documents/users/$(uid);
+    }
+
+    function currentUserExists() {
+      return signedIn() && exists(userDocPath(request.auth.uid));
+    }
+
+    function currentUserData() {
+      return get(userDocPath(request.auth.uid)).data;
+    }
+
+    function isSelf(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+
+    function normalizedUserRole(data) {
+      return data.role is string &&
+          (data.role == "user" || data.role == "author" || data.role == "admin")
+        ? data.role
+        : "user";
+    }
+
+    function normalizedAccountStatus(data) {
+      return data.accountStatus is string &&
+          (data.accountStatus == "active" || data.accountStatus == "deleted")
+        ? data.accountStatus
+        : "active";
+    }
+
+    function isActiveUserDoc(data) {
+      return normalizedAccountStatus(data) != "deleted";
+    }
+
+    function currentUserIsActive() {
+      return currentUserExists() && isActiveUserDoc(currentUserData());
+    }
+
+    function currentUserRole() {
+      return currentUserExists()
+        ? normalizedUserRole(currentUserData())
+        : "user";
+    }
+
+    function isAdmin() {
+      return currentUserIsActive() && currentUserRole() == "admin";
+    }
+
+    function isAuthorOrAdmin() {
+      return currentUserIsActive() &&
+        (currentUserRole() == "author" || currentUserRole() == "admin");
+    }
+
+    function isValidRole(role) {
+      return role == "user" || role == "author" || role == "admin";
+    }
+
+    function isValidAccountStatus(status) {
+      return status == "active" || status == "deleted";
+    }
+
+    function isValidProvider(provider) {
+      return provider == "password" || provider == "google" || provider == "apple";
+    }
+
+    function isNonEmptyString(value) {
+      return value is string && value.size() > 0;
+    }
+
+    function currentSignInProvider() {
+      return signedIn() && request.auth.token.firebase.sign_in_provider is string
+        ? request.auth.token.firebase.sign_in_provider
+        : "";
+    }
+
+    function isGoogleSignIn() {
+      return currentSignInProvider() == "google.com";
+    }
+
+    function hasVerifiedEmail() {
+      return signedIn() &&
+        request.auth.token.email_verified is bool &&
+        request.auth.token.email_verified == true;
+    }
+
+    function hasVerifiedAuthorAccessAccount() {
+      return isGoogleSignIn() || hasVerifiedEmail();
+    }
+
+    function normalizedProfileProvider(data) {
+      return data.provider is string &&
+          (data.provider == "password" || data.provider == "google" || data.provider == "apple")
+        ? data.provider
+        : currentSignInProvider() == "google.com"
+          ? "google"
+          : currentSignInProvider() == "apple.com"
+            ? "apple"
+            : "password";
+    }
+
+    function hasMatchingProfileProvider(provider) {
+      return (provider == "password" && currentSignInProvider() == "password") ||
+        (provider == "google" && currentSignInProvider() == "google.com") ||
+        (provider == "apple" && currentSignInProvider() == "apple.com");
+    }
+
+    function isOwnPost(data) {
+      return signedIn() && (
+        data.createdBy == request.auth.uid ||
+        (request.auth.token.email is string && data.createdByEmail == request.auth.token.email)
+      );
+    }
+
+    function isPublishedPost(data) {
+      return data.status == "published";
+    }
+
+    match /categories/{categoryId} {
+      allow read: if true;
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /posts/{postId} {
+      function validPostStatus(status) {
+        return status == "draft" || status == "pending" || status == "published";
+      }
+
+      function validPostAuthorRole(role) {
+        return role == "author" || role == "admin";
+      }
+
+      function isAuthorCreate() {
+        return isAuthorOrAdmin() &&
+          request.resource.data.id == postId &&
+          request.resource.data.createdBy == request.auth.uid &&
+          request.resource.data.authorId == request.auth.uid &&
+          request.resource.data.authorRole == currentUserRole() &&
+          validPostAuthorRole(request.resource.data.authorRole) &&
+          request.resource.data.updatedBy == request.auth.uid &&
+          validPostStatus(request.resource.data.status) &&
+          (request.resource.data.status == "draft" || request.resource.data.status == "pending") &&
+          request.resource.data.publishedAt == null &&
+          request.resource.data.approvedAt == null &&
+          request.resource.data.approvedBy == null &&
+          request.resource.data.approvedByEmail == null;
+      }
+
+      function isAuthorDraftOrPendingUpdate() {
+        return isAuthorOrAdmin() &&
+          isOwnPost(resource.data) &&
+          isOwnPost(request.resource.data) &&
+          request.resource.data.updatedBy == request.auth.uid &&
+          request.resource.data.diff(resource.data).changedKeys().hasOnly([
+            "slug",
+            "title",
+            "content",
+            "contentHtml",
+            "featureImageUrl",
+            "youtubeVideoUrl",
+            "category",
+            "status",
+            "uploadDate",
+            "authorId",
+            "authorRole",
+            "authorDisplayName",
+            "authorUsername",
+            "authorPhotoURL",
+            "updatedBy",
+            "updatedByEmail",
+            "submittedAt",
+            "publishedAt",
+            "approvedAt",
+            "approvedBy",
+            "approvedByEmail"
+          ]) &&
+          request.resource.data.authorRole == currentUserRole() &&
+          validPostAuthorRole(request.resource.data.authorRole) &&
+          (request.resource.data.status == "draft" || request.resource.data.status == "pending") &&
+          request.resource.data.publishedAt == null &&
+          request.resource.data.approvedAt == null &&
+          request.resource.data.approvedBy == null &&
+          request.resource.data.approvedByEmail == null;
+      }
+
+      function isAuthorTrashOrRestore() {
+        return isAuthorOrAdmin() &&
+          isOwnPost(resource.data) &&
+          isOwnPost(request.resource.data) &&
+          request.resource.data.diff(resource.data).changedKeys().hasOnly([
+            "deletedAt",
+            "deletedBy",
+            "deletedByEmail",
+            "uploadDate"
+          ]) &&
+          request.resource.data.status == resource.data.status &&
+          request.resource.data.publishedAt == resource.data.publishedAt &&
+          request.resource.data.approvedAt == resource.data.approvedAt &&
+          request.resource.data.approvedBy == resource.data.approvedBy &&
+          request.resource.data.approvedByEmail == resource.data.approvedByEmail;
+      }
+
+      // Compatibility note:
+      // Public queries in the app only filter on status == "published".
+      // Because the client does not query deletedAt == null, published recycled posts
+      // cannot be hidden at the rule layer without breaking those queries.
+      allow read: if isPublishedPost(resource.data) || isAdmin() || (isAuthorOrAdmin() && isOwnPost(resource.data));
+      allow create: if isAdmin() || isAuthorCreate();
+      allow update: if isAdmin() || isAuthorDraftOrPendingUpdate() || isAuthorTrashOrRestore();
+      allow delete: if isAdmin() || (isAuthorOrAdmin() && isOwnPost(resource.data));
+    }
+
+    match /favorites/{favoriteId} {
+      function hasFavoriteShape() {
+        return request.resource.data.id == favoriteId &&
+          request.resource.data.uid == request.auth.uid &&
+          request.resource.data.userEmail is string &&
+          request.resource.data.postId is string &&
+          request.resource.data.postTitle is string &&
+          request.resource.data.postSlug is string &&
+          request.resource.data.keys().hasOnly([
+            "id",
+            "uid",
+            "userEmail",
+            "postId",
+            "postTitle",
+            "postSlug",
+            "createDate",
+            "uploadDate"
+          ]);
+      }
+
+      allow read: if signedIn() && resource.data.uid == request.auth.uid;
+      allow create, update: if currentUserIsActive() &&
+        hasFavoriteShape();
+      allow delete: if isAdmin() || (signedIn() && resource.data.uid == request.auth.uid);
+    }
+
+    match /authorFollows/{followId} {
+      function targetAuthorExists(authorId) {
+        return authorId is string && authorId != "" && exists(userDocPath(authorId));
+      }
+
+      function targetAuthorData(authorId) {
+        return get(userDocPath(authorId)).data;
+      }
+
+      function isFollowableAuthor(authorId) {
+        return targetAuthorExists(authorId) &&
+          isActiveUserDoc(targetAuthorData(authorId)) &&
+          (
+            targetAuthorData(authorId).role == "author" ||
+            targetAuthorData(authorId).role == "admin"
+          );
+      }
+
+      function hasAuthorFollowShape() {
+        return request.resource.data.id == followId &&
+          request.resource.data.uid == request.auth.uid &&
+          request.resource.data.userEmail is string &&
+          request.resource.data.authorId is string &&
+          request.resource.data.authorId != request.auth.uid &&
+          request.resource.data.authorUsername is string &&
+          request.resource.data.authorDisplayName is string &&
+          request.resource.data.keys().hasOnly([
+            "id",
+            "uid",
+            "userEmail",
+            "authorId",
+            "authorUsername",
+            "authorDisplayName",
+            "createDate",
+            "uploadDate"
+          ]);
+      }
+
+      allow read: if signedIn() &&
+        (resource.data.uid == request.auth.uid || resource.data.authorId == request.auth.uid);
+      allow create, update: if currentUserIsActive() &&
+        hasAuthorFollowShape() &&
+        isFollowableAuthor(request.resource.data.authorId);
+      allow delete: if isAdmin() || (
+        signedIn() &&
+        (resource.data.uid == request.auth.uid || resource.data.authorId == request.auth.uid)
+      );
+    }
+
+    match /pushTokens/{tokenId} {
+      function hasPushTokenShape() {
+        return request.resource.data.uid == request.auth.uid &&
+          request.resource.data.token is string &&
+          request.resource.data.token.size() > 0 &&
+          request.resource.data.isActive == true &&
+          request.resource.data.platform is string &&
+          (request.resource.data.appOwnership == null || request.resource.data.appOwnership is string) &&
+          (request.resource.data.deviceName == null || request.resource.data.deviceName is string) &&
+          (request.resource.data.deviceBrand == null || request.resource.data.deviceBrand is string) &&
+          request.resource.data.keys().hasOnly([
+            "uid",
+            "token",
+            "isActive",
+            "platform",
+            "appOwnership",
+            "deviceName",
+            "deviceBrand",
+            "lastAuthenticatedAt",
+            "updatedAt"
+          ]);
+      }
+
+      allow read: if isAdmin() || (signedIn() && resource.data.uid == request.auth.uid);
+      allow create, update: if currentUserIsActive() &&
+        hasPushTokenShape();
+      allow delete: if isAdmin() || (signedIn() && resource.data.uid == request.auth.uid);
+    }
+
+    match /usernames/{usernameId} {
+      function isValidUsernameMapping(uid) {
+        return request.resource.data.uid == uid &&
+          request.resource.data.username == usernameId &&
+          request.resource.data.usernameLower == usernameId &&
+          request.resource.data.email is string &&
+          request.resource.data.keys().hasOnly([
+            "uid",
+            "username",
+            "usernameLower",
+            "email",
+            "updatedAt"
+          ]);
+      }
+
+      allow get: if true;
+      allow list: if false;
+      allow create: if signedIn() && isValidUsernameMapping(request.auth.uid);
+      allow update: if signedIn() &&
+        resource.data.uid == request.auth.uid &&
+        isValidUsernameMapping(request.auth.uid);
+      allow delete: if isAdmin() || (signedIn() && resource.data.uid == request.auth.uid);
+    }
+
+    match /authorApplications/{uid} {
+      function isValidAuthorApplicationStatus(status) {
+        return status == "pending" ||
+          status == "approved" ||
+          status == "rejected" ||
+          status == "withdrawn";
+      }
+
+      function applicationUserData() {
+        return getAfter(userDocPath(uid)).data;
+      }
+
+      function hasApplicationUserProfile() {
+        return existsAfter(userDocPath(uid)) &&
+          isNonEmptyString(applicationUserData().firstName) &&
+          isNonEmptyString(applicationUserData().username) &&
+          isNonEmptyString(applicationUserData().gender) &&
+          isNonEmptyString(applicationUserData().bio) &&
+          hasVerifiedAuthorAccessAccount();
+      }
+
+      function hasAuthorApplicationLimits() {
+        return request.resource.data.bio.size() <= 220 &&
+          request.resource.data.reason.size() <= 100 &&
+          request.resource.data.sampleTopicOrLink.size() <= 120;
+      }
+
+      function matchesApplicationUserProfile() {
+        return request.resource.data.displayName ==
+            (applicationUserData().displayName is string ? applicationUserData().displayName : "") &&
+          request.resource.data.email ==
+            (applicationUserData().email is string ? applicationUserData().email : "") &&
+          request.resource.data.username ==
+            (applicationUserData().username is string ? applicationUserData().username : "") &&
+          request.resource.data.bio ==
+            (applicationUserData().bio is string ? applicationUserData().bio : "");
+      }
+
+      function hasAuthorApplicationShape() {
+        return request.resource.data.uid == uid &&
+          request.resource.data.displayName is string &&
+          request.resource.data.email is string &&
+          request.resource.data.username is string &&
+          request.resource.data.bio is string &&
+          request.resource.data.reason is string &&
+          request.resource.data.sampleTopicOrLink is string &&
+          request.resource.data.reviewedBy is string &&
+          request.resource.data.reviewedByEmail is string &&
+          request.resource.data.rejectionReason is string &&
+          isValidAuthorApplicationStatus(request.resource.data.status) &&
+          request.resource.data.keys().hasOnly([
+            "uid",
+            "displayName",
+            "email",
+            "username",
+            "bio",
+            "reason",
+            "sampleTopicOrLink",
+            "status",
+            "requestedAt",
+            "reviewedAt",
+            "reviewedBy",
+            "reviewedByEmail",
+            "rejectionReason",
+            "updatedAt"
+          ]);
+      }
+
+      function isSelfApplicationWrite() {
+        return isSelf(uid) &&
+          currentUserIsActive() &&
+          currentUserRole() == "user" &&
+          hasAuthorApplicationShape() &&
+          hasApplicationUserProfile() &&
+          hasAuthorApplicationLimits() &&
+          matchesApplicationUserProfile() &&
+          (request.resource.data.status == "pending" || request.resource.data.status == "withdrawn") &&
+          request.resource.data.reviewedAt == null &&
+          request.resource.data.reviewedBy == "" &&
+          request.resource.data.reviewedByEmail == "" &&
+          request.resource.data.rejectionReason == "";
+      }
+
+      function isAdminApplicationReview() {
+        return isAdmin() &&
+          hasAuthorApplicationShape() &&
+          resource.data.status == "pending" &&
+          request.resource.data.uid == resource.data.uid &&
+          request.resource.data.displayName == resource.data.displayName &&
+          request.resource.data.email == resource.data.email &&
+          request.resource.data.username == resource.data.username &&
+          request.resource.data.bio == resource.data.bio &&
+          request.resource.data.reason == resource.data.reason &&
+          request.resource.data.sampleTopicOrLink == resource.data.sampleTopicOrLink &&
+          request.resource.data.requestedAt == resource.data.requestedAt &&
+          request.resource.data.diff(resource.data).changedKeys().hasOnly([
+            "status",
+            "reviewedAt",
+            "reviewedBy",
+            "reviewedByEmail",
+            "rejectionReason",
+            "updatedAt"
+          ]) &&
+          (request.resource.data.status == "approved" || request.resource.data.status == "rejected") &&
+          request.resource.data.reviewedBy == request.auth.uid &&
+          request.resource.data.reviewedByEmail ==
+            (currentUserData().email is string ? currentUserData().email : "");
+      }
+
+      allow get: if isSelf(uid) || isAdmin();
+      allow list: if isAdmin();
+      allow create: if isSelfApplicationWrite();
+      allow update: if isSelfApplicationWrite() || isAdminApplicationReview();
+      allow delete: if false;
+    }
+
+    match /users/{uid} {
+      function isAdminManagedRoleUpdate() {
+        return isAdmin() &&
+          !isSelf(uid) &&
+          resource.data.role != "admin" &&
+          request.resource.data.diff(resource.data).changedKeys().hasOnly([
+            "role",
+            "accountStatus",
+            "deletedAt",
+            "deletedBy",
+            "deletedByEmail",
+            "updatedAt"
+          ]) &&
+          (request.resource.data.role == "user" || request.resource.data.role == "author") &&
+          request.resource.data.accountStatus == "active" &&
+          request.resource.data.deletedAt == null &&
+          request.resource.data.deletedBy == null &&
+          request.resource.data.deletedByEmail == null;
+      }
+
+      function isAdminManagedDeleteUpdate() {
+        return isAdmin() &&
+          !isSelf(uid) &&
+          resource.data.role != "admin" &&
+          request.resource.data.diff(resource.data).changedKeys().hasOnly([
+            "role",
+            "accountStatus",
+            "deletedAt",
+            "deletedBy",
+            "deletedByEmail",
+            "updatedAt"
+          ]) &&
+          request.resource.data.role == "user" &&
+          request.resource.data.accountStatus == "deleted" &&
+          request.resource.data.deletedAt != null &&
+          request.resource.data.deletedBy == request.auth.uid &&
+          request.resource.data.deletedByEmail ==
+            (currentUserData().email is string ? currentUserData().email : "");
+      }
+
+      function isSelfProfileCreate() {
+        return isSelf(uid) &&
+          request.resource.data.uid == uid &&
+          request.auth.token.email is string &&
+          request.resource.data.email == request.auth.token.email &&
+          request.resource.data.username == request.resource.data.usernameLower &&
+          normalizedUserRole(request.resource.data) == "user" &&
+          normalizedAccountStatus(request.resource.data) == "active" &&
+          isValidProvider(request.resource.data.provider) &&
+          hasMatchingProfileProvider(request.resource.data.provider) &&
+          request.resource.data.keys().hasAll([
+            "uid",
+            "username",
+            "usernameLower",
+            "firstName",
+            "lastName",
+            "email",
+            "provider",
+            "displayName",
+            "gender",
+            "bio",
+            "updatedAt",
+            "lastLoginAt"
+          ]) &&
+          request.resource.data.keys().hasOnly([
+            "uid",
+            "username",
+            "usernameLower",
+            "firstName",
+            "lastName",
+            "email",
+            "role",
+            "accountStatus",
+            "provider",
+            "displayName",
+            "photoURL",
+            "gender",
+            "bio",
+            "updatedAt",
+            "lastLoginAt"
+          ]);
+      }
+
+      function isSelfProfileUpdate() {
+        return isSelf(uid) &&
+          currentUserIsActive() &&
+          request.resource.data.uid == resource.data.uid &&
+          request.resource.data.email == resource.data.email &&
+          request.resource.data.provider == normalizedProfileProvider(resource.data) &&
+          hasMatchingProfileProvider(request.resource.data.provider) &&
+          request.resource.data.role == normalizedUserRole(resource.data) &&
+          request.resource.data.accountStatus == normalizedAccountStatus(resource.data) &&
+          request.resource.data.diff(resource.data).changedKeys().hasOnly([
+            "username",
+            "usernameLower",
+            "firstName",
+            "lastName",
+            "displayName",
+            "photoURL",
+            "gender",
+            "bio",
+            "updatedAt",
+            "lastLoginAt",
+            "role",
+            "accountStatus",
+            "provider"
+          ]);
+      }
+
+      function isSelfDeleteUpdate() {
+        return isSelf(uid) &&
+          isActiveUserDoc(resource.data) &&
+          request.resource.data.uid == uid &&
+          request.resource.data.username == "" &&
+          request.resource.data.usernameLower == "" &&
+          request.resource.data.firstName == "" &&
+          request.resource.data.lastName == "" &&
+          request.resource.data.email == "" &&
+          request.resource.data.role == "user" &&
+          request.resource.data.accountStatus == "deleted" &&
+          request.resource.data.provider == normalizedProfileProvider(resource.data) &&
+          request.resource.data.displayName == "Deleted User" &&
+          request.resource.data.gender == "" &&
+          request.resource.data.bio == "" &&
+          request.resource.data.deletedBy == uid &&
+          request.resource.data.diff(resource.data).changedKeys().hasOnly([
+            "username",
+            "usernameLower",
+            "firstName",
+            "lastName",
+            "email",
+            "role",
+            "accountStatus",
+            "displayName",
+            "photoURL",
+            "gender",
+            "bio",
+            "updatedAt",
+            "deletedAt",
+            "deletedBy",
+            "deletedByEmail"
+          ]);
+      }
+
+      allow get: if isSelf(uid) || isAdmin() || isActiveUserDoc(resource.data);
+      allow list: if isAdmin();
+      allow create: if isSelfProfileCreate();
+      allow update: if isAdminManagedRoleUpdate() ||
+        isAdminManagedDeleteUpdate() ||
+        isSelfProfileUpdate() ||
+        isSelfDeleteUpdate();
+      allow delete: if false;
+
+      match /notifications/{notificationId} {
+        function isAdminNotificationCreate() {
+          return isAdmin() &&
+            request.resource.data.uid == uid &&
+            (request.resource.data.type == "post-approved" || request.resource.data.type == "custom") &&
+            request.resource.data.title is string &&
+            request.resource.data.body is string &&
+            request.resource.data.postId is string &&
+            request.resource.data.imageUrl is string &&
+            request.resource.data.isRead == false &&
+            request.resource.data.keys().hasOnly([
+              "uid",
+              "type",
+              "title",
+              "body",
+              "postId",
+              "imageUrl",
+              "isRead",
+              "createdAt",
+              "readAt"
+            ]);
+        }
+
+        function isSelfNotificationUpdate() {
+          return isSelf(uid) &&
+            request.resource.data.uid == resource.data.uid &&
+            request.resource.data.diff(resource.data).changedKeys().hasOnly([
+              "isRead",
+              "readAt"
+            ]);
+        }
+
+        allow get, list: if isAdmin() || isSelf(uid);
+        allow create: if isAdminNotificationCreate();
+        allow update: if isAdmin() || isSelfNotificationUpdate();
+        allow delete: if isAdmin() || isSelf(uid);
+      }
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

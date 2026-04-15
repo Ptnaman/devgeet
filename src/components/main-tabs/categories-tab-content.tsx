@@ -46,6 +46,7 @@ export function CategoriesTabContent() {
     });
     return counts;
   }, [publishedPosts]);
+  const subtitle = "Tap a category to see all of its published posts on the next screen.";
 
   const openCategory = (categorySlug: string) => {
     router.push({ pathname: "/category/[categorySlug]", params: { categorySlug } });
@@ -55,9 +56,7 @@ export function CategoriesTabContent() {
     <View style={styles.screen}>
       <MainTabScrollView tabName="categories" contentContainerStyle={styles.container}>
         <Text style={styles.title}>Categories</Text>
-        <Text style={styles.subtitle}>
-          Category par tap karo aur uske saare published posts next screen par dekho.
-        </Text>
+        <Text style={styles.subtitle}>{subtitle}</Text>
 
         {showInlineError ? <Text style={styles.error}>{error}</Text> : null}
 
@@ -101,7 +100,7 @@ export function CategoriesTabContent() {
                     {item.slug}
                   </Text>
                   <Text style={styles.categoryCount}>
-                    {postCount} post{postCount === 1 ? "" : "s"}
+                    {`${postCount} post${postCount === 1 ? "" : "s"}`}
                   </Text>
                 </Pressable>
               );

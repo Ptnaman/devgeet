@@ -1,8 +1,10 @@
+import { useDeferredValue, useMemo, useState } from "react";
 import { useRouter } from "expo-router";
 import { Alert, Image, Pressable, StyleSheet, Text, View } from "react-native";
 
 import { FavoriteActionIcon } from "@/components/icons/favorite-action-icon";
 import { MainTabScrollView } from "@/components/main-tabs/main-tab-scroll-view";
+import { SearchInput } from "@/components/search-input";
 import { SkeletonBlock } from "@/components/skeleton-block";
 import {
   FONT_SIZE,
@@ -17,6 +19,7 @@ import {
   formatDate,
   getContentPreviewLines,
   getPostCardThumbnailUrl,
+  matchesPostSearch,
   type PostRecord,
 } from "@/lib/content";
 import {
@@ -37,8 +40,15 @@ export function HomeTabContent() {
   const { isConnected, showOfflineToast } = useNetworkStatus();
   const favoritePalette = getFavoriteActionPalette(resolvedTheme);
   const styles = createStyles(colors);
+  const [searchTerm, setSearchTerm] = useState("");
+  const deferredSearchTerm = useDeferredValue(searchTerm);
   const isOfflineState = !isConnected || postsError === DEFAULT_OFFLINE_MESSAGE;
   const showInlineError = Boolean(postsError) && !isOfflineState;
+  const filteredPosts = useMemo(
+    () => publishedPosts.filter((post) => matchesPostSearch(post, deferredSearchTerm)),
+    [deferredSearchTerm, publishedPosts],
+  );
+  const hasActiveSearch = Boolean(searchTerm.trim());
 
   const openPost = (postId: string) => {
     router.push({ pathname: "/post/[postId]", params: { postId } });
@@ -51,7 +61,7 @@ export function HomeTabContent() {
       const message = getActionErrorMessage({
         error: toggleError,
         isConnected,
-        fallbackMessage: "Favorites could not be updated right now.",
+        fallbackMessage: "Bookmarks could not be updated right now.",
       });
 
       if (message === DEFAULT_OFFLINE_MESSAGE) {
@@ -59,7 +69,7 @@ export function HomeTabContent() {
         return;
       }
 
-      Alert.alert("Unable to update favorites", message);
+      Alert.alert("Unable to update bookmarks", message);
     }
   };
 
@@ -70,6 +80,13 @@ export function HomeTabContent() {
         contentContainerStyle={styles.container}
         showsVerticalScrollIndicator={false}
       >
+        <SearchInput
+          value={searchTerm}
+          onChangeText={setSearchTerm}
+          placeholder="Search lyrics"
+          accessibilityLabel="Search posts"
+        />
+
         {isLoadingPosts
           ? HOME_SKELETON_ITEMS.map((item) => (
             <View key={item} style={styles.card}>
@@ -92,8 +109,24 @@ export function HomeTabContent() {
           <Text style={styles.errorText}>{postsError}</Text>
         ) : null}
 
+        {!isLoadingPosts && !showInlineError && hasActiveSearch ? (
+          <Text style={styles.resultText}>
+            {`Showing ${filteredPosts.length} of ${publishedPosts.length} posts`}
+          </Text>
+        ) : null}
+
+        {!isLoadingPosts && !showInlineError && !filteredPosts.length ? (
+          <View style={styles.emptyWrap}>
+            <Text style={styles.emptyText}>
+              {hasActiveSearch
+                ? "No posts match the current search."
+                : "No published posts are available right now."}
+            </Text>
+          </View>
+        ) : null}
+
         {!isLoadingPosts
-          ? publishedPosts.map((post) => {
+          ? filteredPosts.map((post) => {
             const thumbnailUrl = getPostCardThumbnailUrl(post);
             const favorite = isFavorite(post.id);
             const updatedLabel = formatDate(post.uploadDate || post.createDate);
@@ -130,8 +163,8 @@ export function HomeTabContent() {
                       accessibilityRole="button"
                       accessibilityLabel={
                         favorite
-                          ? `Remove ${post.title} from favorites`
-                          : `Add ${post.title} to favorites`
+                          ? `Remove ${post.title} from bookmarks`
+                          : `Add ${post.title} to bookmarks`
                       }
                     >
                       <FavoriteActionIcon
@@ -157,7 +190,7 @@ export function HomeTabContent() {
                 </Pressable>
 
                 <View style={styles.cardFooter}>
-                  <Text style={styles.meta}>Updated {updatedLabel}</Text>
+                  <Text style={styles.meta}>{`Updated ${updatedLabel}`}</Text>
                 </View>
               </View>
             );
@@ -176,19 +209,15 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     flexGrow: 1,
     padding: SPACING.xxl,
     gap: SPACING.xl,
-    backgroundColor: colors.background,
+    backgroundColor: colors.surface,
   },
   card: {
-    backgroundColor: colors.surface,
-    borderRadius: RADIUS.lg,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: SPACING.lg,
+    padding: SPACING.sm,
     gap: SPACING.sm,
-    ...SHADOWS.sm,
   },
   cardBody: {
     gap: SPACING.sm,
+    
   },
   cardBodyPressed: {
     opacity: 0.92,
@@ -244,6 +273,22 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   errorText: {
     color: colors.danger,
     fontSize: 13,
+  },
+  resultText: {
+    color: colors.mutedText,
+    fontSize: 13,
+  },
+  emptyWrap: {
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    padding: SPACING.lg,
+  },
+  emptyText: {
+    color: colors.mutedText,
+    fontSize: 14,
+    textAlign: "center",
   },
   meta: {
     fontSize: 12,

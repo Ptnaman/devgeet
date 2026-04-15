@@ -1,5 +1,5 @@
 import Constants from "expo-constants";
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Pressable, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
@@ -13,24 +13,20 @@ import Animated, {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import {
-  HeaderNotificationsButton,
-  useHeaderNotifications,
-} from "@/components/header-notifications";
-import {
-  HeaderProfileButton,
-  HeaderProfileMenu,
-} from "@/components/header-profile-button";
-import { CategoriesTabContent } from "@/components/main-tabs/categories-tab-content";
-import { FavoriteTabContent } from "@/components/main-tabs/favorite-tab-content";
-import { HomeTabContent } from "@/components/main-tabs/home-tab-content";
+  HeaderAdminButton,
+} from "@/components/header-admin-button";
+import { HeaderProfileButton } from "@/components/header-profile-button";
 import { MainTabsHeaderContext } from "@/components/main-tabs/main-tabs-header-context";
-import { SettingsTabContent } from "@/components/main-tabs/settings-tab-content";
-import { CategoryTabIcon } from "@/components/icons/category-tab-icon";
-import { FavoriteTabIcon } from "@/components/icons/favorite-tab-icon";
-import { HomeTabIcon } from "@/components/icons/home-tab-icon";
-import { SettingsTabIcon } from "@/components/icons/settings-tab-icon";
+import {
+  MAIN_TAB_DEFINITIONS,
+  getMainTabIndex,
+  normalizeMainTabParam,
+  resolveMainTabName,
+} from "@/components/main-tabs/main-tabs-config";
 import { MAIN_TAB_ORDER, type MainTabName } from "@/constants/main-tabs";
 import { SHADOWS, SPACING } from "@/constants/theme";
+import { APP_FONTS, PRODUCT_FONTS } from "@/lib/typography";
+import { useAuth } from "@/providers/auth-provider";
 import { useAppTheme } from "@/providers/theme-provider";
 
 const SWIPE_ACTIVATION_OFFSET = 14;
@@ -38,176 +34,79 @@ const SWIPE_DISTANCE_THRESHOLD_RATIO = 0.22;
 const SWIPE_VELOCITY_THRESHOLD = 520;
 const EDGE_RESISTANCE = 0.24;
 const RELEASE_DURATION = 220;
-const HEADER_ANIMATION_DURATION = 220;
 const HEADER_ROW_HEIGHT = 56;
-const HEADER_HIDE_SCROLL_THRESHOLD = 48;
-const HEADER_SHOW_SCROLL_THRESHOLD = 12;
-const HEADER_DIRECTION_THRESHOLD = 6;
-
-const TAB_ITEMS = [
-  {
-    name: "home",
-    label: "Home",
-    renderIcon: (color: string, focused: boolean) => (
-      <HomeTabIcon color={color} size={24} filled={focused} />
-    ),
-  },
-  {
-    name: "categories",
-    label: "Categories",
-    renderIcon: (color: string, focused: boolean) => (
-      <CategoryTabIcon color={color} size={24} filled={focused} />
-    ),
-  },
-  {
-    name: "favorite",
-    label: "Favorite",
-    renderIcon: (color: string, focused: boolean) => (
-      <FavoriteTabIcon color={color} size={24} filled={focused} />
-    ),
-  },
-  {
-    name: "settings",
-    label: "Settings",
-    renderIcon: (color: string, focused: boolean) => (
-      <SettingsTabIcon color={color} size={24} filled={focused} />
-    ),
-  },
-] as const satisfies readonly {
-  name: MainTabName;
-  label: string;
-  renderIcon: (color: string, focused: boolean) => ReactNode;
-}[];
-
-const TAB_CONTENT: Record<MainTabName, ReactNode> = {
-  home: <HomeTabContent />,
-  categories: <CategoriesTabContent />,
-  favorite: <FavoriteTabContent />,
-  settings: <SettingsTabContent />,
-};
+const HEADER_SHADOW_SCROLL_THRESHOLD = 4;
 
 function clamp(value: number, min: number, max: number) {
   "worklet";
   return Math.min(Math.max(value, min), max);
 }
 
-function getIndexForTab(tabName: MainTabName) {
-  return MAIN_TAB_ORDER.indexOf(tabName);
-}
-
-function normalizeTabParam(tabParam: string | string[] | undefined) {
-  if (Array.isArray(tabParam)) {
-    return tabParam[0];
-  }
-
-  return tabParam;
-}
-
-function resolveTabName(tabParam: string | string[] | undefined): MainTabName {
-  const normalizedTab = normalizeTabParam(tabParam);
-
-  if (!normalizedTab) {
-    return "home";
-  }
-
-  return MAIN_TAB_ORDER.find((tabName) => tabName === normalizedTab) ?? "home";
-}
-
 export function MainTabsShell() {
   const { tab } = useLocalSearchParams<{ tab?: string | string[] }>();
-  const initialTabRef = useRef(resolveTabName(tab));
-  const lastHandledTabRef = useRef<string | undefined>(normalizeTabParam(tab));
+  const initialTabRef = useRef(resolveMainTabName(tab));
+  const lastHandledTabRef = useRef<string | undefined>(normalizeMainTabParam(tab));
   const activeTabRef = useRef<MainTabName>(initialTabRef.current);
   const tabScrollOffsetsRef = useRef<Record<MainTabName, number>>({
     home: 0,
     categories: 0,
     favorite: 0,
+    subscribe: 0,
     settings: 0,
   });
-  const initialIndexRef = useRef(getIndexForTab(initialTabRef.current));
+  const initialIndexRef = useRef(getMainTabIndex(initialTabRef.current));
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const { canManagePosts } = useAuth();
   const { colors, resolvedTheme } = useAppTheme();
-  const { unreadCount } = useHeaderNotifications();
   const [activeTab, setActiveTab] = useState<MainTabName>(initialTabRef.current);
-  const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
+  const [isHeaderElevated, setIsHeaderElevated] = useState(false);
   const activeIndexValue = useSharedValue(initialIndexRef.current);
   const translateX = useSharedValue(-initialIndexRef.current * width);
   const gestureStartX = useSharedValue(-initialIndexRef.current * width);
-  const headerRowOffset = useSharedValue(0);
-  const headerTargetRef = useRef(0);
+  const headerElevationRef = useRef(false);
   const tabBarBorderColor =
     resolvedTheme === "dark" ? colors.divider : colors.border;
   const tabBarTopPadding = 8;
   const tabBarBottomPadding = Math.max(insets.bottom, 12);
   const tabBarHeight = 58 + tabBarBottomPadding;
   const appName = Constants.expoConfig?.name ?? "DevGeet";
-  const activeTabLabel =
-    TAB_ITEMS.find((item) => item.name === activeTab)?.label ?? appName;
+  const activeTabItem = MAIN_TAB_DEFINITIONS.find((item) => item.name === activeTab);
+  const activeTabLabel = activeTabItem ? activeTabItem.label : appName;
   const headerTitleText = activeTab === "home" ? appName : activeTabLabel;
+  const headerBackgroundColor = activeTab === "home" ? colors.surface : colors.background;
+  const homeHeaderIconBackgroundColor = activeTab === "home" ? colors.surfaceMuted : undefined;
 
-  const setHeaderTarget = useCallback(
-    (nextTarget: number, animated = true) => {
-      if (headerTargetRef.current === nextTarget) {
-        return;
-      }
+  const setHeaderElevation = useCallback((nextValue: boolean) => {
+    if (headerElevationRef.current === nextValue) {
+      return;
+    }
 
-      headerTargetRef.current = nextTarget;
+    headerElevationRef.current = nextValue;
+    setIsHeaderElevated(nextValue);
+  }, []);
 
-      if (animated) {
-        headerRowOffset.value = withTiming(nextTarget, {
-          duration: HEADER_ANIMATION_DURATION,
-        });
-        return;
-      }
-
-      headerRowOffset.value = nextTarget;
-    },
-    [headerRowOffset],
-  );
-
-  const syncHeaderOffsetForTab = useCallback(
-    (tabName: MainTabName, animated = false) => {
+  const syncHeaderStateForTab = useCallback(
+    (tabName: MainTabName) => {
       const tabOffset = Math.max(tabScrollOffsetsRef.current[tabName] ?? 0, 0);
-      const nextTarget =
-        tabOffset > HEADER_HIDE_SCROLL_THRESHOLD ? HEADER_ROW_HEIGHT : 0;
-
-      setHeaderTarget(nextTarget, animated);
+      setHeaderElevation(tabOffset > HEADER_SHADOW_SCROLL_THRESHOLD);
     },
-    [setHeaderTarget],
+    [setHeaderElevation],
   );
 
   const reportScrollOffset = useCallback(
     (tabName: MainTabName, offsetY: number) => {
       const nextOffsetY = Math.max(offsetY, 0);
-      const previousOffsetY = tabScrollOffsetsRef.current[tabName] ?? 0;
       tabScrollOffsetsRef.current[tabName] = nextOffsetY;
 
       if (tabName !== activeTabRef.current) {
         return;
       }
 
-      if (nextOffsetY <= HEADER_SHOW_SCROLL_THRESHOLD) {
-        setHeaderTarget(0);
-        return;
-      }
-
-      const deltaY = nextOffsetY - previousOffsetY;
-
-      if (
-        deltaY >= HEADER_DIRECTION_THRESHOLD &&
-        nextOffsetY > HEADER_HIDE_SCROLL_THRESHOLD
-      ) {
-        setHeaderTarget(HEADER_ROW_HEIGHT);
-        return;
-      }
-
-      if (deltaY <= -HEADER_DIRECTION_THRESHOLD) {
-        setHeaderTarget(0);
-      }
+      setHeaderElevation(nextOffsetY > HEADER_SHADOW_SCROLL_THRESHOLD);
     },
-    [setHeaderTarget],
+    [setHeaderElevation],
   );
 
   const setActiveTabByIndex = useCallback(
@@ -217,9 +116,9 @@ export function MainTabsShell() {
       activeTabRef.current = nextTab;
       setActiveTab((currentTab) => (currentTab === nextTab ? currentTab : nextTab));
       activeIndexValue.value = nextIndex;
-      syncHeaderOffsetForTab(nextTab, true);
+      syncHeaderStateForTab(nextTab);
     },
-    [activeIndexValue, syncHeaderOffsetForTab],
+    [activeIndexValue, syncHeaderStateForTab],
   );
 
   const snapToIndex = useCallback(
@@ -242,40 +141,35 @@ export function MainTabsShell() {
   );
 
   useEffect(() => {
-    translateX.value = -getIndexForTab(activeTabRef.current) * width;
+    translateX.value = -getMainTabIndex(activeTabRef.current) * width;
   }, [translateX, width]);
 
   useEffect(() => {
-    syncHeaderOffsetForTab(activeTabRef.current, false);
-  }, [syncHeaderOffsetForTab]);
+    syncHeaderStateForTab(activeTabRef.current);
+  }, [syncHeaderStateForTab]);
 
   useEffect(() => {
-    const nextTabParam = normalizeTabParam(tab);
+    const nextTabParam = normalizeMainTabParam(tab);
 
     if (!nextTabParam || nextTabParam === lastHandledTabRef.current) {
       return;
     }
 
     lastHandledTabRef.current = nextTabParam;
-    snapToIndex(getIndexForTab(resolveTabName(nextTabParam)));
+    snapToIndex(getMainTabIndex(resolveMainTabName(nextTabParam)));
   }, [snapToIndex, tab]);
 
-  const openNotificationsPage = useCallback(() => {
-    setIsAccountMenuOpen(false);
-    router.push("/notifications");
+  const openProfilePage = useCallback(() => {
+    router.push("/profile");
   }, [router]);
 
-  const openAccountMenu = useCallback(() => {
-    setIsAccountMenuOpen(true);
-  }, []);
-
-  const closeAccountMenu = useCallback(() => {
-    setIsAccountMenuOpen(false);
-  }, []);
+  const openAdminPanel = useCallback(() => {
+    router.push("/admin");
+  }, [router]);
 
   const handleTabPress = useCallback(
     (tabName: MainTabName) => {
-      snapToIndex(getIndexForTab(tabName), false);
+      snapToIndex(getMainTabIndex(tabName), false);
     },
     [snapToIndex],
   );
@@ -335,60 +229,58 @@ export function MainTabsShell() {
     transform: [{ translateX: translateX.value }],
   }));
 
-  const headerContainerStyle = useAnimatedStyle(() => ({
-    height: Math.max(HEADER_ROW_HEIGHT - headerRowOffset.value, 0),
-    opacity: HEADER_ROW_HEIGHT ? 1 - headerRowOffset.value / HEADER_ROW_HEIGHT : 1,
-  }));
-
-  const headerContentStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: -headerRowOffset.value }],
-  }));
-
   return (
     <MainTabsHeaderContext.Provider value={{ reportScrollOffset }}>
       <View style={[styles.screen, { backgroundColor: colors.background }]}>
         <View
           style={[
-            styles.statusBarFill,
+            styles.headerSurface,
+            isHeaderElevated && styles.headerSurfaceElevated,
             {
-              height: insets.top,
-              backgroundColor: colors.surface,
-            },
-          ]}
-        />
-        <Animated.View
-          style={[
-            styles.headerContainer,
-            {
-              backgroundColor: colors.surface,
+              backgroundColor: headerBackgroundColor,
+              borderBottomWidth: isHeaderElevated ? StyleSheet.hairlineWidth : 0,
               borderBottomColor: tabBarBorderColor,
             },
-            headerContainerStyle,
           ]}
         >
-          <Animated.View
+          <View
             style={[
-              styles.headerContent,
               {
+                height: insets.top,
+                backgroundColor: headerBackgroundColor,
+              },
+            ]}
+          />
+          <View
+            style={[
+              styles.headerContainer,
+              {
+                backgroundColor: headerBackgroundColor,
                 height: HEADER_ROW_HEIGHT,
               },
-              headerContentStyle,
             ]}
           >
-            <View style={styles.headerRow}>
-              <Text style={[styles.headerTitle, { color: colors.text }]} numberOfLines={1}>
-                {headerTitleText}
-              </Text>
-              <View style={styles.headerActions}>
-                <HeaderNotificationsButton
-                  unreadCount={unreadCount}
-                  onPress={openNotificationsPage}
-                />
-                <HeaderProfileButton onPress={openAccountMenu} />
+            <View style={styles.headerContent}>
+              <View style={styles.headerRow}>
+                <Text style={[styles.headerTitle, { color: colors.text }]} numberOfLines={1}>
+                  {headerTitleText}
+                </Text>
+                <View style={styles.headerActions}>
+                  {canManagePosts ? (
+                    <HeaderAdminButton
+                      onPress={openAdminPanel}
+                      backgroundColor={homeHeaderIconBackgroundColor}
+                    />
+                  ) : null}
+                  <HeaderProfileButton
+                    onPress={openProfilePage}
+                    backgroundColor={homeHeaderIconBackgroundColor}
+                  />
+                </View>
               </View>
             </View>
-          </Animated.View>
-        </Animated.View>
+          </View>
+        </View>
 
         <View style={styles.pagerViewport}>
           <GestureDetector gesture={panGesture}>
@@ -399,9 +291,9 @@ export function MainTabsShell() {
                 pagerStyle,
               ]}
             >
-              {MAIN_TAB_ORDER.map((tabName) => (
-                <View key={tabName} style={[styles.page, { width }]}>
-                  {TAB_CONTENT[tabName]}
+              {MAIN_TAB_DEFINITIONS.map(({ name, Content }) => (
+                <View key={name} style={[styles.page, { width }]}>
+                  <Content />
                 </View>
               ))}
             </Animated.View>
@@ -420,7 +312,7 @@ export function MainTabsShell() {
             },
           ]}
         >
-          {TAB_ITEMS.map((item) => {
+          {MAIN_TAB_DEFINITIONS.map((item) => {
             const isFocused = item.name === activeTab;
             const tintColor = isFocused ? colors.tabActive : colors.tabInactive;
 
@@ -436,18 +328,13 @@ export function MainTabsShell() {
                 onPress={() => handleTabPress(item.name)}
               >
                 {item.renderIcon(tintColor, isFocused)}
-                <Text style={[styles.tabLabel, { color: tintColor }]}>
+                <Text numberOfLines={1} style={[styles.tabLabel, { color: tintColor }]}>
                   {item.label}
                 </Text>
               </Pressable>
             );
           })}
         </View>
-
-        <HeaderProfileMenu
-          visible={isAccountMenuOpen}
-          onClose={closeAccountMenu}
-        />
       </View>
     </MainTabsHeaderContext.Provider>
   );
@@ -459,9 +346,18 @@ const styles = StyleSheet.create({
   },
   statusBarFill: {
   },
+  headerSurface: {
+    zIndex: 2,
+  },
+  headerSurfaceElevated: {
+    shadowColor: "#00000024",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 6,
+  },
   headerContainer: {
     overflow: "hidden",
-    borderBottomWidth: StyleSheet.hairlineWidth,
   },
   headerContent: {
     justifyContent: "flex-end",
@@ -477,12 +373,15 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     flex: 1,
-    fontSize: 22,
-    fontWeight: "700",
+    fontSize: 28,
+    lineHeight: 32,
+    letterSpacing: -0.8,
+    fontFamily: PRODUCT_FONTS.bold,
   },
   headerActions: {
     flexDirection: "row",
     alignItems: "center",
+    gap: 6,
   },
   pagerViewport: {
     flex: 1,
@@ -498,6 +397,7 @@ const styles = StyleSheet.create({
   tabBar: {
     flexDirection: "row",
     alignItems: "center",
+    borderTopWidth: StyleSheet.hairlineWidth,
     ...SHADOWS.md,
   },
   tabButton: {
@@ -513,6 +413,8 @@ const styles = StyleSheet.create({
   },
   tabLabel: {
     fontSize: 11,
-    fontWeight: "600",
+    lineHeight: 14,
+    letterSpacing: 0.2,
+    fontFamily: APP_FONTS.medium,
   },
 });

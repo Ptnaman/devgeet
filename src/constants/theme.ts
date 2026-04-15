@@ -36,9 +36,6 @@ export const BRAND_COLORS = {
 
 export type ThemeColors = {
   background: string;
-  backgroundGradient: readonly [string, string, string];
-  backgroundGlowStart: string;
-  backgroundGlowEnd: string;
   surface: string;
   surfaceMuted: string;
   surfaceSoft: string;
@@ -91,12 +88,15 @@ export type ThemeColors = {
   tabInactive: string;
 };
 
+type ThemeCssColorKey = {
+  [K in keyof ThemeColors]: ThemeColors[K] extends string ? K : never;
+}[keyof ThemeColors];
+
+export type WebThemeCssColorKey = ThemeCssColorKey;
+
 export const LIGHT_COLORS: ThemeColors = {
-  background: "#EEF0F3",
-  backgroundGradient: ["#F8FBFF", "#EEF3F9", "#E4EEFB"],
-  backgroundGlowStart: "#E4EEFBF2",
-  backgroundGlowEnd: "#EEF3F9F2",
-  surface: "#FFFFFF",
+  background: "#f4f4f4",
+  surface: "#fff",
   surfaceMuted: "#F8FAFC",
   surfaceSoft: "#F5F7FA",
   activeSurface: "#EFF6FF",
@@ -110,7 +110,7 @@ export const LIGHT_COLORS: ThemeColors = {
   subtitleText: "#777777",
   mutedText: withOpacity(LIGHT_TEXT, 0.8),
   subtleText: withOpacity(LIGHT_TEXT, 0.7),
-  placeholderText: "#9CA3AF",
+  placeholderText: "#6E6E6E",
   border: "#ECEFF3",
   divider: "#EEF2F6",
   primary: LIGHT_TEXT,
@@ -135,7 +135,7 @@ export const LIGHT_COLORS: ThemeColors = {
   dangerBorder: "#FECACA",
   inputLabel: "#8A8A8A",
   inputLabelActive: LIGHT_ICON_MUTED,
-  inputBorder: "#E5E7EB",
+  inputBorder: "#F2F0EE",
   inputBorderHover: "#CBD5E1",
   inputFocus: LIGHT_TEXT,
   iconMuted: LIGHT_ICON_MUTED,
@@ -150,11 +150,8 @@ export const LIGHT_COLORS: ThemeColors = {
 
 export const DARK_COLORS: ThemeColors = {
   background: "#1E1E1E",
-  backgroundGradient: ["#0F172A", "#111827", "#1D4ED8"],
-  backgroundGlowStart: "#1D4ED833",
-  backgroundGlowEnd: "#0F172AE0",
   surface: "#2D2D30",
-  surfaceMuted: "#FFFDFC1A",
+  surfaceMuted: "#3f3f3f",
   surfaceSoft: "#1E293B",
   activeSurface: "#0000001A",
   overlay: "#00000055",
@@ -230,9 +227,7 @@ export const WEB_THEME_CSS_VARIABLES = {
   "--color-border": "border",
   "--color-primary": "primary",
   "--color-primary-text": "primaryText",
-  "--color-bg-glow-start": "backgroundGlowStart",
-  "--color-bg-glow-end": "backgroundGlowEnd",
-} as const satisfies Record<string, keyof ThemeColors>;
+} as const satisfies Record<string, ThemeCssColorKey>;
 
 export const getThemeColors = (mode: ThemeMode | null | undefined): ThemeColors =>
   mode === "dark" ? DARK_COLORS : LIGHT_COLORS;
@@ -287,24 +282,24 @@ export const CONTROL_SIZE = {
 
 export const SHADOWS = {
   sm: {
-    shadowColor: "#0000001B",
-    shadowOffset: { width: 0, height: 6 },
+    shadowColor: "#0000002f",
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.06,
-    shadowRadius: 16,
-    elevation: 3,
+    shadowRadius: 20,
+    elevation: 20,
   },
   md: {
-    shadowColor: "#0000003B",
-    shadowOffset: { width: 0, height: 10 },
+    shadowColor: "#0000004f",
+    shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.08,
     shadowRadius: 24,
-    elevation: 6,
+    elevation: 25,
   },
   lg: {
-    shadowColor: "#0000005B",
-    shadowOffset: { width: 0, height: 14 },
+    shadowColor: "#0000006f",
+    shadowOffset: { width: 0, height: 5 },
     shadowOpacity: 0.07,
     shadowRadius: 30,
-    elevation: 10,
+    elevation: 35,
   },
 } as const;

@@ -13,7 +13,7 @@ import {
   View,
   type ViewStyle,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, type Edge } from "react-native-safe-area-context";
 
 import { ArrowRightIcon } from "@/components/icons/arrow-right-icon";
 import { SPACING, type ThemeColors } from "@/constants/theme";
@@ -27,11 +27,15 @@ type AuthScreenShellProps = {
   children: ReactNode;
   footer?: ReactNode;
   showTopBar?: boolean;
+  showHero?: boolean;
   centerContent?: boolean;
   topAligned?: boolean;
   backgroundColor?: string;
+  safeAreaEdges?: Edge[];
   scrollViewRef?: RefObject<ScrollView | null>;
+  scrollContentStyle?: StyleProp<ViewStyle>;
   heroStyle?: StyleProp<ViewStyle>;
+  layoutStyle?: StyleProp<ViewStyle>;
   titleStyle?: StyleProp<TextStyle>;
   subtitleStyle?: StyleProp<TextStyle>;
 };
@@ -44,11 +48,15 @@ export function AuthScreenShell({
   children,
   footer,
   showTopBar = true,
+  showHero = true,
   centerContent = false,
   topAligned = false,
   backgroundColor,
+  safeAreaEdges = ["top", "bottom"],
   scrollViewRef,
+  scrollContentStyle,
   heroStyle,
+  layoutStyle,
   titleStyle,
   subtitleStyle,
 }: AuthScreenShellProps) {
@@ -72,7 +80,7 @@ export function AuthScreenShell({
   return (
     <SafeAreaView
       style={[styles.safeArea, { backgroundColor: resolvedBackgroundColor }]}
-      edges={["top", "bottom"]}
+      edges={safeAreaEdges}
     >
       <StatusBar style={resolvedTheme === "dark" ? "light" : "dark"} />
       <KeyboardAvoidingView
@@ -86,12 +94,13 @@ export function AuthScreenShell({
             topAligned || isKeyboardVisible ? styles.scrollContentTopAligned : undefined,
             isKeyboardVisible ? styles.scrollContentKeyboardOpen : undefined,
             { backgroundColor: resolvedBackgroundColor },
+            scrollContentStyle,
           ]}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
         >
-          <View style={styles.layout}>
+          <View style={[styles.layout, layoutStyle]}>
             {showTopBar ? (
               <View style={styles.topBar}>
                 <Pressable
@@ -107,24 +116,26 @@ export function AuthScreenShell({
               </View>
             ) : null}
 
-            <View
-              style={[styles.hero, centerContent ? styles.heroCentered : undefined, heroStyle]}
-            >
-              <Text
-                style={[styles.title, centerContent ? styles.textCentered : undefined, titleStyle]}
+            {showHero ? (
+              <View
+                style={[styles.hero, centerContent ? styles.heroCentered : undefined, heroStyle]}
               >
-                {title}
-              </Text>
-              <Text
-                style={[
-                  styles.subtitle,
-                  centerContent ? styles.textCentered : undefined,
-                  subtitleStyle,
-                ]}
-              >
-                {subtitle}
-              </Text>
-            </View>
+                <Text
+                  style={[styles.title, centerContent ? styles.textCentered : undefined, titleStyle]}
+                >
+                  {title}
+                </Text>
+                <Text
+                  style={[
+                    styles.subtitle,
+                    centerContent ? styles.textCentered : undefined,
+                    subtitleStyle,
+                  ]}
+                >
+                  {subtitle}
+                </Text>
+              </View>
+            ) : null}
 
             <View style={[styles.content, centerContent ? styles.contentCentered : undefined]}>
               {children}

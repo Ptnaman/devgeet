@@ -7,7 +7,6 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
@@ -78,7 +77,7 @@ export default function AdminPostsListScreen() {
   const { colors, resolvedTheme } = useAppTheme();
   const { isConnected, showToast } = useNetworkStatus();
   const router = useRouter();
-  const { canManagePosts, canModeratePosts, isAdmin, user } = useAuth();
+  const { canManagePosts, canModeratePosts, isAdmin, role, user } = useAuth();
   const styles = createStyles(colors, resolvedTheme);
   const [categories, setCategories] = useState<CategoryRecord[]>([]);
   const [posts, setPosts] = useState<PostRecord[]>([]);
@@ -87,7 +86,6 @@ export default function AdminPostsListScreen() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
-  const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<PostStatusFilter>("all");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [isViewingRecycleBin, setIsViewingRecycleBin] = useState(false);
@@ -195,7 +193,6 @@ export default function AdminPostsListScreen() {
   );
 
   const filteredPosts = useMemo(() => {
-    const keyword = searchTerm.trim().toLowerCase();
     const sourcePosts = isViewingRecycleBin ? trashedPosts : activePosts;
 
     return sourcePosts.filter((post) => {
@@ -207,27 +204,11 @@ export default function AdminPostsListScreen() {
         return false;
       }
 
-      if (!keyword) {
-        return true;
-      }
-
-      return [
-        post.title,
-        post.content,
-        post.slug,
-        post.category,
-        post.authorDisplayName,
-        post.authorUsername,
-        post.createdByEmail,
-      ]
-        .join(" ")
-        .toLowerCase()
-        .includes(keyword);
+      return true;
     });
-  }, [activePosts, categoryFilter, isViewingRecycleBin, searchTerm, statusFilter, trashedPosts]);
+  }, [activePosts, categoryFilter, isViewingRecycleBin, statusFilter, trashedPosts]);
 
-  const hasActiveFilters =
-    Boolean(searchTerm.trim()) || statusFilter !== "all" || categoryFilter !== "all";
+  const hasActiveFilters = statusFilter !== "all" || categoryFilter !== "all";
 
   const postStats = useMemo(() => {
     return {
@@ -314,6 +295,7 @@ export default function AdminPostsListScreen() {
       await setDoc(
         doc(firestore, POSTS_COLLECTION, post.id),
         {
+          authorRole: role,
           status: "pending",
           submittedAt: serverTimestamp(),
           uploadDate: serverTimestamp(),
@@ -490,7 +472,6 @@ export default function AdminPostsListScreen() {
             ]}
             activeOpacity={0.85}
             onPress={() => {
-              setSearchTerm("");
               setStatusFilter("all");
               setCategoryFilter("all");
               clearFeedback();
@@ -502,17 +483,6 @@ export default function AdminPostsListScreen() {
         </View>
         <View style={styles.sectionDivider} />
         {isLoadingData ? <ActivityIndicator size="small" color={colors.primary} /> : null}
-
-        <View style={styles.inputWrap}>
-          <TextInput
-            value={searchTerm}
-            onChangeText={setSearchTerm}
-            placeholder="Search by title, slug, category"
-            placeholderTextColor={colors.mutedText}
-            autoCapitalize="none"
-            style={styles.input}
-          />
-        </View>
 
         <View style={styles.compactFilterRow}>
           <Text style={styles.compactFilterLabel}>Status</Text>
@@ -875,19 +845,6 @@ const createStyles = (colors: ThemeColors, resolvedTheme: "light" | "dark") => {
       alignItems: "center",
       justifyContent: "space-between",
       gap: SPACING.sm,
-    },
-    inputWrap: {
-      minHeight: CONTROL_SIZE.inputHeight,
-      borderRadius: RADIUS.md,
-      borderWidth: 1,
-      borderColor: outlineColor,
-      backgroundColor: colors.surfaceMuted,
-      paddingHorizontal: SPACING.md,
-      justifyContent: "center",
-    },
-    input: {
-      color: colors.text,
-      fontSize: FONT_SIZE.button,
     },
     compactFilterRow: {
       gap: SPACING.xs,

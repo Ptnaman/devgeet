@@ -28,7 +28,7 @@ export function NotificationsProvider({
   children: ReactNode;
 }) {
   const router = useRouter();
-  const { user, isBootstrapping } = useAuth();
+  const { user, profile, hasProfileDocument, isBootstrapping } = useAuth();
   const lastHandledNotificationRef = useRef("");
 
   useEffect(() => {
@@ -106,7 +106,11 @@ export function NotificationsProvider({
   }, [router]);
 
   useEffect(() => {
-    if (Platform.OS === "web" || isBootstrapping) {
+    if (
+      Platform.OS === "web" ||
+      isBootstrapping ||
+      (user !== null && (!hasProfileDocument || profile?.accountStatus === "deleted"))
+    ) {
       return;
     }
 
@@ -140,6 +144,19 @@ export function NotificationsProvider({
 
         if (registration.status === "registered" && registration.token) {
           tokenToSync = registration.token;
+        } else if (registration.status === "permission-denied") {
+          if (cachedToken) {
+            try {
+              await deletePushTokenAsync(cachedToken);
+            } catch {
+              // Ignore token cleanup failures when permissions are revoked.
+            }
+          }
+
+          await clearCachedPushTokenAsync().catch(() => {
+            // Ignore local cache cleanup failures.
+          });
+          return;
         } else if (
           registration.status === "configuration-error" ||
           ((registration.status === "network-error" ||
@@ -181,7 +198,7 @@ export function NotificationsProvider({
     return () => {
       active = false;
     };
-  }, [isBootstrapping, user]);
+  }, [hasProfileDocument, isBootstrapping, profile?.accountStatus, user]);
 
   return children;
 }

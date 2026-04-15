@@ -1,5 +1,5 @@
-import { useEffect, useRef } from "react";
-import { usePathname, useRouter } from "expo-router";
+import { useEffect, useRef, useState } from "react";
+import { usePathname } from "expo-router";
 import { GlassView } from "expo-glass-effect";
 import {
   ActivityIndicator,
@@ -14,7 +14,6 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { NotificationBellIcon } from "@/components/icons/notification-bell-icon";
-import { useUserNotifications } from "@/hooks/use-user-notifications";
 import { RADIUS, SHADOWS, SPACING, STATIC_COLORS, type ThemeColors } from "@/constants/theme";
 import {
   markUserNotificationsAsReadAsync,
@@ -26,6 +25,7 @@ import { useAppTheme } from "@/providers/theme-provider";
 type HeaderNotificationsButtonProps = {
   unreadCount: number;
   onPress: () => void;
+  backgroundColor?: string;
 };
 
 type HeaderNotificationsMenuProps = {
@@ -53,16 +53,13 @@ const formatNotificationDateTime = (value: string) => {
   });
 };
 
-export function useHeaderNotifications() {
-  return useUserNotifications();
-}
-
 export function HeaderNotificationsButton({
   unreadCount,
   onPress,
+  backgroundColor,
 }: HeaderNotificationsButtonProps) {
   const { colors } = useAppTheme();
-  const styles = createStyles(colors);
+  const styles = createStyles(colors, backgroundColor);
   const hasUnread = unreadCount > 0;
   const badgeLabel = unreadCount > 99 ? "99+" : `${unreadCount}`;
 
@@ -71,19 +68,18 @@ export function HeaderNotificationsButton({
       accessibilityRole="button"
       accessibilityLabel={
         unreadCount
-          ? `Open notifications. ${unreadCount} unread notifications`
-          : "Open notifications"
+          ? `Open creator notifications. ${unreadCount} unread notifications`
+          : "Open creator notifications"
       }
-      hitSlop={4}
-      style={({ pressed }) => [
+      hitSlop={6}
+      style={({ hovered, pressed }) => [
         styles.iconButton,
-        hasUnread && styles.iconButtonUnread,
-        pressed && styles.buttonPressed,
+        (hovered || pressed) && styles.iconButtonActive,
       ]}
       onPress={onPress}
     >
       <NotificationBellIcon
-        size={24}
+        size={22}
         color={hasUnread ? colors.accent : colors.text}
         filled={hasUnread}
         fillColor={colors.accentSoft}
@@ -105,10 +101,10 @@ export function HeaderNotificationsMenu({
 }: HeaderNotificationsMenuProps) {
   const { colors } = useAppTheme();
   const { user } = useAuth();
-  const router = useRouter();
   const pathname = usePathname();
   const insets = useSafeAreaInsets();
   const previousPathnameRef = useRef(pathname);
+  const [selectedNotification, setSelectedNotification] = useState<UserNotificationRecord | null>(null);
   const styles = createStyles(colors);
 
   useEffect(() => {
@@ -140,16 +136,11 @@ export function HeaderNotificationsMenu({
     previousPathnameRef.current = pathname;
   }, [onClose, pathname, visible]);
 
-  const openNotificationTarget = (notification: UserNotificationRecord) => {
-    onClose();
-
-    if (notification.postId && pathname !== `/post/${notification.postId}`) {
-      router.push({
-        pathname: "/post/[postId]",
-        params: { postId: notification.postId },
-      });
+  useEffect(() => {
+    if (!visible) {
+      setSelectedNotification(null);
     }
-  };
+  }, [visible]);
 
   return (
     <Modal
@@ -178,9 +169,9 @@ export function HeaderNotificationsMenu({
         >
           <View style={styles.notificationsHeader}>
             <View>
-              <Text style={styles.menuTitle}>Notifications</Text>
+              <Text style={styles.menuTitle}>Creator Notifications</Text>
               <Text style={styles.menuSubtitle}>
-                Approval updates and account alerts appear here.
+                Post approvals and creator-access updates appear here.
               </Text>
             </View>
           </View>
@@ -198,7 +189,7 @@ export function HeaderNotificationsMenu({
               <NotificationBellIcon size={20} color={colors.mutedText} />
               <Text style={styles.emptyTitle}>No notifications yet</Text>
               <Text style={styles.emptySubtitle}>
-                When your post gets approved, it will show here.
+                Creator approvals and publishing updates will appear here.
               </Text>
             </View>
           ) : null}
@@ -217,7 +208,7 @@ export function HeaderNotificationsMenu({
                     !notification.isRead && styles.notificationCardUnread,
                     pressed && styles.notificationCardPressed,
                   ]}
-                  onPress={() => openNotificationTarget(notification)}
+                  onPress={() => setSelectedNotification(notification)}
                 >
                   {notification.imageUrl ? (
                     <Image
@@ -251,51 +242,88 @@ export function HeaderNotificationsMenu({
             </ScrollView>
           ) : null}
         </View>
+
+        {selectedNotification ? (
+          <View style={styles.detailsOverlay}>
+            <Pressable
+              style={styles.detailsBackdrop}
+              onPress={() => setSelectedNotification(null)}
+            />
+            <View style={styles.detailsCard}>
+              <View style={styles.detailsHeader}>
+                <Text style={styles.detailsTitle}>{selectedNotification.title}</Text>
+                {selectedNotification.createdAt ? (
+                  <Text style={styles.detailsMeta}>
+                    {formatNotificationDateTime(selectedNotification.createdAt)}
+                  </Text>
+                ) : null}
+              </View>
+
+              <ScrollView
+                style={styles.detailsBodyScroll}
+                contentContainerStyle={styles.detailsBodyContent}
+                showsVerticalScrollIndicator={false}
+              >
+                {selectedNotification.imageUrl ? (
+                  <Image
+                    source={{ uri: selectedNotification.imageUrl }}
+                    style={styles.detailsImage}
+                  />
+                ) : null}
+                <Text style={styles.detailsBody}>{selectedNotification.body}</Text>
+              </ScrollView>
+
+              <Pressable
+                accessibilityRole="button"
+                style={({ pressed }) => [
+                  styles.detailsCloseButton,
+                  pressed && styles.detailsCloseButtonPressed,
+                ]}
+                onPress={() => setSelectedNotification(null)}
+              >
+                <Text style={styles.detailsCloseButtonText}>Close</Text>
+              </Pressable>
+            </View>
+          </View>
+        ) : null}
       </View>
     </Modal>
   );
 }
 
-const createStyles = (colors: ThemeColors) =>
+const createStyles = (colors: ThemeColors, buttonBackgroundColor?: string) =>
   StyleSheet.create({
     iconButton: {
+      width: 40,
+      height: 40,
+      borderRadius: 999,
+      backgroundColor: "transparent",
       alignItems: "center",
       justifyContent: "center",
-      paddingHorizontal: 6,
-      paddingVertical: 6,
-      marginRight: 8,
-      borderRadius: 999,
     },
-    iconButtonUnread: {
-      shadowColor: colors.accent,
-      shadowOffset: { width: 0, height: 4 },
-      shadowOpacity: 0.14,
-      shadowRadius: 10,
-      elevation: 3,
+    iconButtonActive: {
+      backgroundColor: buttonBackgroundColor ?? colors.surfaceMuted,
     },
     unreadBadge: {
       position: "absolute",
       top: -2,
       right: -2,
-      minWidth: 22,
-      height: 22,
+      minWidth: 20,
+      height: 20,
       borderRadius: 999,
       backgroundColor: colors.danger,
       borderWidth: 2,
       borderColor: colors.surface,
       alignItems: "center",
       justifyContent: "center",
-      paddingHorizontal: 5,
+      paddingHorizontal: 4,
+      zIndex: 1,
     },
     unreadBadgeText: {
       color: STATIC_COLORS.white,
       fontSize: 10,
       fontWeight: "700",
       lineHeight: 12,
-    },
-    buttonPressed: {
-      backgroundColor: colors.surfaceMuted,
-      opacity: 0.92,
     },
     modalRoot: {
       flex: 1,
@@ -428,5 +456,77 @@ const createStyles = (colors: ThemeColors) =>
       height: 8,
       borderRadius: 999,
       backgroundColor: colors.primary,
+    },
+    detailsOverlay: {
+      ...StyleSheet.absoluteFillObject,
+      alignItems: "center",
+      justifyContent: "center",
+      paddingHorizontal: SPACING.lg,
+      zIndex: 2,
+    },
+    detailsBackdrop: {
+      ...StyleSheet.absoluteFillObject,
+      backgroundColor: colors.overlay,
+    },
+    detailsCard: {
+      width: "100%",
+      maxWidth: 420,
+      maxHeight: "72%",
+      borderRadius: RADIUS.card,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surface,
+      padding: SPACING.lg,
+      gap: SPACING.md,
+      ...SHADOWS.md,
+    },
+    detailsHeader: {
+      gap: 6,
+    },
+    detailsTitle: {
+      color: colors.text,
+      fontSize: 18,
+      fontWeight: "700",
+      lineHeight: 24,
+    },
+    detailsMeta: {
+      color: colors.subtleText,
+      fontSize: 12,
+      fontWeight: "600",
+    },
+    detailsBodyScroll: {
+      flexGrow: 0,
+    },
+    detailsBodyContent: {
+      gap: SPACING.md,
+    },
+    detailsImage: {
+      width: "100%",
+      height: 180,
+      borderRadius: RADIUS.md,
+      backgroundColor: colors.surfaceSoft,
+    },
+    detailsBody: {
+      color: colors.text,
+      fontSize: 14,
+      lineHeight: 22,
+    },
+    detailsCloseButton: {
+      alignSelf: "flex-end",
+      minWidth: 88,
+      borderRadius: RADIUS.pill,
+      backgroundColor: colors.primary,
+      paddingHorizontal: SPACING.md,
+      paddingVertical: 10,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    detailsCloseButtonPressed: {
+      opacity: 0.88,
+    },
+    detailsCloseButtonText: {
+      color: colors.primaryText,
+      fontSize: 13,
+      fontWeight: "700",
     },
   });

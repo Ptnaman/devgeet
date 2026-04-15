@@ -295,24 +295,34 @@ export default function SignupScreen() {
   const firstNameError = fieldErrors.firstName;
   const lastNameError = fieldErrors.lastName;
   const emailError = fieldErrors.email ?? emailFormatError;
+  const emailSupportingText =
+    "Use an active email address for login, verification, and password reset.";
+  const emailSupportingTone = normalizedEmail && !emailError ? "success" : "default";
   const usernameAvailabilityError =
     !fieldErrors.username && !usernameFormatError && usernameAvailability === "taken"
       ? "Username is already taken."
       : undefined;
   const usernameError = fieldErrors.username ?? usernameFormatError ?? usernameAvailabilityError;
   const usernameSupportingText =
-    !normalizedUsername || usernameError
-      ? undefined
-      : usernameAvailability === "checking"
-        ? "Checking username..."
-        : usernameAvailability === "available"
-          ? "Username is available."
-          : undefined;
+    usernameAvailability === "checking"
+      ? "Checking username..."
+      : usernameAvailability === "available"
+        ? "Username is available."
+        : "Use 3-20 chars with letters, numbers, dot, underscore, or hyphen.";
   const usernameSupportingTone = usernameAvailability === "available" ? "success" : "default";
   const passwordError =
     fieldErrors.password ?? (isPasswordTooShort ? PASSWORD_VALIDATION_MESSAGE : undefined);
+  const passwordSupportingText =
+    password.length >= PASSWORD_MIN_LENGTH
+      ? "Password length looks good."
+      : `Use at least ${PASSWORD_MIN_LENGTH} characters.`;
+  const passwordSupportingTone = password.length >= PASSWORD_MIN_LENGTH ? "success" : "default";
   const confirmPasswordError =
     fieldErrors.confirmPassword ?? (hasPasswordMismatch ? "Passwords do not match." : undefined);
+  const confirmPasswordSupportingText = hasPasswordMatch
+    ? "Passwords match."
+    : "Re-enter the same password to confirm.";
+  const confirmPasswordSupportingTone = hasPasswordMatch ? "success" : "default";
   const emailIconColor = emailError ? colors.danger : colors.iconMuted;
   const passwordIconColor = passwordError ? colors.danger : colors.iconMuted;
   const confirmPasswordIconColor = confirmPasswordError ? colors.danger : colors.iconMuted;
@@ -346,7 +356,9 @@ export default function SignupScreen() {
       showTopBar={false}
       topAligned
       backgroundColor={colors.surface}
+      safeAreaEdges={["bottom"]}
       scrollViewRef={scrollViewRef}
+      scrollContentStyle={styles.compactScrollContent}
       heroStyle={styles.heroBlock}
       titleStyle={styles.heroTitle}
       subtitleStyle={styles.heroSubtitle}
@@ -405,6 +417,8 @@ export default function SignupScreen() {
           autoComplete="email"
           tone={emailError ? "error" : "default"}
           errorMessage={emailError}
+          supportingText={emailSupportingText}
+          supportingTone={emailSupportingTone}
           trailingAccessory={
             email ? (
               <Pressable
@@ -453,6 +467,8 @@ export default function SignupScreen() {
           autoComplete="new-password"
           tone={passwordError ? "error" : "default"}
           errorMessage={passwordError}
+          supportingText={passwordSupportingText}
+          supportingTone={passwordSupportingTone}
           onFocus={revealPasswordFields}
           trailingAccessory={
             <Pressable
@@ -486,6 +502,8 @@ export default function SignupScreen() {
           autoComplete="new-password"
           tone={confirmPasswordError ? "error" : confirmPasswordTone}
           errorMessage={confirmPasswordError}
+          supportingText={confirmPasswordSupportingText}
+          supportingTone={confirmPasswordSupportingTone}
           onFocus={revealPasswordFields}
           trailingAccessory={
             <Pressable
@@ -578,6 +596,9 @@ export default function SignupScreen() {
 
 const createStyles = (colors: ThemeColors) =>
   StyleSheet.create({
+    compactScrollContent: {
+      paddingTop: 0,
+    },
     heroBlock: {
       width: "100%",
       gap: SPACING.sm + 2,

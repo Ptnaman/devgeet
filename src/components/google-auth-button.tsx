@@ -83,11 +83,11 @@ const resolveGoogleClientIds = () => {
   };
 };
 
-const getErrorMessage = (error: unknown, isConnected: boolean) =>
+const getErrorMessage = (error: unknown, isConnected: boolean, fallbackMessage: string) =>
   getActionErrorMessage({
     error,
     isConnected,
-    fallbackMessage: "Google sign-in failed. Please try again.",
+    fallbackMessage,
   });
 
 const getIdToken = async (
@@ -117,6 +117,26 @@ const getIdToken = async (
   const { GoogleSignin } = googleSignInModule;
   const tokens = await GoogleSignin.getTokens();
   return tokens.idToken ?? null;
+};
+
+const clearNativeGoogleSessionAsync = async (
+  googleSignInModule: GoogleSignInModuleLike | null | undefined
+) => {
+  if (!googleSignInModule) {
+    return;
+  }
+
+  const signOutOperations: Promise<unknown>[] = [googleSignInModule.GoogleSignin.signOut()];
+
+  if (googleSignInModule.GoogleSignin.revokeAccess) {
+    signOutOperations.push(googleSignInModule.GoogleSignin.revokeAccess());
+  }
+
+  if (googleSignInModule.GoogleOneTapSignIn) {
+    signOutOperations.push(googleSignInModule.GoogleOneTapSignIn.signOut());
+  }
+
+  await Promise.allSettled(signOutOperations);
 };
 
 export function GoogleAuthButton({
@@ -228,21 +248,17 @@ export function GoogleAuthButton({
 
   const startGoogleSignIn = useCallback(async (mode: OneTapFlowMode) => {
     if (isWeb && !hasOneTapApi) {
-      onError(
-        "One Tap requires Universal Sign-In package. Configure private registry and reinstall."
-      );
+      onError("One Tap requires the Universal Sign-In package. Reinstall with that package configured.");
       return;
     }
 
     if (!hasNativeGoogleSignIn || !googleSignInModule) {
-      onError(
-        "RNGoogleSignin is missing in this binary. Use a development build (expo run:android/ios), not Expo Go."
-      );
+      onError("Google sign-in is missing in this build. Use a development build instead of Expo Go.");
       return;
     }
 
     if (!isGoogleConfigured) {
-      onError("Google Client ID is missing. Set EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID.");
+      onError("Google Client ID is missing.");
       return;
     }
 
@@ -260,6 +276,10 @@ export function GoogleAuthButton({
       }
 
       await setRememberSessionPersistence(rememberSession);
+
+      if (mode === "explicit") {
+        await clearNativeGoogleSessionAsync(googleSignInModule);
+      }
 
       if (hasOneTapApi) {
         const oneTapResponse = await runOneTapFlow(mode);
@@ -315,7 +335,7 @@ export function GoogleAuthButton({
         }
       }
 
-      const message = getErrorMessage(error, isConnected);
+      const message = getErrorMessage(error, isConnected, "Google sign-in failed. Please try again.");
       if (message === DEFAULT_OFFLINE_MESSAGE) {
         showOfflineToast();
       }

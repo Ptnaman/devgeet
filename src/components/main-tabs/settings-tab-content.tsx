@@ -1,6 +1,6 @@
 import Constants from "expo-constants";
 import { useRouter } from "expo-router";
-import { useState, type ReactNode } from "react";
+import { type ReactNode } from "react";
 import {
   Alert,
   Image,
@@ -8,6 +8,7 @@ import {
   Pressable,
   Share,
   StyleSheet,
+  Switch,
   Text,
   View,
 } from "react-native";
@@ -16,29 +17,16 @@ import Svg, { Circle, Path } from "react-native-svg";
 import { AdminPanelIcon } from "@/components/icons/admin-panel-icon";
 import { ArrowRightIcon } from "@/components/icons/arrow-right-icon";
 import { MainTabScrollView } from "@/components/main-tabs/main-tab-scroll-view";
+import { VerifiedRoleBadge } from "@/components/verified-role-badge";
 import { APP_LINKS } from "@/constants/app-links";
 import { RADIUS, SHADOWS, SPACING, type ThemeColors } from "@/constants/theme";
+import { useAppUpdates } from "@/providers/app-updates-provider";
 import { useAuth } from "@/providers/auth-provider";
+import { useLyricsReaderPreferences } from "@/providers/lyrics-reader-preferences-provider";
 import { useNetworkStatus } from "@/providers/network-provider";
 import { useAppTheme, type ThemePreference } from "@/providers/theme-provider";
 
-const THEME_OPTIONS: {
-  key: ThemePreference;
-  label: string;
-}[] = [
-  {
-    key: "system",
-    label: "Automatic",
-  },
-  {
-    key: "dark",
-    label: "Dark",
-  },
-  {
-    key: "light",
-    label: "Light",
-  },
-];
+const THEME_OPTIONS: ThemePreference[] = ["system", "dark", "light"];
 
 function ThemeOptionIcon({
   color,
@@ -177,16 +165,58 @@ function SettingRow({
   );
 }
 
+function SettingToggleRow({
+  isLast = false,
+  onValueChange,
+  subtitle,
+  title,
+  value,
+}: {
+  isLast?: boolean;
+  onValueChange: (value: boolean) => void;
+  subtitle?: string;
+  title: string;
+  value: boolean;
+}) {
+  const { colors } = useAppTheme();
+  const styles = createStyles(colors);
+
+  return (
+    <View style={[styles.row, !isLast && styles.rowDivider]}>
+      <View style={styles.rowContent}>
+        <View style={styles.toggleRowMain}>
+          <Text style={styles.rowTitle}>{title}</Text>
+          {subtitle ? <Text style={styles.rowSubtitle}>{subtitle}</Text> : null}
+        </View>
+
+        <View style={styles.toggleWrap}>
+          <Switch
+            value={value}
+            onValueChange={onValueChange}
+            trackColor={{
+              false: colors.divider,
+              true: colors.accent,
+            }}
+            thumbColor={colors.surface}
+            ios_backgroundColor={colors.divider}
+          />
+        </View>
+      </View>
+    </View>
+  );
+}
+
 export function SettingsTabContent() {
   const { colors, themePreference, setThemePreference } = useAppTheme();
+  const { keepLyricsScreenAwakeEnabled, setKeepLyricsScreenAwakeEnabled } =
+    useLyricsReaderPreferences();
   const { isConnected, showOfflineToast } = useNetworkStatus();
   const router = useRouter();
-  const { canManagePosts, isAdmin, profile, logout, user } = useAuth();
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const { canManagePosts, isAdmin, profile, role, user } = useAuth();
+  const { appVersion } = useAppUpdates();
   const styles = createStyles(colors);
 
   const appName = Constants.expoConfig?.name ?? "DevGeet";
-  const appVersion = Constants.expoConfig?.version ?? "1.0.0";
   const accountName =
     profile?.displayName || user?.displayName || user?.email || "User";
   const accountInitials =
@@ -207,7 +237,7 @@ export function SettingsTabContent() {
     try {
       await Linking.openURL(url);
     } catch {
-      Alert.alert(label, `Unable to open ${label.toLowerCase()} right now.`);
+      Alert.alert(label, `Unable to open ${label} right now.`);
     }
   };
 
@@ -227,10 +257,7 @@ export function SettingsTabContent() {
     try {
       await Linking.openURL(mailtoUrl);
     } catch {
-      Alert.alert(
-        label,
-        `Mail app not available. Please write to ${APP_LINKS.email}.`,
-      );
+      Alert.alert(label, `Mail app not available. Please write to ${APP_LINKS.email}.`);
     }
   };
 
@@ -260,16 +287,6 @@ export function SettingsTabContent() {
       });
     } catch {
       Alert.alert("Share App", "Unable to open share options right now.");
-    }
-  };
-
-  const handleLogout = async () => {
-    try {
-      setIsSubmitting(true);
-      await logout();
-      router.replace("/login");
-    } finally {
-      setIsSubmitting(false);
     }
   };
 
@@ -306,7 +323,7 @@ export function SettingsTabContent() {
       key: "whatsapp",
       title: "Join WhatsApp",
       subtitle: "Community support and updates",
-      onPress: () => openExternal(APP_LINKS.whatsapp, "WhatsApp"),
+      onPress: () => openExternal(APP_LINKS.whatsapp, "Join WhatsApp"),
     },
     {
       key: "feedback",
@@ -315,6 +332,12 @@ export function SettingsTabContent() {
       onPress: openPlayStoreFeedback,
     },
   ];
+
+  const themeLabels: Record<ThemePreference, string> = {
+    system: "Automatic",
+    dark: "Dark",
+    light: "Light",
+  };
 
   return (
     <MainTabScrollView
@@ -337,14 +360,17 @@ export function SettingsTabContent() {
           )}
         </View>
 
-        <View style={styles.profileTextWrap}>
-          <Text style={styles.profileName} numberOfLines={1}>
-            {accountName}
-          </Text>
-          <Text style={styles.profileSubtitle} numberOfLines={1}>
-            Edit Profile
-          </Text>
-        </View>
+          <View style={styles.profileTextWrap}>
+            <View style={styles.profileNameRow}>
+              <Text style={styles.profileName} numberOfLines={1}>
+                {accountName}
+              </Text>
+              <VerifiedRoleBadge role={role} />
+            </View>
+            <Text style={styles.profileSubtitle} numberOfLines={1}>
+              Open profile and account actions
+            </Text>
+          </View>
 
         <ArrowRightIcon size={22} color={colors.subtleText} />
       </Pressable>
@@ -372,11 +398,11 @@ export function SettingsTabContent() {
       <Text style={styles.sectionLabel}>Appearance</Text>
       <View style={styles.groupCard}>
         {THEME_OPTIONS.map((option, index) => {
-          const isSelected = option.key === themePreference;
+          const isSelected = option === themePreference;
 
           return (
             <Pressable
-              key={option.key}
+              key={option}
               style={({ pressed }) => [
                 styles.themeOption,
                 index > 0 && styles.themeOptionDivider,
@@ -384,19 +410,19 @@ export function SettingsTabContent() {
                 pressed && styles.rowPressed,
               ]}
               onPress={() => {
-                void setThemePreference(option.key);
+                void setThemePreference(option);
               }}
             >
               <View style={styles.themeOptionMain}>
                 <View style={styles.themeOptionIconWrap}>
                   <ThemeOptionIcon
-                    option={option.key}
+                    option={option}
                     color={isSelected ? colors.accent : colors.subtleText}
                   />
                 </View>
 
                 <View style={styles.rowTextWrap}>
-                  <Text style={styles.rowTitle}>{option.label}</Text>
+                  <Text style={styles.rowTitle}>{themeLabels[option]}</Text>
                 </View>
               </View>
 
@@ -406,6 +432,19 @@ export function SettingsTabContent() {
             </Pressable>
           );
         })}
+      </View>
+
+      <Text style={styles.sectionLabel}>Reading</Text>
+      <View style={styles.groupCard}>
+        <SettingToggleRow
+          title="Keep screen awake"
+          subtitle="Turn it on for reading expirence."
+          value={keepLyricsScreenAwakeEnabled}
+          onValueChange={(value) => {
+            void setKeepLyricsScreenAwakeEnabled(value);
+          }}
+          isLast
+        />
       </View>
 
       <Text style={styles.sectionLabel}>Legal</Text>
@@ -441,30 +480,22 @@ export function SettingsTabContent() {
             onPress: handleShareApp,
             showChevron: false,
           }}
+          isLast
         />
+      </View>
+      <View style={styles.groupCard}>
         <SettingRow
           item={{
             key: "about",
-            title: "Version",
+            title: "App Updates",
+            subtitle: "Tap to update app",
             value: `v${appVersion}`,
-            showChevron: false,
+            onPress: () => router.push("/app-updates"),
           }}
           isLast
         />
       </View>
 
-      <View style={styles.groupCard}>
-        <SettingRow
-          item={{
-            key: "logout",
-            title: isSubmitting ? "Logging out..." : "Logout",
-            onPress: handleLogout,
-            destructive: true,
-            disabled: isSubmitting,
-          }}
-          isLast
-        />
-      </View>
     </MainTabScrollView>
   );
 }
@@ -513,10 +544,16 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     flex: 1,
     gap: 2,
   },
+  profileNameRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.sm,
+  },
   profileName: {
     color: colors.text,
     fontSize: 17,
     fontWeight: "700",
+    flexShrink: 1,
   },
   profileSubtitle: {
     color: colors.mutedText,
@@ -587,6 +624,13 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     color: colors.mutedText,
     fontSize: 12,
     lineHeight: 16,
+  },
+  toggleRowMain: {
+    flex: 1,
+    gap: 2,
+  },
+  toggleWrap: {
+    marginLeft: SPACING.md,
   },
   rowRight: {
     flexDirection: "row",

@@ -91,7 +91,7 @@ export function useFavorites() {
           getRequestErrorMessage({
             error: snapshotError,
             isConnected,
-            onlineMessage: "Unable to sync favorites right now.",
+            onlineMessage: "Unable to sync bookmarks right now.",
           }),
         );
         setIsLoadingFavorites(false);
@@ -116,7 +116,7 @@ export function useFavorites() {
       post: Pick<PostRecord, "id" | "title" | "slug">,
     ): Promise<FavoriteMutationResult> => {
       if (!user?.uid) {
-        throw new Error("Please login to manage favorites.");
+        throw new Error("Please login to manage bookmarks.");
       }
 
       if (!isConnected) {
@@ -133,7 +133,7 @@ export function useFavorites() {
           previousFavorites = current;
           return current.filter((item) => item.postId !== post.id);
         });
-        showToast("Removed from favorites");
+        showToast("Removed from bookmarks");
 
         try {
           await deleteDoc(favoriteRef);
@@ -152,7 +152,7 @@ export function useFavorites() {
           (left, right) => toSortTime(right) - toSortTime(left),
         );
       });
-      showToast("Added to favorites");
+      showToast("Added to bookmarks");
 
       try {
         await setDoc(
@@ -181,7 +181,7 @@ export function useFavorites() {
 
   const clearFavorites = useCallback(async (): Promise<number> => {
     if (!user?.uid) {
-      throw new Error("Please login to manage favorites.");
+      throw new Error("Please login to manage bookmarks.");
     }
 
     if (!isConnected) {
@@ -194,7 +194,7 @@ export function useFavorites() {
 
     const previousFavorites = favorites;
     setFavorites([]);
-    showToast("Cleared favorites");
+    showToast("Cleared bookmarks");
 
     try {
       const batch = writeBatch(firestore);

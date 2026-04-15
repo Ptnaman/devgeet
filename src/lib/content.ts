@@ -1,5 +1,7 @@
 import { Timestamp, type DocumentData } from "firebase/firestore";
 
+import { getEffectiveUserRole, type UserRole } from "@/lib/access";
+
 export const POSTS_COLLECTION = "posts";
 export const CATEGORIES_COLLECTION = "categories";
 export const FAVORITES_COLLECTION = "favorites";
@@ -37,6 +39,8 @@ export type PostRecord = {
   status: PostStatus;
   category: string;
   authorId: string;
+  authorRole: UserRole;
+  hasAuthorRole: boolean;
   authorUsername: string;
   authorDisplayName: string;
   authorPhotoURL: string;
@@ -50,6 +54,59 @@ export type PostRecord = {
   deletedAt: string;
   deletedBy: string;
   deletedByEmail: string;
+};
+
+const normalizeSearchValue = (value: string) =>
+  value
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+
+export const matchesPostSearch = (
+  post: Pick<
+    PostRecord,
+    | "title"
+    | "content"
+    | "slug"
+    | "category"
+    | "authorDisplayName"
+    | "authorUsername"
+    | "createdByEmail"
+  >,
+  searchTerm: string,
+) => {
+  const keyword = normalizeSearchValue(searchTerm);
+  if (!keyword) {
+    return true;
+  }
+
+  return normalizeSearchValue(
+    [
+      post.title,
+      post.content,
+      post.slug,
+      post.category,
+      post.authorDisplayName,
+      post.authorUsername,
+      post.createdByEmail,
+    ]
+      .filter(Boolean)
+      .join(" "),
+  ).includes(keyword);
+};
+
+export const matchesCategorySearch = (
+  category: Pick<CategoryRecord, "name" | "slug">,
+  searchTerm: string,
+) => {
+  const keyword = normalizeSearchValue(searchTerm);
+  if (!keyword) {
+    return true;
+  }
+
+  return normalizeSearchValue([category.name, category.slug].filter(Boolean).join(" ")).includes(
+    keyword,
+  );
 };
 
 export const createSlug = (value: string) =>
@@ -196,45 +253,51 @@ export const mapFavoriteRecord = (id: string, data: DocumentData): FavoriteRecor
   uploadDate: toDateString(data.uploadDate),
 });
 
-export const mapPostRecord = (id: string, data: DocumentData): PostRecord => ({
-  id,
-  slug: typeof data.slug === "string" ? data.slug : "",
-  title: typeof data.title === "string" ? data.title : "Untitled",
-  content: typeof data.content === "string" ? data.content : "",
-  featureImageUrl: normalizeHttpUrl(data.featureImageUrl),
-  youtubeVideoUrl: normalizeHttpUrl(data.youtubeVideoUrl),
-  createDate: toDateString(data.createDate),
-  uploadDate: toDateString(data.uploadDate),
-  submittedAt: toDateString(data.submittedAt),
-  publishedAt: toDateString(data.publishedAt),
-  approvedAt: toDateString(data.approvedAt),
-  status: parseStatus(data.status),
-  category: typeof data.category === "string" && data.category ? data.category : "general",
-  authorId:
-    typeof data.authorId === "string" && data.authorId
-      ? data.authorId
-      : typeof data.createdBy === "string"
-        ? data.createdBy
-        : "",
-  authorUsername: typeof data.authorUsername === "string" ? data.authorUsername : "",
-  authorDisplayName:
-    typeof data.authorDisplayName === "string" && data.authorDisplayName
-      ? data.authorDisplayName
-      : typeof data.createdByEmail === "string" && data.createdByEmail
-        ? data.createdByEmail
-        : "User",
-  authorPhotoURL: normalizeHttpUrl(data.authorPhotoURL),
-  createdBy: typeof data.createdBy === "string" ? data.createdBy : "",
-  createdByEmail: typeof data.createdByEmail === "string" ? data.createdByEmail : "",
-  updatedBy: typeof data.updatedBy === "string" ? data.updatedBy : "",
-  updatedByEmail: typeof data.updatedByEmail === "string" ? data.updatedByEmail : "",
-  approvedBy: typeof data.approvedBy === "string" ? data.approvedBy : "",
-  approvedByEmail: typeof data.approvedByEmail === "string" ? data.approvedByEmail : "",
-  moderationNote: typeof data.moderationNote === "string" ? data.moderationNote : "",
-  deletedAt: toDateString(data.deletedAt),
-  deletedBy: typeof data.deletedBy === "string" ? data.deletedBy : "",
-  deletedByEmail: typeof data.deletedByEmail === "string" ? data.deletedByEmail : "",
-});
+export const mapPostRecord = (id: string, data: DocumentData): PostRecord => {
+  const rawAuthorRole = typeof data.authorRole === "string" ? data.authorRole.trim() : "";
+
+  return {
+    id,
+    slug: typeof data.slug === "string" ? data.slug : "",
+    title: typeof data.title === "string" ? data.title : "Untitled",
+    content: typeof data.content === "string" ? data.content : "",
+    featureImageUrl: normalizeHttpUrl(data.featureImageUrl),
+    youtubeVideoUrl: normalizeHttpUrl(data.youtubeVideoUrl),
+    createDate: toDateString(data.createDate),
+    uploadDate: toDateString(data.uploadDate),
+    submittedAt: toDateString(data.submittedAt),
+    publishedAt: toDateString(data.publishedAt),
+    approvedAt: toDateString(data.approvedAt),
+    status: parseStatus(data.status),
+    category: typeof data.category === "string" && data.category ? data.category : "general",
+    authorId:
+      typeof data.authorId === "string" && data.authorId
+        ? data.authorId
+        : typeof data.createdBy === "string"
+          ? data.createdBy
+          : "",
+    authorRole: getEffectiveUserRole(rawAuthorRole),
+    hasAuthorRole: Boolean(rawAuthorRole),
+    authorUsername: typeof data.authorUsername === "string" ? data.authorUsername : "",
+    authorDisplayName:
+      typeof data.authorDisplayName === "string" && data.authorDisplayName
+        ? data.authorDisplayName
+        : typeof data.createdByEmail === "string" && data.createdByEmail
+          ? data.createdByEmail
+          : "User",
+    authorPhotoURL: normalizeHttpUrl(data.authorPhotoURL),
+    createdBy: typeof data.createdBy === "string" ? data.createdBy : "",
+    createdByEmail: typeof data.createdByEmail === "string" ? data.createdByEmail : "",
+    updatedBy: typeof data.updatedBy === "string" ? data.updatedBy : "",
+    updatedByEmail: typeof data.updatedByEmail === "string" ? data.updatedByEmail : "",
+    approvedBy: typeof data.approvedBy === "string" ? data.approvedBy : "",
+    approvedByEmail: typeof data.approvedByEmail === "string" ? data.approvedByEmail : "",
+    moderationNote: typeof data.moderationNote === "string" ? data.moderationNote : "",
+    deletedAt: toDateString(data.deletedAt),
+    deletedBy: typeof data.deletedBy === "string" ? data.deletedBy : "",
+    deletedByEmail: typeof data.deletedByEmail === "string" ? data.deletedByEmail : "",
+  };
+};
 
 export const isPostTrashed = (post: Pick<PostRecord, "deletedAt">) => Boolean(post.deletedAt);
 

@@ -7,12 +7,13 @@ import { useEffect } from "react";
 import { Platform, StyleSheet, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
-import Svg, { Defs, LinearGradient, Rect, Stop } from "react-native-svg";
 import "@/lib/firebase";
 import "@/global.css";
-import { APP_FONTS, installGlobalTypography } from "@/lib/typography";
+import { APP_FONTS, PRODUCT_FONTS, installGlobalTypography } from "@/lib/typography";
 import { hasNotificationsNativeSupport } from "@/lib/notifications";
+import { AppUpdatesProvider } from "@/providers/app-updates-provider";
 import { AuthProvider } from "@/providers/auth-provider";
+import { LyricsReaderPreferencesProvider } from "@/providers/lyrics-reader-preferences-provider";
 import { NetworkProvider } from "@/providers/network-provider";
 import { NotificationsProvider } from "@/providers/notifications-provider";
 import { ThemeProvider, useAppTheme } from "@/providers/theme-provider";
@@ -22,25 +23,13 @@ installGlobalTypography();
 
 function AppShell() {
   const { colors, resolvedTheme } = useAppTheme();
-  const styles = createStyles();
+  const styles = createStyles(colors.background);
 
   return (
     <View style={styles.container}>
-      <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-        <Svg height="100%" width="100%">
-          <Defs>
-            <LinearGradient id="appBackgroundGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-              <Stop offset="0%" stopColor={colors.backgroundGradient[0]} />
-              <Stop offset="55%" stopColor={colors.backgroundGradient[1]} />
-              <Stop offset="100%" stopColor={colors.backgroundGradient[2]} />
-            </LinearGradient>
-          </Defs>
-          <Rect width="100%" height="100%" fill="url(#appBackgroundGradient)" />
-        </Svg>
-      </View>
       <StatusBar
         style={resolvedTheme === "dark" ? "light" : "dark"}
-        backgroundColor={colors.backgroundGradient[0]}
+        backgroundColor={colors.background}
         translucent={false}
       />
       <Stack
@@ -60,12 +49,22 @@ function AppShell() {
 
 export default function RootLayout() {
   const [fontsLoaded] = useFonts({
-    [APP_FONTS.regular]: require("../../assets/fonts/GoogleSans-Regular.ttf"),
-    [APP_FONTS.medium]: require("../../assets/fonts/GoogleSans-Medium.ttf"),
-    [APP_FONTS.bold]: require("../../assets/fonts/GoogleSans-Bold.ttf"),
-    [APP_FONTS.italic]: require("../../assets/fonts/GoogleSans-Italic.ttf"),
-    [APP_FONTS.mediumItalic]: require("../../assets/fonts/GoogleSans-MediumItalic.ttf"),
-    [APP_FONTS.boldItalic]: require("../../assets/fonts/GoogleSans-BoldItalic.ttf"),
+    [APP_FONTS.regular]: require("../../assets/fonts/GoogleSans/GoogleSans-Regular.ttf"),
+    [APP_FONTS.medium]: require("../../assets/fonts/GoogleSans/GoogleSans-Medium.ttf"),
+    [APP_FONTS.bold]: require("../../assets/fonts/GoogleSans/GoogleSans-Bold.ttf"),
+    [APP_FONTS.italic]: require("../../assets/fonts/GoogleSans/GoogleSans-Italic.ttf"),
+    [APP_FONTS.mediumItalic]: require("../../assets/fonts/GoogleSans/GoogleSans-MediumItalic.ttf"),
+    [APP_FONTS.boldItalic]: require("../../assets/fonts/GoogleSans/GoogleSans-BoldItalic.ttf"),
+    [PRODUCT_FONTS.regular]: require("../../assets/fonts/ProductSans/ProductSans-Regular.ttf"),
+    [PRODUCT_FONTS.medium]: require("../../assets/fonts/ProductSans/ProductSans-Medium.ttf"),
+    [PRODUCT_FONTS.bold]: require("../../assets/fonts/ProductSans/ProductSans-Bold.ttf"),
+    [PRODUCT_FONTS.italic]: require("../../assets/fonts/ProductSans/ProductSans-Italic.ttf"),
+    [PRODUCT_FONTS.mediumItalic]: require(
+      "../../assets/fonts/ProductSans/ProductSans-MediumItalic.ttf"
+    ),
+    [PRODUCT_FONTS.boldItalic]: require(
+      "../../assets/fonts/ProductSans/ProductSans-BoldItalic.ttf"
+    ),
   });
 
   useEffect(() => {
@@ -87,17 +86,21 @@ export default function RootLayout() {
     <GestureHandlerRootView style={styles.root}>
       <SafeAreaProvider>
         <ThemeProvider>
-          <NetworkProvider>
-            <AuthProvider>
-              {shouldEnableNotifications ? (
-                <NotificationsProvider>
-                  <AppShell />
-                </NotificationsProvider>
-              ) : (
-                <AppShell />
-              )}
-            </AuthProvider>
-          </NetworkProvider>
+          <LyricsReaderPreferencesProvider>
+            <NetworkProvider>
+              <AppUpdatesProvider>
+                <AuthProvider>
+                  {shouldEnableNotifications ? (
+                    <NotificationsProvider>
+                      <AppShell />
+                    </NotificationsProvider>
+                  ) : (
+                    <AppShell />
+                  )}
+                </AuthProvider>
+              </AppUpdatesProvider>
+            </NetworkProvider>
+          </LyricsReaderPreferencesProvider>
         </ThemeProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
@@ -110,9 +113,10 @@ const styles = StyleSheet.create({
   },
 });
 
-const createStyles = () =>
+const createStyles = (backgroundColor: string) =>
   StyleSheet.create({
     container: {
       flex: 1,
+      backgroundColor,
     },
   });

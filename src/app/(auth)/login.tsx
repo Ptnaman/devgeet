@@ -28,6 +28,11 @@ import {
   type ThemeColors,
 } from "@/constants/theme";
 import { DEFAULT_OFFLINE_MESSAGE, getActionErrorMessage } from "@/lib/network";
+import {
+  EMAIL_VALIDATION_MESSAGE,
+  isValidEmailAddress,
+  normalizeEmailAddress,
+} from "@/lib/auth-validation";
 import { useAuth } from "@/providers/auth-provider";
 import { useNetworkStatus } from "@/providers/network-provider";
 import { useAppTheme } from "@/providers/theme-provider";
@@ -62,8 +67,12 @@ const getErrorMessage = (
     fallbackMessage,
   });
 
-const resolveLoginErrorState = (error: unknown, isConnected: boolean) => {
-  const message = getErrorMessage(error, isConnected);
+const resolveLoginErrorState = (
+  error: unknown,
+  isConnected: boolean,
+  fallbackMessage = "Unable to login. Please try again."
+) => {
+  const message = getErrorMessage(error, isConnected, fallbackMessage);
   const code = readErrorCode(error);
   const normalizedMessage = message.toLowerCase();
 
@@ -159,6 +168,15 @@ export default function LoginScreen() {
     void persistRememberPreference();
   }, [hasHydratedScreenState, rememberMe]);
 
+  const normalizedIdentifier = identifier.trim();
+  const identifierLooksLikeEmail = normalizedIdentifier.includes("@");
+  const identifierFormatError =
+    normalizedIdentifier &&
+    identifierLooksLikeEmail &&
+    !isValidEmailAddress(normalizeEmailAddress(identifier))
+      ? EMAIL_VALIDATION_MESSAGE
+      : undefined;
+
   const handleLogin = async () => {
     const nextErrors: LoginFieldErrors = {};
 
@@ -190,11 +208,15 @@ export default function LoginScreen() {
       }
       router.replace("/home");
     } catch (loginError) {
-      const message = getErrorMessage(loginError, isConnected);
+      const message = getErrorMessage(loginError, isConnected, "Unable to login. Please try again.");
       if (message === DEFAULT_OFFLINE_MESSAGE) {
         showOfflineToast();
       }
-      const nextError = resolveLoginErrorState(loginError, isConnected);
+      const nextError = resolveLoginErrorState(
+        loginError,
+        isConnected,
+        "Unable to login. Please try again.",
+      );
 
       if (nextError.field) {
         setFieldErrors({ [nextError.field]: nextError.message });
@@ -225,8 +247,19 @@ export default function LoginScreen() {
   };
 
   const isLoginDisabled = isSubmitting || !identifier.trim() || !password;
-  const hasIdentifierError = Boolean(fieldErrors.identifier);
-  const hasPasswordError = Boolean(fieldErrors.password);
+  const identifierError = fieldErrors.identifier ?? identifierFormatError;
+  const passwordError = fieldErrors.password;
+  const identifierSupportingText =
+    identifierLooksLikeEmail
+      ? normalizedIdentifier && !identifierError
+        ? "Email format looks valid."
+        : "Enter the email linked to your account."
+      : "You can login with either your email or username.";
+  const identifierSupportingTone =
+    normalizedIdentifier && identifierLooksLikeEmail && !identifierError ? "success" : "default";
+  const passwordSupportingText = "Password is case-sensitive.";
+  const hasIdentifierError = Boolean(identifierError);
+  const hasPasswordError = Boolean(passwordError);
 
   return (
     <SafeAreaView style={styles.safeArea} edges={["bottom"]}>
@@ -242,8 +275,8 @@ export default function LoginScreen() {
         >
           <View style={styles.content}>
             <View style={styles.header}>
-              <Text style={styles.title}>Let&apos;s Sign You In</Text>
-              <Text style={styles.subtitle}>Welcome back, you&apos;ve been missed!</Text>
+              <Text style={styles.title}>{"Let's Sign You In"}</Text>
+              <Text style={styles.subtitle}>{"Welcome back, you've been missed!"}</Text>
             </View>
 
             <View style={styles.formStack}>
@@ -259,8 +292,16 @@ export default function LoginScreen() {
                   autoCorrect={false}
                   autoComplete="username"
                   textContentType="username"
-                  tone={hasIdentifierError ? "error" : "default"}
-                  errorMessage={fieldErrors.identifier}
+                  tone={
+                    hasIdentifierError
+                      ? "error"
+                      : normalizedIdentifier && identifierLooksLikeEmail && !identifierError
+                        ? "success"
+                        : "default"
+                  }
+                  errorMessage={identifierError}
+                  supportingText={identifierSupportingText}
+                  supportingTone={identifierSupportingTone}
                   trailingAccessory={
                     identifier ? (
                       <Pressable
@@ -287,16 +328,17 @@ export default function LoginScreen() {
               <View style={styles.fieldGroup}>
                 <AuthSoftInput
                   label="Password"
-                  value={password}
-                  onChangeText={(value) => {
-                    setPassword(value);
-                    clearFeedback("password");
-                  }}
-                  secureTextEntry={!isPasswordVisible}
-                  autoCapitalize="none"
-                  tone={hasPasswordError ? "error" : "default"}
-                  errorMessage={fieldErrors.password}
-                  inputStyle={styles.inputText}
+                    value={password}
+                    onChangeText={(value) => {
+                      setPassword(value);
+                      clearFeedback("password");
+                    }}
+                    secureTextEntry={!isPasswordVisible}
+                    autoCapitalize="none"
+                    tone={hasPasswordError ? "error" : "default"}
+                    errorMessage={passwordError}
+                    supportingText={passwordSupportingText}
+                    inputStyle={styles.inputText}
                   onSubmitEditing={() => {
                     if (!isLoginDisabled) {
                       void handleLogin();
@@ -304,18 +346,18 @@ export default function LoginScreen() {
                   }}
                   trailingAccessory={
                     <Pressable
-                    style={({ pressed }) => [styles.eyeButton, pressed && styles.eyeButtonPressed]}
-                    onPress={() => setIsPasswordVisible((current) => !current)}
-                    hitSlop={8}
-                  >
+                      style={({ pressed }) => [styles.eyeButton, pressed && styles.eyeButtonPressed]}
+                      onPress={() => setIsPasswordVisible((current) => !current)}
+                      hitSlop={8}
+                    >
                       {isPasswordVisible ? (
                         <ViewOnIcon color={colors.iconMuted} />
                       ) : (
                         <ViewOffIcon color={colors.iconMuted} />
                       )}
-                  </Pressable>
-                }
-              />
+                    </Pressable>
+                  }
+                />
               </View>
 
               <View style={styles.optionsRow}>
@@ -387,7 +429,7 @@ export default function LoginScreen() {
             </View>
 
             <Text style={styles.footerText}>
-              Don&apos;t have Account?{" "}
+              {"Don't have Account?"}{" "}
               <Link href="/signup" style={styles.footerLink}>
                 Sign up
               </Link>
@@ -410,9 +452,9 @@ const createStyles = (colors: ThemeColors) =>
     },
     scrollContent: {
       flexGrow: 1,
-      justifyContent: "center",
+      justifyContent: "flex-start",
       paddingHorizontal: SPACING.xl,
-      paddingTop: SPACING.xl,
+      paddingTop: SPACING.lg,
       paddingBottom: SPACING.xxl * 2,
       backgroundColor: colors.surface,
     },

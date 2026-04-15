@@ -1,21 +1,15 @@
 import { Redirect, Stack } from "expo-router";
-import { ActivityIndicator, StyleSheet, View } from "react-native";
 
-import { type ThemeColors } from "@/constants/theme";
+import { AppScreenLoader } from "@/components/app-screen-loader";
 import { useAuth } from "@/providers/auth-provider";
 import { useAppTheme } from "@/providers/theme-provider";
 
 export default function AuthLayout() {
   const { colors } = useAppTheme();
   const { user, isBootstrapping } = useAuth();
-  const styles = createStyles(colors);
 
   if (isBootstrapping) {
-    return (
-      <View style={styles.container}>
-        <ActivityIndicator size="large" color={colors.primary} />
-      </View>
-    );
+    return <AppScreenLoader backgroundColor={colors.surface} indicatorColor={colors.primary} />;
   }
 
   if (user) {
@@ -39,12 +33,3 @@ export default function AuthLayout() {
     </Stack>
   );
 }
-
-const createStyles = (colors: ThemeColors) => StyleSheet.create({
-  container: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: colors.surface,
-  },
-});

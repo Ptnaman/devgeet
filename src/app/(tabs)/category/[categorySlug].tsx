@@ -105,9 +105,23 @@ export default function CategoryPostsScreen() {
   const categoryLabel = useMemo(() => formatCategoryLabel(categorySlug), [categorySlug]);
   const isOfflineState = !isConnected || error === DEFAULT_OFFLINE_MESSAGE;
   const showInlineError = Boolean(error) && !isOfflineState;
+  const subtitle = useMemo(
+    () =>
+      isLoading
+        ? "Posts loading..."
+        : `${posts.length} published post${posts.length === 1 ? "" : "s"} found.`,
+    [isLoading, posts.length],
+  );
 
   const openPost = (postId: string) => {
-    router.push({ pathname: "/post/[postId]", params: { postId } });
+    router.push({
+      pathname: "/post/[postId]",
+      params: {
+        postId,
+        swipeSource: "category",
+        swipeCategorySlug: categorySlug,
+      },
+    });
   };
 
   return (
@@ -118,11 +132,7 @@ export default function CategoryPostsScreen() {
         <View style={styles.heroCard}>
           <Text style={styles.eyebrow}>Category</Text>
           <Text style={styles.title}>{categoryLabel}</Text>
-          <Text style={styles.subtitle}>
-            {isLoading
-              ? "Posts loading..."
-              : `${posts.length} published post${posts.length === 1 ? "" : "s"} found.`}
-          </Text>
+          <Text style={styles.subtitle}>{subtitle}</Text>
         </View>
 
         {showInlineError ? <Text style={styles.error}>{error}</Text> : null}

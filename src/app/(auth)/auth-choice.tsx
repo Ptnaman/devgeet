@@ -28,7 +28,7 @@ export default function AuthChoiceScreen() {
       <StatusBar style={resolvedTheme === "dark" ? "light" : "dark"} />
       <View style={styles.container}>
         <View style={styles.hero}>
-          <Text style={styles.heroTitle}>Let&apos;s get you in</Text>
+          <Text style={styles.heroTitle}>{"Let's get you in"}</Text>
           <Text style={styles.heroSubtitle}>
             Use Google or Apple for quick access, or continue with your email flow.
           </Text>

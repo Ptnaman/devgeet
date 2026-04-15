@@ -3,10 +3,19 @@
     "name": "DevGeet",
     "slug": "devgeet",
     "version": "1.1.2",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "devgeet",
     "userInterfaceStyle": "automatic",
+    "updates": {
+      "enabled": true,
+      "url": "https://u.expo.dev/25df2d56-b937-44f9-b075-eda096025e79",
+      "checkAutomatically": "ON_LOAD",
+      "fallbackToCacheTimeout": 0
+    },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.panditnaman.devgeet",
@@ -54,7 +63,8 @@
         }
       ],
       "expo-image",
-      "expo-notifications"
+      "expo-notifications",
+      "expo-updates"
     ],
     "experiments": {
       "typedRoutes": true,

@@ -13,17 +13,21 @@ import {
 } from "firebase/firestore";
 
 import { firestore } from "@/lib/firebase";
+import { formatRelativeTime } from "@/lib/relative-time";
 
 const USERS_COLLECTION = "users";
 const USER_NOTIFICATIONS_SUBCOLLECTION = "notifications";
 const MAX_NOTIFICATION_BATCH_SIZE = 400;
+const CREATOR_NOTIFICATION_PATTERN = /\b(author|creator|approved|approval|published|draft|review)\b/i;
 
 export type UserNotificationType = "post-approved" | "custom";
+export type UserNotificationCategory = "general" | "creator";
 
 export type UserNotificationRecord = {
   id: string;
   uid: string;
   type: UserNotificationType;
+  category: UserNotificationCategory;
   title: string;
   body: string;
   postId: string;
@@ -37,6 +41,24 @@ const readStringValue = (value: unknown) => (typeof value === "string" ? value.t
 
 const normalizeUserNotificationType = (value: unknown): UserNotificationType =>
   readStringValue(value) === "custom" ? "custom" : "post-approved";
+
+const normalizeUserNotificationCategory = (
+  value: unknown,
+  type: UserNotificationType,
+  title: string,
+  body: string,
+): UserNotificationCategory => {
+  const normalizedValue = readStringValue(value).toLowerCase();
+  if (normalizedValue === "creator") {
+    return "creator";
+  }
+
+  if (type === "post-approved") {
+    return "creator";
+  }
+
+  return CREATOR_NOTIFICATION_PATTERN.test(`${title} ${body}`) ? "creator" : "general";
+};
 
 const getUniqueUids = (uids: string[]) => [...new Set(uids.map((uid) => uid.trim()).filter(Boolean))];
 
@@ -89,18 +111,29 @@ export const mapUserNotificationRecord = (
   id: string,
   uid: string,
   data: DocumentData,
-): UserNotificationRecord => ({
-  id,
-  uid,
-  type: normalizeUserNotificationType(data.type),
-  title: readStringValue(data.title) || "Notification",
-  body: readStringValue(data.body),
-  postId: readStringValue(data.postId),
-  imageUrl: readStringValue(data.imageUrl),
-  isRead: data.isRead === true,
-  createdAt: toDateString(data.createdAt),
-  readAt: toDateString(data.readAt),
-});
+): UserNotificationRecord => {
+  const type = normalizeUserNotificationType(data.type);
+  const title = readStringValue(data.title) || "Notification";
+  const body = readStringValue(data.body);
+
+  return {
+    id,
+    uid,
+    type,
+    category: normalizeUserNotificationCategory(data.category, type, title, body),
+    title,
+    body,
+    postId: readStringValue(data.postId),
+    imageUrl: readStringValue(data.imageUrl),
+    isRead: data.isRead === true,
+    createdAt: toDateString(data.createdAt),
+    readAt: toDateString(data.readAt),
+  };
+};
+
+export const isCreatorUserNotification = (
+  notification: Pick<UserNotificationRecord, "category">,
+) => notification.category === "creator";
 
 export const createPostApprovedUserNotificationAsync = async ({
   uid,
@@ -126,6 +159,7 @@ export const createPostApprovedUserNotificationAsync = async ({
   await setDoc(notificationRef, {
     uid: normalizedUid,
     type: "post-approved",
+    category: "creator",
     title: "Congratulations",
     body: `Your post "${normalizedPostTitle}" has been approved and published.`,
     postId: normalizedPostId,
@@ -141,11 +175,13 @@ export const createCustomUserNotificationAsync = async ({
   title,
   body,
   imageUrl,
+  category = "general",
 }: {
   uid: string;
   title: string;
   body: string;
   imageUrl?: string;
+  category?: UserNotificationCategory;
 }) => {
   const normalizedUid = uid.trim();
   const normalizedTitle = title.trim() || "DevGeet";
@@ -160,6 +196,7 @@ export const createCustomUserNotificationAsync = async ({
   await setDoc(notificationRef, {
     uid: normalizedUid,
     type: "custom",
+    category,
     title: normalizedTitle,
     body: normalizedBody,
     postId: "",
@@ -177,11 +214,13 @@ export const createCustomUserNotificationsAsync = async ({
   title,
   body,
   imageUrl,
+  category = "general",
 }: {
   uids: string[];
   title: string;
   body: string;
   imageUrl?: string;
+  category?: UserNotificationCategory;
 }) => {
   const uniqueUids = getUniqueUids(uids);
   const normalizedTitle = title.trim() || "DevGeet";
@@ -199,6 +238,7 @@ export const createCustomUserNotificationsAsync = async ({
       batch.set(doc(getNotificationCollection(uid)), {
         uid,
         type: "custom",
+        category,
         title: normalizedTitle,
         body: normalizedBody,
         postId: "",
@@ -282,54 +322,4 @@ export const deleteUserNotificationsAsync = async ({
   }
 };
 
-export const formatUserNotificationRelativeTime = (value: string) => {
-  if (!value) {
-    return "";
-  }
-
-  const timestamp = Date.parse(value);
-  if (Number.isNaN(timestamp)) {
-    return value;
-  }
-
-  const diffMs = Date.now() - timestamp;
-  const normalizedDiffMs = Math.max(diffMs, 0);
-  const minuteMs = 60 * 1000;
-  const hourMs = 60 * minuteMs;
-  const dayMs = 24 * hourMs;
-  const weekMs = 7 * dayMs;
-  const monthMs = 30 * dayMs;
-  const yearMs = 365 * dayMs;
-
-  if (normalizedDiffMs < minuteMs) {
-    return "Just now";
-  }
-
-  if (normalizedDiffMs < hourMs) {
-    const minutes = Math.floor(normalizedDiffMs / minuteMs);
-    return `${minutes} minute${minutes === 1 ? "" : "s"} ago`;
-  }
-
-  if (normalizedDiffMs < dayMs) {
-    const hours = Math.floor(normalizedDiffMs / hourMs);
-    return `${hours} hour${hours === 1 ? "" : "s"} ago`;
-  }
-
-  if (normalizedDiffMs < weekMs) {
-    const days = Math.floor(normalizedDiffMs / dayMs);
-    return `${days} day${days === 1 ? "" : "s"} ago`;
-  }
-
-  if (normalizedDiffMs < monthMs) {
-    const weeks = Math.floor(normalizedDiffMs / weekMs);
-    return `${weeks} week${weeks === 1 ? "" : "s"} ago`;
-  }
-
-  if (normalizedDiffMs < yearMs) {
-    const months = Math.floor(normalizedDiffMs / monthMs);
-    return `${months} month${months === 1 ? "" : "s"} ago`;
-  }
-
-  const years = Math.floor(normalizedDiffMs / yearMs);
-  return `${years} year${years === 1 ? "" : "s"} ago`;
-};
+export const formatUserNotificationRelativeTime = formatRelativeTime;

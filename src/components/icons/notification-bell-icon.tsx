@@ -1,4 +1,4 @@
-import Svg, { Circle, Path } from "react-native-svg";
+import Svg, { Path } from "react-native-svg";
 
 type NotificationBellIconProps = {
   color: string;
@@ -35,14 +35,6 @@ export function NotificationBellIcon({
         strokeLinecap="round"
         strokeLinejoin="round"
       />
-      <Path
-        d="M12 7.75V11.15"
-        opacity={filled ? 0.34 : 0.18}
-        stroke={color}
-        strokeWidth={1.5}
-        strokeLinecap="round"
-      />
-      <Circle cx={12} cy={13.2} r={1.15} fill={color} opacity={filled ? 0.24 : 0.14} />
     </Svg>
   );
 }

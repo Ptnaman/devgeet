@@ -338,18 +338,23 @@ const getNotificationImageUrl = (imageUrl: string) => {
   return normalizedImageUrl;
 };
 
+const getAndroidNotificationChannelId = (platform?: string) =>
+  platform?.trim().toLowerCase() === "android" ? DEFAULT_ANDROID_CHANNEL_ID : undefined;
+
 const buildPostPublishedPushMessage = ({
   token,
   postId,
   postTitle,
   postContent,
   imageUrl,
+  platform,
 }: {
   token: string;
   postId: string;
   postTitle: string;
   postContent: string;
   imageUrl?: string;
+  platform?: string;
 }): ExpoPushMessage => {
   const normalizedImageUrl = getNotificationImageUrl(imageUrl ?? "");
 
@@ -359,8 +364,7 @@ const buildPostPublishedPushMessage = ({
     body: getPostPublishNotificationBody(postContent),
     sound: "default",
     priority: "high",
-    channelId:
-      Platform.OS === "android" ? DEFAULT_ANDROID_CHANNEL_ID : undefined,
+    channelId: getAndroidNotificationChannelId(platform),
     richContent: normalizedImageUrl
       ? {
           image: normalizedImageUrl,
@@ -378,11 +382,13 @@ const buildPostApprovedForAuthorPushMessage = ({
   postId,
   postTitle,
   imageUrl,
+  platform,
 }: {
   token: string;
   postId: string;
   postTitle: string;
   imageUrl?: string;
+  platform?: string;
 }): ExpoPushMessage => {
   const normalizedTitle = postTitle.trim() || "Your post";
   const normalizedImageUrl = getNotificationImageUrl(imageUrl ?? "");
@@ -393,8 +399,7 @@ const buildPostApprovedForAuthorPushMessage = ({
     body: `"${normalizedTitle}" has been approved and published on DevGeet.`,
     sound: "default",
     priority: "high",
-    channelId:
-      Platform.OS === "android" ? DEFAULT_ANDROID_CHANNEL_ID : undefined,
+    channelId: getAndroidNotificationChannelId(platform),
     richContent: normalizedImageUrl
       ? {
           image: normalizedImageUrl,
@@ -413,12 +418,14 @@ const buildCustomPushMessage = ({
   body,
   imageUrl,
   data,
+  platform,
 }: {
   token: string;
   title: string;
   body: string;
   imageUrl?: string;
   data?: Record<string, string>;
+  platform?: string;
 }): ExpoPushMessage => {
   const normalizedImageUrl = getNotificationImageUrl(imageUrl ?? "");
 
@@ -428,8 +435,7 @@ const buildCustomPushMessage = ({
     body: body.trim(),
     sound: "default",
     priority: "high",
-    channelId:
-      Platform.OS === "android" ? DEFAULT_ANDROID_CHANNEL_ID : undefined,
+    channelId: getAndroidNotificationChannelId(platform),
     richContent: normalizedImageUrl
       ? {
           image: normalizedImageUrl,
@@ -446,6 +452,7 @@ const readPushTokenData = (data: DocumentData) => ({
   uid: readStringValue(data.uid),
   token: readStringValue(data.token),
   isActive: data.isActive !== false,
+  platform: readStringValue(data.platform),
 });
 
 const getPushRecipientCount = (tokens: { uid: string }[]) =>
@@ -724,6 +731,7 @@ const sendExpoPushMessagesAsync = async (messages: ExpoPushMessage[]) => {
   }
 
   const invalidTokenDocIds = new Set<string>();
+  const ticketErrors = new Set<string>();
   const messageChunks = chunkMessages(messages, 100);
 
   for (const chunk of messageChunks) {
@@ -751,24 +759,33 @@ const sendExpoPushMessagesAsync = async (messages: ExpoPushMessage[]) => {
         : [];
 
     tickets.forEach((ticket, index) => {
-      if (
-        ticket.status === "error" &&
-        ticket.details?.error === "DeviceNotRegistered"
-      ) {
-        invalidTokenDocIds.add(getPushTokenDocId(chunk[index]?.to ?? ""));
+      if (ticket.status !== "error") {
+        return;
       }
+
+      const errorCode = readStringValue(ticket.details?.error);
+      if (errorCode === "DeviceNotRegistered") {
+        invalidTokenDocIds.add(getPushTokenDocId(chunk[index]?.to ?? ""));
+        return;
+      }
+
+      ticketErrors.add(errorCode || "UnknownError");
     });
   }
 
-  if (!invalidTokenDocIds.size) {
-    return;
+  if (invalidTokenDocIds.size) {
+    await Promise.allSettled(
+      [...invalidTokenDocIds].map((docId) =>
+        deleteDoc(doc(firestore, PUSH_TOKENS_COLLECTION, docId)),
+      ),
+    );
   }
 
-  await Promise.allSettled(
-    [...invalidTokenDocIds].map((docId) =>
-      deleteDoc(doc(firestore, PUSH_TOKENS_COLLECTION, docId)),
-    ),
-  );
+  if (ticketErrors.size) {
+    throw new Error(
+      `Expo push delivery failed for ${ticketErrors.size} error type(s): ${[...ticketErrors].join(", ")}.`,
+    );
+  }
 };
 
 export const sendPostPublishedNotificationToUserAsync = async ({
@@ -795,6 +812,7 @@ export const sendPostPublishedNotificationToUserAsync = async ({
         postId,
         postTitle,
         imageUrl,
+        platform: item.platform,
       }),
     ),
   );
@@ -829,6 +847,7 @@ export const sendPostPublishedNotificationToAllActiveUsersAsync = async ({
         postTitle,
         postContent,
         imageUrl,
+        platform: item.platform,
       }),
     ),
   );
@@ -880,6 +899,7 @@ export const sendCustomPushNotificationToUserAsync = async ({
           body: normalizedBody,
           imageUrl,
           data,
+          platform: item.platform,
         }),
       ),
     );
@@ -944,6 +964,7 @@ export const sendCustomPushNotificationToAllActiveUsersAsync = async ({
           body: normalizedBody,
           imageUrl,
           data,
+          platform: item.platform,
         }),
       ),
     );
@@ -1026,9 +1047,11 @@ export const notifyPostPublishedAsync = async ({
 export const sendTestPushNotificationAsync = async ({
   token,
   accountName,
+  platform,
 }: {
   token: string;
   accountName?: string;
+  platform?: string;
 }) => {
   const normalizedToken = token.trim();
 
@@ -1045,8 +1068,7 @@ export const sendTestPushNotificationAsync = async ({
       body: `Push notifications are working for ${normalizedAccountName}.`,
       sound: "default",
       priority: "high",
-      channelId:
-        Platform.OS === "android" ? DEFAULT_ANDROID_CHANNEL_ID : undefined,
+      channelId: getAndroidNotificationChannelId(platform),
       data: {
         type: "test_push",
       },

@@ -46,6 +46,7 @@ import {
   type PostRecord,
   type PostStatus,
 } from "@/lib/content";
+import { getEffectiveUserRole } from "@/lib/access";
 import { firestore } from "@/lib/firebase";
 import { getActionErrorMessage, getRequestErrorMessage } from "@/lib/network";
 import { notifyPostPublishedAsync } from "@/lib/notifications";
@@ -113,7 +114,7 @@ export default function AdminPostEditScreen() {
   const { isConnected, showToast } = useNetworkStatus();
   const router = useRouter();
   const { postId: postIdParam } = useLocalSearchParams<{ postId?: string }>();
-  const { canManagePosts, canModeratePosts, profile, user } = useAuth();
+  const { canManagePosts, canModeratePosts, profile, role, user } = useAuth();
   const styles = createStyles(colors, resolvedTheme);
 
   const postId = resolvePostId(postIdParam);
@@ -150,6 +151,7 @@ export default function AdminPostEditScreen() {
   const authorSnapshot = useMemo(
     () => ({
       authorId: user?.uid ?? "",
+      authorRole: role,
       authorDisplayName:
         profile?.displayName ||
         user?.displayName ||
@@ -166,6 +168,7 @@ export default function AdminPostEditScreen() {
       profile?.email,
       profile?.photoURL,
       profile?.username,
+      role,
       user?.displayName,
       user?.email,
       user?.photoURL,
@@ -270,7 +273,22 @@ export default function AdminPostEditScreen() {
         }
 
         const rawData = snapshot.data() as DocumentData;
-        const post = mapPostRecord(snapshot.id, rawData);
+        let post = mapPostRecord(snapshot.id, rawData);
+
+        if (!post.hasAuthorRole && post.authorId) {
+          const authorProfileSnapshot = await getDoc(doc(firestore, "users", post.authorId));
+
+          if (authorProfileSnapshot.exists()) {
+            const authorData = authorProfileSnapshot.data() as DocumentData;
+            post = {
+              ...post,
+              authorRole: getEffectiveUserRole(
+                typeof authorData?.role === "string" ? authorData.role : "",
+              ),
+              hasAuthorRole: true,
+            };
+          }
+        }
 
         if (!active) {
           return;
@@ -564,6 +582,7 @@ export default function AdminPostEditScreen() {
       const persistedAuthor = isOwnerEditingOwnPost
         ? {
             authorId: authorSnapshot.authorId,
+            authorRole: authorSnapshot.authorRole,
             authorDisplayName: authorSnapshot.authorDisplayName,
             authorUsername: authorSnapshot.authorUsername,
             authorPhotoURL: authorSnapshot.authorPhotoURL,
@@ -572,6 +591,7 @@ export default function AdminPostEditScreen() {
           }
         : {
             authorId: existingPostRecord.authorId,
+            authorRole: existingPostRecord.authorRole,
             authorDisplayName: existingPostRecord.authorDisplayName,
             authorUsername: existingPostRecord.authorUsername,
             authorPhotoURL: existingPostRecord.authorPhotoURL,
@@ -628,6 +648,7 @@ export default function AdminPostEditScreen() {
             status: normalizedStatus,
             uploadDate: serverTimestamp(),
             authorId: persistedAuthor.authorId,
+            authorRole: persistedAuthor.authorRole,
             authorDisplayName: persistedAuthor.authorDisplayName,
             authorUsername: persistedAuthor.authorUsername,
             authorPhotoURL: persistedAuthor.authorPhotoURL,
@@ -676,6 +697,7 @@ export default function AdminPostEditScreen() {
           createDate: serverTimestamp(),
           uploadDate: serverTimestamp(),
           authorId: authorSnapshot.authorId,
+          authorRole: authorSnapshot.authorRole,
           authorDisplayName: authorSnapshot.authorDisplayName,
           authorUsername: authorSnapshot.authorUsername,
           authorPhotoURL: authorSnapshot.authorPhotoURL,

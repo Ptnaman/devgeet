@@ -96,21 +96,26 @@ export function AuthSoftInput({
           inputStyle,
         ]}
       />
-      {errorMessage ? (
-        <Text style={[styles.supportingText, styles.supportingTextError]}>{errorMessage}</Text>
-      ) : supportingText ? (
-        <Text
-          style={[
-            styles.supportingText,
-            supportingTone === "success"
-              ? styles.supportingTextSuccess
-              : supportingTone === "error"
-                ? styles.supportingTextError
-                : undefined,
-          ]}
-        >
-          {supportingText}
-        </Text>
+      {errorMessage || supportingText ? (
+        <View style={styles.messageStack}>
+          {errorMessage ? (
+            <Text style={[styles.supportingText, styles.supportingTextError]}>{errorMessage}</Text>
+          ) : null}
+          {supportingText ? (
+            <Text
+              style={[
+                styles.supportingText,
+                supportingTone === "success"
+                  ? styles.supportingTextSuccess
+                  : supportingTone === "error"
+                    ? styles.supportingTextError
+                    : undefined,
+              ]}
+            >
+              {supportingText}
+            </Text>
+          ) : null}
+        </View>
       ) : null}
     </StyleGroup>
   );
@@ -151,6 +156,9 @@ const createStyles = (colors: ThemeColors) =>
     },
     inputMultiline: {
       minHeight: 96,
+    },
+    messageStack: {
+      gap: 2,
     },
     supportingText: {
       fontSize: 12,

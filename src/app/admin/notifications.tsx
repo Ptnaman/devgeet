@@ -71,7 +71,7 @@ const mapRecipient = (uid: string, data: DocumentData): NotificationRecipient =>
 export default function AdminNotificationsScreen() {
   const { colors, resolvedTheme } = useAppTheme();
   const { isConnected, showOfflineToast, showToast } = useNetworkStatus();
-  const { isOwner } = useAuth();
+  const { isAdmin } = useAuth();
   const styles = createStyles(colors, resolvedTheme);
   const [audienceMode, setAudienceMode] = useState<AudienceMode>("all");
   const [title, setTitle] = useState("");
@@ -86,7 +86,7 @@ export default function AdminNotificationsScreen() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
-    if (!isOwner) {
+    if (!isAdmin) {
       return;
     }
 
@@ -115,7 +115,7 @@ export default function AdminNotificationsScreen() {
     );
 
     return unsubscribe;
-  }, [isConnected, isOwner]);
+  }, [isConnected, isAdmin]);
 
   const activeUsers = useMemo(
     () => users.filter((item) => item.accountStatus === "active"),
@@ -149,7 +149,7 @@ export default function AdminNotificationsScreen() {
     }
   }, [selectedUser, selectedUserId]);
 
-  if (!isOwner) {
+  if (!isAdmin) {
     return <Redirect href="/admin" />;
   }
 
@@ -257,7 +257,7 @@ export default function AdminNotificationsScreen() {
     >
       <Text style={styles.title}>Custom Notifications</Text>
       <Text style={styles.subtitle}>
-        Owner-only broadcast tool. Sends push notifications and also saves them to each
+        Admin broadcast tool. Sends push notifications and also saves them to each
         user&apos;s Notifications tab.
       </Text>
 

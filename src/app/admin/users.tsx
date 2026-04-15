@@ -20,6 +20,7 @@ import {
   type DocumentData,
 } from "firebase/firestore";
 
+import { VerifiedRoleBadge } from "@/components/verified-role-badge";
 import {
   CONTROL_SIZE,
   FONT_SIZE,
@@ -34,9 +35,7 @@ import {
   mapPostRecord,
 } from "@/lib/content";
 import {
-  USER_ROLES,
   getEffectiveUserRole,
-  isAdminEmail,
   normalizeAccountStatus,
   type UserRole,
 } from "@/lib/access";
@@ -53,6 +52,7 @@ const ROLE_LABELS: Record<UserRole, string> = {
   author: "Author",
   admin: "Admin",
 };
+const ASSIGNABLE_USER_ROLES: UserRole[] = ["user", "author"];
 
 type ManagedUser = {
   uid: string;
@@ -83,7 +83,7 @@ const mapManagedUser = (uid: string, data: DocumentData): ManagedUser => {
     email,
     username: readStringValue(data?.username),
     provider: readStringValue(data?.provider) || "password",
-    role: getEffectiveUserRole(readStringValue(data?.role), email),
+    role: getEffectiveUserRole(readStringValue(data?.role)),
     accountStatus: normalizeAccountStatus(readStringValue(data?.accountStatus)),
   };
 };
@@ -91,7 +91,7 @@ const mapManagedUser = (uid: string, data: DocumentData): ManagedUser => {
 export default function AdminUsersScreen() {
   const { colors, resolvedTheme } = useAppTheme();
   const { isConnected } = useNetworkStatus();
-  const { isOwner, profile } = useAuth();
+  const { isAdmin, profile } = useAuth();
   const styles = createStyles(colors, resolvedTheme);
   const [users, setUsers] = useState<ManagedUser[]>([]);
   const [creatorUserIds, setCreatorUserIds] = useState<string[]>([]);
@@ -290,7 +290,7 @@ export default function AdminUsersScreen() {
     );
   };
 
-  if (!isOwner) {
+  if (!isAdmin) {
     return <Redirect href="/admin" />;
   }
 
@@ -351,13 +351,13 @@ export default function AdminUsersScreen() {
 
         {filteredUsers.map((managedUser, index) => {
           const isCurrentUser = managedUser.uid === profile?.uid;
-          const isProtectedAdmin = isAdminEmail(managedUser.email);
+          const isManagedAdmin = managedUser.role === "admin";
           const isBusy = busyUserId === managedUser.uid;
-          const canEditRole = !isCurrentUser && !isProtectedAdmin && !isBusy;
+          const canEditRole = !isCurrentUser && !isBusy && !isManagedAdmin;
           const canDeleteUser =
             !isCurrentUser &&
-            !isProtectedAdmin &&
             !isBusy &&
+            !isManagedAdmin &&
             managedUser.accountStatus !== "deleted";
 
           return (
@@ -367,7 +367,10 @@ export default function AdminUsersScreen() {
             >
               <View style={styles.cardHeader}>
                 <View style={styles.userMeta}>
-                  <Text style={styles.userName}>{managedUser.displayName}</Text>
+                  <View style={styles.userNameRow}>
+                    <Text style={styles.userName}>{managedUser.displayName}</Text>
+                    <VerifiedRoleBadge role={managedUser.role} />
+                  </View>
                   <Text style={styles.userSubtext}>{managedUser.email || "No email"}</Text>
                   <Text style={styles.userSubtext}>
                     @{managedUser.username || "username-missing"} • {managedUser.provider}
@@ -377,27 +380,39 @@ export default function AdminUsersScreen() {
                   </Text>
                 </View>
 
-                <View style={styles.roleBadge}>
-                  <Text style={styles.roleBadgeText}>{ROLE_LABELS[managedUser.role]}</Text>
+                <View
+                  style={[
+                    styles.roleBadge,
+                    managedUser.role === "admin" ? styles.roleBadgeAdmin : undefined,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.roleBadgeText,
+                      managedUser.role === "admin" ? styles.roleBadgeTextAdmin : undefined,
+                    ]}
+                  >
+                    {ROLE_LABELS[managedUser.role]}
+                  </Text>
                 </View>
               </View>
 
               {isCurrentUser ? (
                 <Text style={styles.helperText}>Your own role and delete access are locked.</Text>
               ) : null}
-              {isProtectedAdmin ? (
+              {isManagedAdmin ? (
                 <Text style={styles.helperText}>
-                  This admin email is protected by app configuration.
+                  Admin access can only be changed in Firebase.
                 </Text>
               ) : null}
-              {managedUser.accountStatus === "deleted" ? (
+              {managedUser.accountStatus === "deleted" && !isManagedAdmin ? (
                 <Text style={styles.helperText}>
-                  Assign any role to restore this user back into the app.
+                  Assign User or Author to restore this user back into the app.
                 </Text>
               ) : null}
 
               <View style={styles.roleRow}>
-                {USER_ROLES.map((role) => {
+                {ASSIGNABLE_USER_ROLES.map((role) => {
                   const isActiveRole = managedUser.role === role;
 
                   return (
@@ -563,6 +578,12 @@ const createStyles = (colors: ThemeColors, resolvedTheme: ThemeMode) => {
       fontSize: 16,
       fontWeight: "700",
     },
+    userNameRow: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      alignItems: "center",
+      gap: SPACING.sm,
+    },
     userSubtext: {
       color: colors.mutedText,
       fontSize: 12,
@@ -580,6 +601,13 @@ const createStyles = (colors: ThemeColors, resolvedTheme: ThemeMode) => {
       fontSize: 11,
       fontWeight: "700",
       textTransform: "uppercase",
+    },
+    roleBadgeAdmin: {
+      borderColor: colors.dangerBorder,
+      backgroundColor: colors.dangerSoft,
+    },
+    roleBadgeTextAdmin: {
+      color: colors.danger,
     },
     helperText: {
       color: colors.mutedText,

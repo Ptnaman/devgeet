@@ -11,8 +11,12 @@ type FavoriteActionIconProps = {
   size: number;
 };
 
-const FILLED_HEART_PATH =
-  "M12 20.5C12 20.5 2 14.5 2 8.69444C2 5.82563 4.10526 3.5 7 3.5C8.5 3.5 10 4 12 6C14 4 15.5 3.5 17 3.5C19.8947 3.5 22 5.82563 22 8.69444C22 14.5 12 20.5 12 20.5Z";
+const BOOKMARK_PATH =
+  "M16.8199 2H7.17995C5.04995 2 3.31995 3.74 3.31995 5.86V19.95C3.31995 21.75 4.60995 22.51 6.18995 21.64L11.0699 18.93C11.5899 18.64 12.4299 18.64 12.9399 18.93L17.8199 21.64C19.3999 22.52 20.6899 21.76 20.6899 19.95V5.86C20.6799 3.74 18.9499 2 16.8199 2Z";
+const BOOKMARK_CHECK_PATH =
+  "M9 11.3333C9 11.3333 9.875 11.3333 10.75 13C10.75 13 13.5294 8.83333 16 8";
+const BOOKMARK_PLUS_HORIZONTAL_PATH = "M14.5 10.6499H9.5";
+const BOOKMARK_PLUS_VERTICAL_PATH = "M12 8.20996V13.21";
 
 export function FavoriteActionIcon({
   accentColor = STATIC_COLORS.white,
@@ -25,9 +29,9 @@ export function FavoriteActionIcon({
   if (filled) {
     return (
       <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-        <Path d={FILLED_HEART_PATH} fill={fillColor ?? color} />
+        <Path d={BOOKMARK_PATH} fill={fillColor ?? color} opacity={0.4} />
         <Path
-          d="M13 20.3025C12.1525 20.6505 11.1746 20.5389 10.4107 19.9677C7.58942 17.858 2 13.0348 2 8.69444C2 5.82563 4.10526 3.5 7 3.5C8.5 3.5 10 4 12 6C14 4 15.5 3.5 17 3.5C19.8947 3.5 22 5.82563 22 8.69444C22 9.12591 21.9448 9.56214 21.8425 10"
+          d={BOOKMARK_PATH}
           stroke={color}
           strokeWidth={1.5}
           strokeLinecap="round"
@@ -35,7 +39,7 @@ export function FavoriteActionIcon({
         />
         {accentUnderlayColor ? (
           <Path
-            d="M14 17C14 17 15 17 16 19C16 19 19.1765 14 22 13"
+            d={BOOKMARK_CHECK_PATH}
             stroke={accentUnderlayColor}
             strokeWidth={2.8}
             strokeLinecap="round"
@@ -43,7 +47,7 @@ export function FavoriteActionIcon({
           />
         ) : null}
         <Path
-          d="M14 17C14 17 15 17 16 19C16 19 19.1765 14 22 13"
+          d={BOOKMARK_CHECK_PATH}
           stroke={accentColor}
           strokeWidth={1.5}
           strokeLinecap="round"
@@ -56,19 +60,25 @@ export function FavoriteActionIcon({
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
       <Path
-        d="M13.5893 19.9677C12.6399 20.6776 11.3601 20.6776 10.4107 19.9677C7.58942 17.858 2 13.0348 2 8.69444C2 5.82563 4.10526 3.5 7 3.5C8.5 3.5 10 4 12 6C14 4 15.5 3.5 17 3.5C19.8947 3.5 22 5.82563 22 8.69444C22 9.78274 21.6486 10.9014 21.0775 12"
+        d={BOOKMARK_PATH}
         stroke={color}
         strokeWidth={1.5}
         strokeLinecap="round"
         strokeLinejoin="round"
       />
       <Path
-        d="M14 16H17.5M17.5 16H21M17.5 16V12.5M17.5 16V19.5"
+        d={BOOKMARK_PLUS_HORIZONTAL_PATH}
         stroke={color}
         strokeWidth={1.5}
         strokeLinecap="round"
         strokeLinejoin="round"
-        opacity={0.4}
+      />
+      <Path
+        d={BOOKMARK_PLUS_VERTICAL_PATH}
+        stroke={color}
+        strokeWidth={1.5}
+        strokeLinecap="round"
+        strokeLinejoin="round"
       />
     </Svg>
   );

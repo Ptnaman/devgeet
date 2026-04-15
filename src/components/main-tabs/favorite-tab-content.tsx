@@ -56,7 +56,14 @@ export function FavoriteTabContent() {
   const showInlineError = Boolean(combinedError) && !isOfflineState;
 
   const openPost = (postId: string) => {
-    router.push({ pathname: "/post/[postId]", params: { postId } });
+    router.push({
+      pathname: "/post/[postId]",
+      params: {
+        postId,
+        swipeSource: "favorite",
+        swipePostIds: favoritePosts.map((item) => item.id).join(","),
+      },
+    });
   };
 
   const handleToggleFavorite = async (post: PostRecord) => {
@@ -66,7 +73,7 @@ export function FavoriteTabContent() {
       const message = getActionErrorMessage({
         error: toggleError,
         isConnected,
-        fallbackMessage: "Favorites could not be updated right now.",
+        fallbackMessage: "Bookmarks could not be updated right now.",
       });
 
       if (message === DEFAULT_OFFLINE_MESSAGE) {
@@ -74,7 +81,7 @@ export function FavoriteTabContent() {
         return;
       }
 
-      Alert.alert("Unable to update favorites", message);
+      Alert.alert("Unable to update bookmarks", message);
     }
   };
 
@@ -85,7 +92,7 @@ export function FavoriteTabContent() {
       const message = getActionErrorMessage({
         error: clearError,
         isConnected,
-        fallbackMessage: "Favorites could not be cleared right now.",
+        fallbackMessage: "Bookmarks could not be cleared right now.",
       });
 
       if (message === DEFAULT_OFFLINE_MESSAGE) {
@@ -93,14 +100,14 @@ export function FavoriteTabContent() {
         return;
       }
 
-      Alert.alert("Unable to clear favorites", message);
+      Alert.alert("Unable to clear bookmarks", message);
     }
   };
 
   const handleConfirmClearAllFavorites = () => {
     Alert.alert(
-      "Clear all favorites?",
-      "This will remove every saved post from your favorites.",
+      "Clear all bookmarks?",
+      "This will remove every saved post from your bookmarks.",
       [
         {
           text: "Cancel",
@@ -119,7 +126,7 @@ export function FavoriteTabContent() {
 
   const subtitle = useMemo(() => {
     if (isLoading) {
-      return "Loading your saved posts...";
+      return "Loading your bookmarks...";
     }
 
     if (showInlineError) {
@@ -127,10 +134,10 @@ export function FavoriteTabContent() {
     }
 
     if (!favoritePosts.length) {
-      return "Posts you save will appear here.";
+      return "Posts you bookmark will appear here.";
     }
 
-    return `${favoritePosts.length} saved post${favoritePosts.length === 1 ? "" : "s"}.`;
+    return `${favoritePosts.length} bookmark${favoritePosts.length === 1 ? "" : "s"}`;
   }, [combinedError, favoritePosts.length, isLoading, showInlineError]);
 
   return (
@@ -139,7 +146,7 @@ export function FavoriteTabContent() {
         <View style={styles.headerCard}>
           <View style={styles.headerRow}>
             <View style={styles.headerTextWrap}>
-              <Text style={styles.title}>Favorites</Text>
+              <Text style={styles.title}>Bookmarks</Text>
               <Text style={styles.subtitle}>{subtitle}</Text>
             </View>
             <View style={styles.headerActions}>
@@ -151,7 +158,7 @@ export function FavoriteTabContent() {
                   ]}
                   onPress={handleConfirmClearAllFavorites}
                   accessibilityRole="button"
-                  accessibilityLabel="Clear all favorites"
+                  accessibilityLabel="Clear all bookmarks"
                 >
                   <Text style={styles.clearAllButtonText}>Clear all</Text>
                 </Pressable>
@@ -176,9 +183,9 @@ export function FavoriteTabContent() {
             <View style={styles.emptyIconCard}>
               <FavoriteTabIcon size={30} color={colors.mutedText} />
             </View>
-            <Text style={styles.emptyTitle}>No favorites yet</Text>
+            <Text style={styles.emptyTitle}>No bookmarks yet</Text>
             <Text style={styles.emptyText}>
-              Save any post and it will show here for quick access.
+              Bookmark any post and it will show here for quick access.
             </Text>
           </View>
         ) : null}
@@ -226,7 +233,7 @@ export function FavoriteTabContent() {
                   void handleToggleFavorite(post);
                 }}
                 accessibilityRole="button"
-                accessibilityLabel={`Remove ${post.title} from favorites`}
+                accessibilityLabel={`Remove ${post.title} from bookmarks`}
               >
                 <TrashActionIcon size={17} color={STATIC_COLORS.white} />
               </Pressable>

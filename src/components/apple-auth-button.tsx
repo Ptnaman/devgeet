@@ -22,11 +22,11 @@ type AppleAuthButtonProps = {
 const NONCE_CHARSET =
   "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-._";
 
-const getErrorMessage = (error: unknown, isConnected: boolean) =>
+const getErrorMessage = (error: unknown, isConnected: boolean, fallbackMessage: string) =>
   getActionErrorMessage({
     error,
     isConnected,
-    fallbackMessage: "Apple sign-in failed. Please try again.",
+    fallbackMessage,
   });
 
 const isCancellationError = (error: unknown) =>
@@ -157,7 +157,7 @@ export function AppleAuthButton({
         return;
       }
 
-      const message = getErrorMessage(error, isConnected);
+      const message = getErrorMessage(error, isConnected, "Apple sign-in failed. Please try again.");
       if (message === DEFAULT_OFFLINE_MESSAGE) {
         showOfflineToast();
       }

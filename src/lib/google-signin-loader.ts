@@ -15,6 +15,7 @@ type GoogleSigninApi = {
   signIn: () => Promise<unknown>;
   getTokens: () => Promise<{ idToken: string; accessToken: string }>;
   signOut: () => Promise<null>;
+  revokeAccess?: () => Promise<null | void>;
 };
 
 export type GoogleSignInModuleLike = {

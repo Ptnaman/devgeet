@@ -12,6 +12,7 @@ import { Platform, useColorScheme } from "react-native";
 import {
   WEB_THEME_CSS_VARIABLES,
   getThemeColors,
+  type WebThemeCssColorKey,
   type ThemeColors,
   type ThemeMode,
 } from "@/constants/theme";
@@ -42,7 +43,7 @@ const syncWebTheme = (resolvedTheme: ThemeMode, colors: ThemeColors) => {
   root.style.colorScheme = resolvedTheme;
 
   (
-    Object.entries(WEB_THEME_CSS_VARIABLES) as [string, keyof ThemeColors][]
+    Object.entries(WEB_THEME_CSS_VARIABLES) as [string, WebThemeCssColorKey][]
   ).forEach(([variableName, colorKey]) => {
     root.style.setProperty(variableName, colors[colorKey]);
   });

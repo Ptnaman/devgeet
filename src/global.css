@@ -6,11 +6,10 @@
   --color-border: transparent;
   --color-primary: CanvasText;
   --color-primary-text: Canvas;
-  --color-bg-glow-start: transparent;
-  --color-bg-glow-end: transparent;
   --radius-lg: 20px;
   --radius-md: 12px;
-  --font-sans: "Google Sans", sans-serif;
+  --font-sans: "GoogleSans-Regular", "ProductSans-Regular", sans-serif;
+  --font-display: "ProductSans-Bold", "GoogleSans-Bold", sans-serif;
   color-scheme: light;
 }
 
@@ -33,9 +32,6 @@ body,
 body {
   margin: 0;
   color: var(--color-text);
-  background:
-    radial-gradient(circle at 0% 0%, var(--color-bg-glow-start) 0%, transparent 40%),
-    radial-gradient(circle at 100% 100%, var(--color-bg-glow-end) 0%, transparent 45%),
-    var(--color-bg);
+  background: var(--color-bg);
   font-family: var(--font-sans);
 }

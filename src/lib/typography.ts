@@ -9,6 +9,15 @@ export const APP_FONTS = {
   boldItalic: "GoogleSans-BoldItalic",
 } as const;
 
+export const PRODUCT_FONTS = {
+  regular: "ProductSans-Regular",
+  medium: "ProductSans-Medium",
+  bold: "ProductSans-Bold",
+  italic: "ProductSans-Italic",
+  mediumItalic: "ProductSans-MediumItalic",
+  boldItalic: "ProductSans-BoldItalic",
+} as const;
+
 const TEXT_STYLE_KEYS: readonly (keyof TextStyle)[] = [
   "color",
   "fontSize",

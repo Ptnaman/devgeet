@@ -10,8 +10,8 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Image,
-  Linking,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -19,7 +19,10 @@ import {
   View,
 } from "react-native";
 
+import { VerifiedRoleBadge } from "@/components/verified-role-badge";
+import { useAuthorFollows } from "@/hooks/use-author-follows";
 import { FONT_SIZE, RADIUS, SHADOWS, SPACING, type ThemeColors } from "@/constants/theme";
+import { getEffectiveUserRole, type UserRole } from "@/lib/access";
 import {
   formatDate,
   getPostCardThumbnailUrl,
@@ -30,7 +33,8 @@ import {
   type PostRecord,
 } from "@/lib/content";
 import { firestore } from "@/lib/firebase";
-import { getRequestErrorMessage } from "@/lib/network";
+import { DEFAULT_OFFLINE_MESSAGE, getActionErrorMessage, getRequestErrorMessage } from "@/lib/network";
+import { useAuth } from "@/providers/auth-provider";
 import { useNetworkStatus } from "@/providers/network-provider";
 import { useAppTheme } from "@/providers/theme-provider";
 
@@ -41,12 +45,8 @@ type PublicAuthorProfile = {
   displayName: string;
   username: string;
   bio: string;
-  location: string;
-  website: string;
-  instagramUrl: string;
-  youtubeUrl: string;
-  facebookUrl: string;
   photoURL: string;
+  role: UserRole;
 };
 
 const resolveAuthorId = (value: string | string[] | undefined) =>
@@ -67,17 +67,14 @@ const mapPublicAuthorProfile = (uid: string, data: DocumentData): PublicAuthorPr
     displayName,
     username: readStringValue(data?.username),
     bio: readStringValue(data?.bio),
-    location: readStringValue(data?.location),
-    website: readStringValue(data?.website),
-    instagramUrl: readStringValue(data?.instagramUrl),
-    youtubeUrl: readStringValue(data?.youtubeUrl),
-    facebookUrl: readStringValue(data?.facebookUrl),
     photoURL: readStringValue(data?.photoURL),
+    role: getEffectiveUserRole(readStringValue(data?.role)),
   };
 };
 
 export default function AuthorProfileScreen() {
   const { colors } = useAppTheme();
+  const { user } = useAuth();
   const { isConnected, showOfflineToast } = useNetworkStatus();
   const router = useRouter();
   const styles = createStyles(colors);
@@ -88,6 +85,7 @@ export default function AuthorProfileScreen() {
   const [isLoadingAuthor, setIsLoadingAuthor] = useState(true);
   const [isLoadingPosts, setIsLoadingPosts] = useState(true);
   const [error, setError] = useState("");
+  const { isFollowingAuthor, isLoadingAuthorFollows, toggleAuthorFollow } = useAuthorFollows();
 
   useEffect(() => {
     if (!authorId) {
@@ -163,33 +161,46 @@ export default function AuthorProfileScreen() {
   }, [authorId, isConnected]);
 
   const profileTitle = useMemo(() => author?.displayName || "Author Profile", [author?.displayName]);
-  const links = useMemo(
-    () =>
-      [
-        { label: "Website", value: author?.website ?? "" },
-        { label: "Instagram", value: author?.instagramUrl ?? "" },
-        { label: "YouTube", value: author?.youtubeUrl ?? "" },
-        { label: "Facebook", value: author?.facebookUrl ?? "" },
-      ].filter((item) => item.value),
-    [author?.facebookUrl, author?.instagramUrl, author?.website, author?.youtubeUrl],
-  );
-
-  const openExternalLink = async (url: string) => {
-    if (!isConnected) {
-      showOfflineToast();
-      return;
-    }
-
-    await Linking.openURL(url).catch(() => {
-      setError("Unable to open this link right now.");
-    });
-  };
 
   const openPost = (postId: string) => {
     router.push({ pathname: "/post/[postId]", params: { postId } });
   };
 
   const isLoading = isLoadingAuthor || isLoadingPosts;
+  const canFollowAuthor = Boolean(
+    author &&
+      author.uid &&
+      author.uid !== user?.uid &&
+      (author.role === "author" || author.role === "admin"),
+  );
+  const isFollowingCurrentAuthor = author ? isFollowingAuthor(author.uid) : false;
+
+  const handleToggleAuthorFollow = async () => {
+    if (!author) {
+      return;
+    }
+
+    try {
+      await toggleAuthorFollow({
+        uid: author.uid,
+        displayName: author.displayName,
+        username: author.username,
+      });
+    } catch (toggleError) {
+      const message = getActionErrorMessage({
+        error: toggleError,
+        isConnected,
+        fallbackMessage: "Author follow could not be updated right now.",
+      });
+
+      if (message === DEFAULT_OFFLINE_MESSAGE) {
+        showOfflineToast();
+        return;
+      }
+
+      Alert.alert("Unable to update follow", message);
+    }
+  };
 
   return (
     <View style={styles.screen}>
@@ -215,36 +226,50 @@ export default function AuthorProfileScreen() {
                 </View>
               )}
 
-              <Text style={styles.title}>{author.displayName}</Text>
+              <View style={styles.titleRow}>
+                <Text style={styles.title}>{author.displayName}</Text>
+                <VerifiedRoleBadge role={author.role} size="md" />
+              </View>
               {author.username ? <Text style={styles.username}>@{author.username}</Text> : null}
               {author.bio ? <Text style={styles.bio}>{author.bio}</Text> : null}
-              {author.location ? <Text style={styles.meta}>Location: {author.location}</Text> : null}
               <Text style={styles.meta}>
                 {posts.length} published post{posts.length === 1 ? "" : "s"}
               </Text>
-            </View>
-
-            {links.length ? (
-              <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Links</Text>
-                <View style={styles.linkRow}>
-                  {links.map((item) => (
-                    <Pressable
-                      key={item.label}
-                      style={({ pressed }) => [
-                        styles.linkChip,
-                        pressed && styles.linkChipPressed,
+              {canFollowAuthor ? (
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.followButton,
+                    isFollowingCurrentAuthor && styles.followButtonActive,
+                    pressed && styles.followButtonPressed,
+                  ]}
+                  onPress={() => {
+                    void handleToggleAuthorFollow();
+                  }}
+                  accessibilityRole="button"
+                  accessibilityLabel={
+                    isFollowingCurrentAuthor
+                      ? `Unfollow ${author.displayName}`
+                      : `Follow ${author.displayName}`
+                  }
+                >
+                  {isLoadingAuthorFollows ? (
+                    <ActivityIndicator
+                      size="small"
+                      color={isFollowingCurrentAuthor ? colors.text : colors.primaryText}
+                    />
+                  ) : (
+                    <Text
+                      style={[
+                        styles.followButtonText,
+                        isFollowingCurrentAuthor && styles.followButtonTextActive,
                       ]}
-                      onPress={() => {
-                        void openExternalLink(item.value);
-                      }}
                     >
-                      <Text style={styles.linkChipText}>{item.label}</Text>
-                    </Pressable>
-                  ))}
-                </View>
-              </View>
-            ) : null}
+                      {isFollowingCurrentAuthor ? "Following" : "Follow Author"}
+                    </Text>
+                  )}
+                </Pressable>
+              ) : null}
+            </View>
 
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Published Posts</Text>
@@ -341,6 +366,13 @@ const createStyles = (colors: ThemeColors) =>
       fontWeight: "700",
       textAlign: "center",
     },
+    titleRow: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: SPACING.sm,
+    },
     username: {
       color: colors.accent,
       fontSize: 14,
@@ -356,6 +388,32 @@ const createStyles = (colors: ThemeColors) =>
       color: colors.mutedText,
       fontSize: 13,
     },
+    followButton: {
+      minWidth: 144,
+      marginTop: SPACING.md,
+      alignItems: "center",
+      justifyContent: "center",
+      borderRadius: RADIUS.pill,
+      backgroundColor: colors.primary,
+      paddingHorizontal: SPACING.xl,
+      paddingVertical: SPACING.sm + 2,
+    },
+    followButtonActive: {
+      borderWidth: 1,
+      borderColor: colors.accentBorder,
+      backgroundColor: colors.accentSoft,
+    },
+    followButtonPressed: {
+      opacity: 0.9,
+    },
+    followButtonText: {
+      color: colors.primaryText,
+      fontSize: 14,
+      fontWeight: "700",
+    },
+    followButtonTextActive: {
+      color: colors.text,
+    },
     section: {
       borderWidth: 1,
       borderColor: colors.border,
@@ -369,27 +427,6 @@ const createStyles = (colors: ThemeColors) =>
       color: colors.text,
       fontSize: 18,
       fontWeight: "700",
-    },
-    linkRow: {
-      flexDirection: "row",
-      flexWrap: "wrap",
-      gap: SPACING.sm,
-    },
-    linkChip: {
-      borderWidth: 1,
-      borderColor: colors.border,
-      borderRadius: 999,
-      backgroundColor: colors.surfaceMuted,
-      paddingHorizontal: SPACING.md,
-      paddingVertical: SPACING.sm,
-    },
-    linkChipPressed: {
-      opacity: 0.85,
-    },
-    linkChipText: {
-      color: colors.text,
-      fontSize: 13,
-      fontWeight: "600",
     },
     emptyText: {
       color: colors.mutedText,
