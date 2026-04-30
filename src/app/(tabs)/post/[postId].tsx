@@ -4,7 +4,6 @@ import {
   Alert,
   Image,
   Linking,
-  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -42,11 +41,12 @@ import {
   RADIUS,
   SHADOWS,
   SPACING,
+  STATIC_COLORS,
   type ThemeColors,
 } from "@/constants/theme";
+import { ArrowRightIcon } from "@/components/icons/arrow-right-icon";
 import { BookmarkMenuIcon } from "@/components/icons/bookmark-menu-icon";
 import { MoreVerticalIcon } from "@/components/icons/more-vertical-icon";
-import { UnfollowActionIcon } from "@/components/icons/unfollow-action-icon";
 import { getEffectiveUserRole, type UserRole } from "@/lib/access";
 import {
   createSlug,
@@ -59,7 +59,6 @@ import {
   sortPostsByRecency,
   type PostRecord,
 } from "@/lib/content";
-import { useAuthorFollows } from "@/hooks/use-author-follows";
 import { useFavorites } from "@/hooks/use-favorites";
 import { firestore } from "@/lib/firebase";
 import {
@@ -171,10 +170,6 @@ function resolveSwipePostIds(value: string | string[] | undefined) {
 
 function isSwipeEligiblePost(post: PostRecord) {
   return post.status === "published" && !isPostTrashed(post);
-}
-
-function isFollowableAuthorRole(role: UserRole) {
-  return role === "author" || role === "admin";
 }
 
 function getPostAuthorUserId(
@@ -328,17 +323,14 @@ function useResolvedAuthorRoles(posts: (PostAuthorSnapshot | null)[]) {
 
 type PostDetailsPageProps = {
   authorRole: UserRole;
-  currentUserId?: string;
-  isAuthorFollowed: (authorId: string) => boolean;
+  isVideoPlaying?: boolean;
   interactive: boolean;
-  isLoadingAuthorFollows: boolean;
   lyricsFontSize: number;
   onDecreaseLyricsFontSize: () => void;
   onIncreaseLyricsFontSize: () => void;
   onOpenCategory: (post: PostRecord) => void;
-  onOpenAuthor: (post: PostRecord) => void;
   onOpenInYouTube: (url: string) => Promise<void>;
-  onToggleAuthorFollow: (post: PostRecord) => Promise<void>;
+  onVideoPlaybackChange?: (isPlaying: boolean) => void;
   post: PostRecord;
   scrollViewRef?: RefObject<ScrollView | null>;
   styles: ReturnType<typeof createStyles>;
@@ -348,40 +340,28 @@ type PostDetailsPageProps = {
 
 function PostDetailsPage({
   authorRole,
-  currentUserId,
-  isAuthorFollowed,
+  isVideoPlaying = false,
   interactive,
-  isLoadingAuthorFollows,
   lyricsFontSize,
   onDecreaseLyricsFontSize,
   onIncreaseLyricsFontSize,
   onOpenCategory,
-  onOpenAuthor,
   onOpenInYouTube,
-  onToggleAuthorFollow,
+  onVideoPlaybackChange,
   post,
   scrollViewRef,
   styles,
   youtubePlayerError = "",
   onYoutubePlayerError,
 }: PostDetailsPageProps) {
-  const { colors } = useAppTheme();
   const thumbnailUrl = getPostCardThumbnailUrl(post);
-  const updateLabel = formatDate(post.uploadDate || post.createDate);
+  const publishedLabel = formatDate(post.publishedAt || post.uploadDate || post.createDate);
   const categoryLabel = formatCategoryLabel(post.category);
   const youtubeVideoId = interactive ? getYouTubeVideoId(post.youtubeVideoUrl) : "";
   const canDecreaseLyricsSize = interactive && lyricsFontSize > MIN_LYRICS_FONT_SIZE;
   const canIncreaseLyricsSize = interactive && lyricsFontSize < MAX_LYRICS_FONT_SIZE;
   const authorLabel = post.authorDisplayName || "Community Author";
   const authorCardName = getAuthorCardName(authorLabel);
-  const authorUserId = getPostAuthorUserId(post);
-  const canFollowAuthor = Boolean(
-    interactive &&
-      authorUserId &&
-      authorUserId !== currentUserId &&
-      isFollowableAuthorRole(authorRole),
-  );
-  const isFollowingCurrentAuthor = authorUserId ? isAuthorFollowed(authorUserId) : false;
 
   return (
     <ScrollView
@@ -406,62 +386,17 @@ function PostDetailsPage({
           accessibilityLabel={`Open ${categoryLabel} posts`}
           disabled={!interactive}
         >
-          <Text style={styles.categoryLinkText}>{categoryLabel}</Text>
+          <View style={styles.categoryLinkContent}>
+            <Text style={styles.categoryLinkText}>{`Category: ${categoryLabel}`}</Text>
+            <ArrowRightIcon color={STATIC_COLORS.black} size={12} />
+          </View>
         </Pressable>
         <Text style={styles.metaSeparator}>·</Text>
-        <Text style={styles.meta}>{updateLabel}</Text>
-        <View style={styles.metaFontControlsWrap}>
-          <View style={styles.fontControlsActions}>
-            <Pressable
-              style={({ pressed }) => [
-                styles.fontButton,
-                interactive && pressed && styles.fontButtonPressed,
-                !canDecreaseLyricsSize && styles.fontButtonDisabled,
-              ]}
-              onPress={onDecreaseLyricsFontSize}
-              disabled={!canDecreaseLyricsSize}
-            >
-              <Text
-                style={[
-                  styles.fontButtonText,
-                  !canDecreaseLyricsSize && styles.fontButtonTextDisabled,
-                ]}
-              >
-                A-
-              </Text>
-            </Pressable>
-            <Text style={styles.fontValue}>{Math.round(lyricsFontSize)}</Text>
-            <Pressable
-              style={({ pressed }) => [
-                styles.fontButton,
-                interactive && pressed && styles.fontButtonPressed,
-                !canIncreaseLyricsSize && styles.fontButtonDisabled,
-              ]}
-              onPress={onIncreaseLyricsFontSize}
-              disabled={!canIncreaseLyricsSize}
-            >
-              <Text
-                style={[
-                  styles.fontButtonText,
-                  !canIncreaseLyricsSize && styles.fontButtonTextDisabled,
-                ]}
-              >
-                A+
-              </Text>
-            </Pressable>
-          </View>
-        </View>
+        <Text style={styles.meta}>{`Published: ${publishedLabel}`}</Text>
       </View>
 
       {post.authorId || post.createdBy ? (
-        <Pressable
-          style={({ pressed }) => [
-            styles.authorCard,
-            interactive && pressed && styles.authorCardPressed,
-          ]}
-          onPress={() => onOpenAuthor(post)}
-          disabled={!interactive}
-        >
+        <View style={styles.authorCard}>
           {post.authorPhotoURL ? (
             <Image source={{ uri: post.authorPhotoURL }} style={styles.authorAvatar} />
           ) : (
@@ -481,46 +416,47 @@ function PostDetailsPage({
               <VerifiedRoleBadge role={authorRole} />
             </View>
           </View>
-
-          {canFollowAuthor ? (
-            <View style={styles.authorActions}>
+          <View style={styles.authorFontControlsWrap}>
+            <View style={styles.fontControlsActions}>
               <Pressable
                 style={({ pressed }) => [
-                  styles.authorFollowButton,
-                  isFollowingCurrentAuthor && styles.authorFollowButtonActive,
-                  interactive && pressed && styles.authorFollowButtonPressed,
+                  styles.fontButton,
+                  interactive && pressed && styles.fontButtonPressed,
+                  !canDecreaseLyricsSize && styles.fontButtonDisabled,
                 ]}
-                onPress={(event) => {
-                  event.stopPropagation();
-                  void onToggleAuthorFollow(post);
-                }}
-                accessibilityRole="button"
-                accessibilityLabel={
-                  isFollowingCurrentAuthor
-                    ? `Unfollow ${authorLabel}`
-                    : `Follow ${authorLabel}`
-                }
-                disabled={!interactive}
+                onPress={onDecreaseLyricsFontSize}
+                disabled={!canDecreaseLyricsSize}
               >
-                {isLoadingAuthorFollows ? (
-                  <ActivityIndicator
-                    size="small"
-                    color={isFollowingCurrentAuthor ? colors.text : colors.primaryText}
-                  />
-                ) : (
-                  <Text
-                    style={[
-                      styles.authorFollowButtonText,
-                      isFollowingCurrentAuthor && styles.authorFollowButtonTextActive,
-                    ]}
-                  >
-                    {isFollowingCurrentAuthor ? "Following" : "Follow"}
-                  </Text>
-                )}
+                <Text
+                  style={[
+                    styles.fontButtonText,
+                    !canDecreaseLyricsSize && styles.fontButtonTextDisabled,
+                  ]}
+                >
+                  A-
+                </Text>
+              </Pressable>
+              <Pressable
+                style={({ pressed }) => [
+                  styles.fontButton,
+                  interactive && pressed && styles.fontButtonPressed,
+                  !canIncreaseLyricsSize && styles.fontButtonDisabled,
+                ]}
+                onPress={onIncreaseLyricsFontSize}
+                disabled={!canIncreaseLyricsSize}
+              >
+                <Text
+                  style={[
+                    styles.fontButtonText,
+                    !canIncreaseLyricsSize && styles.fontButtonTextDisabled,
+                  ]}
+                >
+                  A+
+                </Text>
               </Pressable>
             </View>
-          ) : null}
-        </Pressable>
+          </View>
+        </View>
       ) : null}
 
       <Text
@@ -542,11 +478,23 @@ function PostDetailsPage({
             <YoutubePlayer
               height={220}
               videoId={youtubeVideoId}
-              play={false}
+              play={isVideoPlaying}
               initialPlayerParams={{ rel: false, modestbranding: true }}
               webViewStyle={styles.video}
               onError={(event: string) => {
+                onVideoPlaybackChange?.(false);
                 onYoutubePlayerError?.(event || "Playback failed.");
+              }}
+              onChangeState={(state: string) => {
+                if (state === "playing") {
+                  onYoutubePlayerError?.("");
+                  onVideoPlaybackChange?.(true);
+                  return;
+                }
+
+                if (state === "paused" || state === "ended") {
+                  onVideoPlaybackChange?.(false);
+                }
               }}
             />
           </View>
@@ -575,9 +523,9 @@ function PostDetailsPage({
 
 export default function PostDetailsScreen() {
   const { colors } = useAppTheme();
-  const { user } = useAuth();
+  const { canManagePosts, canModeratePosts, user } = useAuth();
   const { keepLyricsScreenAwakeEnabled } = useLyricsReaderPreferences();
-  const { isConnected, showOfflineToast } = useNetworkStatus();
+  const { isConnected, showOfflineToast, showToast } = useNetworkStatus();
   const router = useRouter();
   const { width } = useWindowDimensions();
   const {
@@ -594,7 +542,6 @@ export default function PostDetailsScreen() {
     swipePostIds?: string;
   }>();
   const { isFavorite, toggleFavorite } = useFavorites();
-  const { isFollowingAuthor, isLoadingAuthorFollows, toggleAuthorFollow } = useAuthorFollows();
   const styles = createStyles(colors);
 
   const routePostId = resolvePostId(postIdParam);
@@ -610,6 +557,7 @@ export default function PostDetailsScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
   const [youtubePlayerError, setYoutubePlayerError] = useState("");
+  const [isVideoPlaying, setIsVideoPlaying] = useState(false);
   const [lyricsFontSize, setLyricsFontSize] = useState(DEFAULT_LYRICS_FONT_SIZE);
   const [isHeaderMenuVisible, setIsHeaderMenuVisible] = useState(false);
   const translateX = useSharedValue(0);
@@ -625,6 +573,7 @@ export default function PostDetailsScreen() {
 
   useEffect(() => {
     setIsHeaderMenuVisible(false);
+    setIsVideoPlaying(false);
   }, [post?.id]);
 
   useEffect(() => {
@@ -917,35 +866,6 @@ export default function PostDetailsScreen() {
     }
   };
 
-  const handleToggleAuthorFollow = async (targetPost: PostRecord) => {
-    const authorId = targetPost.authorId || targetPost.createdBy;
-
-    if (!authorId) {
-      return;
-    }
-
-    try {
-      await toggleAuthorFollow({
-        uid: authorId,
-        displayName: targetPost.authorDisplayName || targetPost.createdByEmail || "Author",
-        username: targetPost.authorUsername,
-      });
-    } catch (toggleError) {
-      const message = getActionErrorMessage({
-        error: toggleError,
-        isConnected,
-        fallbackMessage: "Author follow could not be updated right now.",
-      });
-
-      if (message === DEFAULT_OFFLINE_MESSAGE) {
-        showOfflineToast();
-        return;
-      }
-
-      Alert.alert("Unable to update follow", message);
-    }
-  };
-
   const closeHeaderMenu = () => {
     setIsHeaderMenuVisible(false);
   };
@@ -955,34 +875,7 @@ export default function PostDetailsScreen() {
       return;
     }
 
-    setIsHeaderMenuVisible(true);
-  };
-
-  const handleConfirmHeaderUnfollow = () => {
-    if (!post || !currentPostAuthorId || !isFollowingCurrentPostAuthor) {
-      return;
-    }
-
-    const authorName = post.authorDisplayName || "this author";
-
-    closeHeaderMenu();
-    Alert.alert(
-      `Unsubscribe from ${authorName}?`,
-      "",
-      [
-        {
-          text: "Cancel",
-          style: "cancel",
-        },
-        {
-          text: "Unfollow",
-          style: "destructive",
-          onPress: () => {
-            void handleToggleAuthorFollow(post);
-          },
-        },
-      ],
-    );
+    setIsHeaderMenuVisible((current) => !current);
   };
 
   const handleOpenInYouTube = async (url: string) => {
@@ -1008,25 +901,28 @@ export default function PostDetailsScreen() {
     });
   };
 
-  const handleOpenAuthor = (targetPost: PostRecord) => {
-    const authorId = targetPost.authorId || targetPost.createdBy;
+  const handleOpenPostEditor = (targetPost: PostRecord) => {
+    router.push(`/admin/posts/edit?postId=${targetPost.id}`);
+  };
 
-    if (!authorId) {
+  const handleToggleVideoPlayback = (targetPost: PostRecord) => {
+    if (!getYouTubeVideoId(targetPost.youtubeVideoUrl)) {
+      Alert.alert("Video unavailable", "This post does not have a playable video.");
       return;
     }
 
-    router.push({
-      pathname: "/author/[authorId]",
-      params: { authorId },
-    });
+    setYoutubePlayerError("");
+    setIsVideoPlaying((current) => !current);
   };
 
   const handleDecreaseLyricsFontSize = () => {
     setLyricsFontSize((value) => Math.max(MIN_LYRICS_FONT_SIZE, value - LYRICS_FONT_STEP));
+    showToast("Lyrics font size decreased.");
   };
 
   const handleIncreaseLyricsFontSize = () => {
     setLyricsFontSize((value) => Math.min(MAX_LYRICS_FONT_SIZE, value + LYRICS_FONT_STEP));
+    showToast("Lyrics font size increased.");
   };
 
   const currentPostIndex = useMemo(() => {
@@ -1058,10 +954,18 @@ export default function PostDetailsScreen() {
   );
   const authorRolesByUserId = useResolvedAuthorRoles(visibleAuthorPosts);
   const currentPostAuthorRole = getResolvedAuthorRole(post, authorRolesByUserId);
-  const currentPostAuthorId = getPostAuthorUserId(post);
-  const isFollowingCurrentPostAuthor = currentPostAuthorId
-    ? isFollowingAuthor(currentPostAuthorId)
-    : false;
+  const canPlayCurrentPostVideo = Boolean(post && getYouTubeVideoId(post.youtubeVideoUrl));
+  const canEditCurrentPost = Boolean(
+    post &&
+      canManagePosts &&
+      user &&
+      (
+        canModeratePosts ||
+        post.createdBy === user.uid ||
+        post.authorId === user.uid ||
+        (!!user.email && post.createdByEmail === user.email)
+      ),
+  );
 
   const currentPostId = post?.id ?? activePostId;
   const previousSwipePostId = previousSwipePost?.id ?? "";
@@ -1320,17 +1224,12 @@ export default function PostDetailsScreen() {
         <Animated.View pointerEvents="none" style={[styles.page, styles.pageCard, previousPageStyle]}>
           <PostDetailsPage
             authorRole={getResolvedAuthorRole(previousSwipePost, authorRolesByUserId)}
-            currentUserId={user?.uid}
-            isAuthorFollowed={isFollowingAuthor}
             interactive={false}
-            isLoadingAuthorFollows={isLoadingAuthorFollows}
             lyricsFontSize={lyricsFontSize}
             onDecreaseLyricsFontSize={handleDecreaseLyricsFontSize}
             onIncreaseLyricsFontSize={handleIncreaseLyricsFontSize}
             onOpenCategory={handleOpenCategory}
-            onOpenAuthor={handleOpenAuthor}
             onOpenInYouTube={handleOpenInYouTube}
-            onToggleAuthorFollow={handleToggleAuthorFollow}
             post={previousSwipePost as PostRecord}
             styles={styles}
           />
@@ -1341,17 +1240,12 @@ export default function PostDetailsScreen() {
         <Animated.View pointerEvents="none" style={[styles.page, styles.pageCard, nextPageStyle]}>
           <PostDetailsPage
             authorRole={getResolvedAuthorRole(nextSwipePost, authorRolesByUserId)}
-            currentUserId={user?.uid}
-            isAuthorFollowed={isFollowingAuthor}
             interactive={false}
-            isLoadingAuthorFollows={isLoadingAuthorFollows}
             lyricsFontSize={lyricsFontSize}
             onDecreaseLyricsFontSize={handleDecreaseLyricsFontSize}
             onIncreaseLyricsFontSize={handleIncreaseLyricsFontSize}
             onOpenCategory={handleOpenCategory}
-            onOpenAuthor={handleOpenAuthor}
             onOpenInYouTube={handleOpenInYouTube}
-            onToggleAuthorFollow={handleToggleAuthorFollow}
             post={nextSwipePost as PostRecord}
             styles={styles}
           />
@@ -1363,20 +1257,17 @@ export default function PostDetailsScreen() {
           <Animated.View style={[styles.page, styles.pageCard, currentPageStyle]}>
             <PostDetailsPage
               authorRole={currentPostAuthorRole}
-              currentUserId={user?.uid}
-              isAuthorFollowed={isFollowingAuthor}
               interactive
-              isLoadingAuthorFollows={isLoadingAuthorFollows}
               lyricsFontSize={lyricsFontSize}
               onDecreaseLyricsFontSize={handleDecreaseLyricsFontSize}
               onIncreaseLyricsFontSize={handleIncreaseLyricsFontSize}
               onOpenCategory={handleOpenCategory}
-              onOpenAuthor={handleOpenAuthor}
               onOpenInYouTube={handleOpenInYouTube}
-              onToggleAuthorFollow={handleToggleAuthorFollow}
+              onVideoPlaybackChange={setIsVideoPlaying}
               post={post}
               scrollViewRef={scrollViewRef}
               styles={styles}
+              isVideoPlaying={isVideoPlaying}
               youtubePlayerError={youtubePlayerError}
               onYoutubePlayerError={setYoutubePlayerError}
             />
@@ -1386,20 +1277,17 @@ export default function PostDetailsScreen() {
         <Animated.View style={[styles.page, styles.pageCard, currentPageStyle]}>
           <PostDetailsPage
             authorRole={currentPostAuthorRole}
-            currentUserId={user?.uid}
-            isAuthorFollowed={isFollowingAuthor}
             interactive
-            isLoadingAuthorFollows={isLoadingAuthorFollows}
             lyricsFontSize={lyricsFontSize}
             onDecreaseLyricsFontSize={handleDecreaseLyricsFontSize}
             onIncreaseLyricsFontSize={handleIncreaseLyricsFontSize}
             onOpenCategory={handleOpenCategory}
-            onOpenAuthor={handleOpenAuthor}
             onOpenInYouTube={handleOpenInYouTube}
-            onToggleAuthorFollow={handleToggleAuthorFollow}
+            onVideoPlaybackChange={setIsVideoPlaying}
             post={post}
             scrollViewRef={scrollViewRef}
             styles={styles}
+            isVideoPlaying={isVideoPlaying}
             youtubePlayerError={youtubePlayerError}
             onYoutubePlayerError={setYoutubePlayerError}
           />
@@ -1410,39 +1298,83 @@ export default function PostDetailsScreen() {
         <View pointerEvents="none" style={[styles.page, styles.pageCard]}>
           <PostDetailsPage
             authorRole={getResolvedAuthorRole(settlingPreviewPost, authorRolesByUserId)}
-            currentUserId={user?.uid}
-            isAuthorFollowed={isFollowingAuthor}
             interactive={false}
-            isLoadingAuthorFollows={isLoadingAuthorFollows}
             lyricsFontSize={lyricsFontSize}
             onDecreaseLyricsFontSize={handleDecreaseLyricsFontSize}
             onIncreaseLyricsFontSize={handleIncreaseLyricsFontSize}
             onOpenCategory={handleOpenCategory}
-            onOpenAuthor={handleOpenAuthor}
             onOpenInYouTube={handleOpenInYouTube}
-            onToggleAuthorFollow={handleToggleAuthorFollow}
             post={settlingPreviewPost}
             styles={styles}
           />
         </View>
       ) : null}
 
-      <Modal
-        animationType="slide"
-        transparent
-        visible={Boolean(post) && isHeaderMenuVisible}
-        onRequestClose={closeHeaderMenu}
-      >
-        <View style={styles.sheetRoot}>
-          <Pressable style={styles.sheetBackdrop} onPress={closeHeaderMenu} />
+      {Boolean(post) && isHeaderMenuVisible ? (
+        <View style={styles.headerMenuOverlay}>
+          <Pressable style={styles.headerMenuBackdrop} onPress={closeHeaderMenu} />
 
-          <View style={styles.sheetCard}>
-            <View style={styles.sheetHandle} />
+          <View style={styles.headerMenuDropdown}>
+            {canEditCurrentPost ? (
+              <>
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.headerMenuAction,
+                    pressed && styles.headerMenuActionPressed,
+                  ]}
+                  onPress={() => {
+                    if (!post) {
+                      return;
+                    }
+
+                    closeHeaderMenu();
+                    handleOpenPostEditor(post);
+                  }}
+                  accessibilityRole="button"
+                  accessibilityLabel="Edit post"
+                >
+                  <View style={styles.headerMenuActionIconWrap}>
+                    <ArrowRightIcon color={colors.subtleText} size={14} />
+                  </View>
+                  <Text style={styles.headerMenuActionTitle}>Edit post</Text>
+                </Pressable>
+                <View style={styles.headerMenuActionDivider} />
+              </>
+            ) : null}
+
+            {canPlayCurrentPostVideo ? (
+              <>
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.headerMenuAction,
+                    pressed && styles.headerMenuActionPressed,
+                  ]}
+                  onPress={() => {
+                    if (!post) {
+                      return;
+                    }
+
+                    closeHeaderMenu();
+                    handleToggleVideoPlayback(post);
+                  }}
+                  accessibilityRole="button"
+                  accessibilityLabel={isVideoPlaying ? "Pause video" : "Play video"}
+                >
+                  <View style={styles.headerMenuActionIconWrap}>
+                    <ArrowRightIcon color={colors.subtleText} size={14} />
+                  </View>
+                  <Text style={styles.headerMenuActionTitle}>
+                    {isVideoPlaying ? "Pause video" : "Play video"}
+                  </Text>
+                </Pressable>
+                <View style={styles.headerMenuActionDivider} />
+              </>
+            ) : null}
 
             <Pressable
               style={({ pressed }) => [
-                styles.sheetAction,
-                pressed && styles.sheetActionPressed,
+                styles.headerMenuAction,
+                pressed && styles.headerMenuActionPressed,
               ]}
               onPress={() => {
                 if (!post) {
@@ -1459,48 +1391,20 @@ export default function PostDetailsScreen() {
                   : "Save to bookmarks"
               }
             >
-              <View style={styles.sheetActionIconWrap}>
+              <View style={styles.headerMenuActionIconWrap}>
                 <BookmarkMenuIcon
                   color={colors.text}
                   active={Boolean(post && isFavorite(post.id))}
                   size={18}
                 />
               </View>
-              <Text style={styles.sheetActionTitle}>
+              <Text style={styles.headerMenuActionTitle}>
                 {post && isFavorite(post.id) ? "Remove bookmark" : "Add bookmark"}
               </Text>
             </Pressable>
-
-            {isFollowingCurrentPostAuthor &&
-            currentPostAuthorId &&
-            currentPostAuthorId !== user?.uid &&
-            isFollowableAuthorRole(currentPostAuthorRole) ? (
-              <>
-                <View style={styles.sheetActionDivider} />
-
-                <Pressable
-                  style={({ pressed }) => [
-                    styles.sheetAction,
-                    pressed && styles.sheetActionPressed,
-                  ]}
-                  onPress={handleConfirmHeaderUnfollow}
-                  accessibilityRole="button"
-                  accessibilityLabel={
-                    post
-                      ? `Unfollow ${post.authorDisplayName || "author"}`
-                      : "Unfollow author"
-                  }
-                >
-                  <View style={styles.sheetActionIconWrap}>
-                    <UnfollowActionIcon color={colors.text} size={18} />
-                  </View>
-                  <Text style={styles.sheetActionTitle}>Unfollow author</Text>
-                </Pressable>
-              </>
-            ) : null}
           </View>
         </View>
-      </Modal>
+      ) : null}
     </View>
   );
 }
@@ -1553,7 +1457,6 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     borderRadius: 12,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: colors.surfaceMuted,
   },
   headerMenuButtonPressed: {
     opacity: 0.82,
@@ -1602,11 +1505,16 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   categoryLink: {
     borderRadius: RADIUS.pill,
   },
+  categoryLinkContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.xs,
+  },
   categoryLinkPressed: {
     opacity: 0.7,
   },
   categoryLinkText: {
-    color: colors.accent,
+    color: STATIC_COLORS.black,
     fontSize: 12,
     fontWeight: "700",
   },
@@ -1614,12 +1522,12 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: SPACING.sm,
-    borderRadius: RADIUS.md,
+    borderRadius: 9,
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: colors.surfaceMuted,
     padding: SPACING.md,
-    ...SHADOWS.lg,
+    marginVertical: SPACING.sm,
   },
   authorCardPressed: {
     opacity: 0.9,
@@ -1661,105 +1569,64 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     gap: SPACING.xs,
     minWidth: 0,
   },
-  authorActions: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: SPACING.xs,
-    marginLeft: SPACING.xs,
-  },
-  authorFollowButton: {
-    minWidth: 78,
-    height: 30,
-    paddingHorizontal: SPACING.md,
-    borderRadius: RADIUS.pill,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: colors.primary,
-  },
-  authorFollowButtonActive: {
-    backgroundColor: colors.accentSoft,
-    borderWidth: 1,
-    borderColor: colors.accentBorder,
-  },
-  authorFollowButtonPressed: {
-    opacity: 0.88,
-  },
-  authorFollowButtonText: {
-    color: colors.primaryText,
-    fontSize: 12,
-    fontWeight: "700",
-  },
-  authorFollowButtonTextActive: {
-    color: colors.text,
-  },
-  sheetRoot: {
-    flex: 1,
-    justifyContent: "flex-end",
-  },
-  sheetBackdrop: {
+  headerMenuOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: colors.overlay,
+    zIndex: 60,
   },
-  sheetCard: {
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
+  headerMenuBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "transparent",
+  },
+  headerMenuDropdown: {
+    position: "absolute",
+    top: SPACING.sm,
+    right: SPACING.lg,
+    minWidth: 188,
+    borderRadius: RADIUS.inputSm,
+    borderWidth: 1,
+    borderColor: colors.border,
     backgroundColor: colors.surface,
-    paddingHorizontal: SPACING.xl,
-    paddingTop: SPACING.md,
-    paddingBottom: SPACING.xxl,
-    gap: 0,
-    ...SHADOWS.lg,
+    overflow: "hidden",
+    ...SHADOWS.md,
   },
-  sheetHandle: {
-    alignSelf: "center",
-    width: 48,
-    height: 5,
-    borderRadius: 999,
-    backgroundColor: colors.border,
-    marginBottom: SPACING.md,
-  },
-  sheetAction: {
-    minHeight: 64,
-    paddingHorizontal: 2,
+  headerMenuAction: {
+    minHeight: 46,
+    paddingHorizontal: SPACING.lg,
     paddingVertical: SPACING.md,
     flexDirection: "row",
     alignItems: "center",
-    gap: SPACING.md,
+    gap: SPACING.sm,
     justifyContent: "flex-start",
     backgroundColor: colors.surface,
   },
-  sheetActionPressed: {
-    opacity: 0.72,
+  headerMenuActionPressed: {
+    backgroundColor: colors.surfaceMuted,
   },
-  sheetActionIconWrap: {
-    width: 34,
-    height: 34,
-    borderRadius: 999,
+  headerMenuActionIconWrap: {
+    width: 16,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "transparent",
     flexShrink: 0,
   },
-  sheetActionDivider: {
+  headerMenuActionDivider: {
     height: StyleSheet.hairlineWidth,
     backgroundColor: colors.border,
-    marginLeft: 48,
   },
-  sheetActionTitle: {
+  headerMenuActionTitle: {
     flex: 1,
     color: colors.text,
-    fontSize: 16,
+    fontSize: 13,
     fontWeight: "600",
   },
-  metaFontControlsWrap: {
-    marginLeft: "auto",
+  authorFontControlsWrap: {
+    marginLeft: SPACING.sm,
     alignItems: "center",
     justifyContent: "center",
   },
   fontControlsActions: {
     flexDirection: "row",
     alignItems: "center",
-    gap: SPACING.xs,
+    gap: SPACING.md,
     paddingHorizontal: SPACING.xs,
     paddingVertical: 2,
   },
@@ -1783,13 +1650,6 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   },
   fontButtonTextDisabled: {
     color: colors.mutedText,
-  },
-  fontValue: {
-    minWidth: 24,
-    textAlign: "center",
-    color: colors.text,
-    fontSize: 13,
-    fontWeight: "700",
   },
   content: {
     color: colors.text,

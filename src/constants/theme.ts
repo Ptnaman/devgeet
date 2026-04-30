@@ -303,3 +303,92 @@ export const SHADOWS = {
     elevation: 35,
   },
 } as const;
+
+type MarketingAmbientTheme = {
+  background: string;
+  title: string;
+  body: string;
+  warmGlowInner: string;
+  warmGlowOuter: string;
+  blueGlowInner: string;
+  blueGlowOuter: string;
+};
+
+export type OnboardingScreenTheme = MarketingAmbientTheme & {
+  button: string;
+  buttonText: string;
+};
+
+export type AuthChoiceScreenTheme = MarketingAmbientTheme & {
+  note: string;
+  googleButtonBackground: string;
+  googleButtonBorder: string;
+  errorText: string;
+  topGlowInner: string;
+  topGlowOuter: string;
+};
+
+export const MARKETING_HEADLINE_GRADIENT_STOPS = [
+  { offset: "0", color: "#6AF4A2" },
+  { offset: "0.32", color: "#71E3E8" },
+  { offset: "0.66", color: "#89B7FF" },
+  { offset: "1", color: "#73F86B" },
+] as const;
+
+export const ONBOARDING_SCREEN_THEMES = {
+  light: {
+    background: "#FFFFFF",
+    title: "#121212",
+    body: "#34373D",
+    button: "#050505",
+    buttonText: "#FFFFFF",
+    warmGlowInner: "#FFF2DE",
+    warmGlowOuter: "#FFF7EE",
+    blueGlowInner: "#A8DCFF",
+    blueGlowOuter: "#D5EDFF",
+  },
+  dark: {
+    background: "#090B11",
+    title: "#F5F7FB",
+    body: "#B6C0CF",
+    button: "#F5F7FB",
+    buttonText: "#090B11",
+    warmGlowInner: "#5C3A1B",
+    warmGlowOuter: "#2A1A0D",
+    blueGlowInner: "#1D5E96",
+    blueGlowOuter: "#11283F",
+  },
+} as const satisfies Record<ThemeMode, OnboardingScreenTheme>;
+
+export const AUTH_CHOICE_SCREEN_THEMES = {
+  light: {
+    background: "#FFFFFF",
+    title: "#121212",
+    body: "#34373D",
+    note: "#697180",
+    googleButtonBackground: "#FFFFFF",
+    googleButtonBorder: "#E6EAF0",
+    errorText: "#C03942",
+    topGlowInner: "#E8F6FF",
+    topGlowOuter: "#F4FBFF",
+    warmGlowInner: "#FFF2DE",
+    warmGlowOuter: "#FFF7EE",
+    blueGlowInner: "#A8DCFF",
+    blueGlowOuter: "#D5EDFF",
+  },
+  dark: {
+    background: "#090B11",
+    title: "#F5F7FB",
+    body: "#B6C0CF",
+    note: "#8F98A8",
+    googleButtonBackground: "#FFFFFF",
+    googleButtonBorder: "#E6EAF0",
+    errorText: "#FFB4BC",
+    topGlowInner: "#163454",
+    topGlowOuter: "#0E1825",
+    warmGlowInner: "#5C3A1B",
+    warmGlowOuter: "#2A1A0D",
+    blueGlowInner: "#11283F",
+    blueGlowOuter: "#1D5E96",
+  },
+} as const satisfies Record<ThemeMode, AuthChoiceScreenTheme>;

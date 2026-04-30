@@ -1,33 +1,37 @@
 import {
   Timestamp,
   collection,
+  deleteDoc,
   doc,
-  limit,
-  orderBy,
   query,
   serverTimestamp,
   setDoc,
   updateDoc,
-  writeBatch,
+  where,
   type DocumentData,
 } from "firebase/firestore";
 
 import { firestore } from "@/lib/firebase";
 import { formatRelativeTime } from "@/lib/relative-time";
 
-const USERS_COLLECTION = "users";
-const USER_NOTIFICATIONS_SUBCOLLECTION = "notifications";
-const MAX_NOTIFICATION_BATCH_SIZE = 400;
+const NOTIFICATIONS_COLLECTION = "notifications";
+const NOTIFICATION_WRITE_CONCURRENCY = 25;
 const CREATOR_NOTIFICATION_PATTERN = /\b(author|creator|approved|approval|published|draft|review)\b/i;
+const AUTO_READ_AFTER_MS = 24 * 60 * 60 * 1000;
+const DELETE_UNSEEN_AFTER_MS = 7 * 24 * 60 * 60 * 1000;
 
 export type UserNotificationType = "post-approved" | "custom";
 export type UserNotificationCategory = "general" | "creator";
+export type UserNotificationAudience = "all" | "single";
 
 export type UserNotificationRecord = {
   id: string;
   uid: string;
   type: UserNotificationType;
   category: UserNotificationCategory;
+  audience: UserNotificationAudience | "";
+  pushEnabled: boolean;
+  isUserSeen: boolean;
   title: string;
   body: string;
   postId: string;
@@ -35,6 +39,7 @@ export type UserNotificationRecord = {
   isRead: boolean;
   createdAt: string;
   readAt: string;
+  userSeenAt: string;
 };
 
 const readStringValue = (value: unknown) => (typeof value === "string" ? value.trim() : "");
@@ -58,6 +63,11 @@ const normalizeUserNotificationCategory = (
   }
 
   return CREATOR_NOTIFICATION_PATTERN.test(`${title} ${body}`) ? "creator" : "general";
+};
+
+const normalizeUserNotificationAudience = (value: unknown): UserNotificationAudience | "" => {
+  const normalizedValue = readStringValue(value).toLowerCase();
+  return normalizedValue === "all" || normalizedValue === "single" ? normalizedValue : "";
 };
 
 const getUniqueUids = (uids: string[]) => [...new Set(uids.map((uid) => uid.trim()).filter(Boolean))];
@@ -91,20 +101,24 @@ const toDateString = (value: unknown) => {
   return "";
 };
 
-const getNotificationCollection = (uid: string) =>
-  collection(firestore, USERS_COLLECTION, uid, USER_NOTIFICATIONS_SUBCOLLECTION);
+const getNotificationCollection = () => collection(firestore, NOTIFICATIONS_COLLECTION);
+
+const getNotificationDoc = (notificationId: string) =>
+  doc(firestore, NOTIFICATIONS_COLLECTION, notificationId);
 
 export const getUserNotificationsQuery = (uid: string) =>
-  query(getNotificationCollection(uid), orderBy("createdAt", "desc"));
+  query(
+    getNotificationCollection(),
+    where("uid", "==", uid.trim()),
+  );
 
 export const getRecentUserNotificationsQuery = (
   uid: string,
-  limitCount: number,
+  _limitCount: number,
 ) =>
   query(
-    getNotificationCollection(uid),
-    orderBy("createdAt", "desc"),
-    limit(limitCount),
+    getNotificationCollection(),
+    where("uid", "==", uid.trim()),
   );
 
 export const mapUserNotificationRecord = (
@@ -121,6 +135,9 @@ export const mapUserNotificationRecord = (
     uid,
     type,
     category: normalizeUserNotificationCategory(data.category, type, title, body),
+    audience: normalizeUserNotificationAudience(data.audience),
+    pushEnabled: data.pushEnabled === true,
+    isUserSeen: data.isUserSeen === true,
     title,
     body,
     postId: readStringValue(data.postId),
@@ -128,6 +145,7 @@ export const mapUserNotificationRecord = (
     isRead: data.isRead === true,
     createdAt: toDateString(data.createdAt),
     readAt: toDateString(data.readAt),
+    userSeenAt: toDateString(data.userSeenAt),
   };
 };
 
@@ -154,7 +172,7 @@ export const createPostApprovedUserNotificationAsync = async ({
     return;
   }
 
-  const notificationRef = doc(getNotificationCollection(normalizedUid));
+  const notificationRef = doc(getNotificationCollection());
 
   await setDoc(notificationRef, {
     uid: normalizedUid,
@@ -165,8 +183,10 @@ export const createPostApprovedUserNotificationAsync = async ({
     postId: normalizedPostId,
     imageUrl: readStringValue(imageUrl),
     isRead: false,
+    isUserSeen: false,
     createdAt: serverTimestamp(),
     readAt: null,
+    userSeenAt: null,
   });
 };
 
@@ -176,12 +196,16 @@ export const createCustomUserNotificationAsync = async ({
   body,
   imageUrl,
   category = "general",
+  audience = "single",
+  pushEnabled = false,
 }: {
   uid: string;
   title: string;
   body: string;
   imageUrl?: string;
   category?: UserNotificationCategory;
+  audience?: UserNotificationAudience;
+  pushEnabled?: boolean;
 }) => {
   const normalizedUid = uid.trim();
   const normalizedTitle = title.trim() || "DevGeet";
@@ -191,19 +215,23 @@ export const createCustomUserNotificationAsync = async ({
     return false;
   }
 
-  const notificationRef = doc(getNotificationCollection(normalizedUid));
+  const notificationRef = doc(getNotificationCollection());
 
   await setDoc(notificationRef, {
     uid: normalizedUid,
     type: "custom",
     category,
+    audience,
+    pushEnabled: pushEnabled === true,
     title: normalizedTitle,
     body: normalizedBody,
     postId: "",
     imageUrl: readStringValue(imageUrl),
     isRead: false,
+    isUserSeen: false,
     createdAt: serverTimestamp(),
     readAt: null,
+    userSeenAt: null,
   });
 
   return true;
@@ -215,12 +243,16 @@ export const createCustomUserNotificationsAsync = async ({
   body,
   imageUrl,
   category = "general",
+  audience = "all",
+  pushEnabled = false,
 }: {
   uids: string[];
   title: string;
   body: string;
   imageUrl?: string;
   category?: UserNotificationCategory;
+  audience?: UserNotificationAudience;
+  pushEnabled?: boolean;
 }) => {
   const uniqueUids = getUniqueUids(uids);
   const normalizedTitle = title.trim() || "DevGeet";
@@ -230,37 +262,45 @@ export const createCustomUserNotificationsAsync = async ({
     return 0;
   }
 
-  for (let index = 0; index < uniqueUids.length; index += MAX_NOTIFICATION_BATCH_SIZE) {
-    const batch = writeBatch(firestore);
-    const batchUids = uniqueUids.slice(index, index + MAX_NOTIFICATION_BATCH_SIZE);
+  let savedCount = 0;
 
-    batchUids.forEach((uid) => {
-      batch.set(doc(getNotificationCollection(uid)), {
-        uid,
-        type: "custom",
-        category,
-        title: normalizedTitle,
-        body: normalizedBody,
-        postId: "",
-        imageUrl: readStringValue(imageUrl),
-        isRead: false,
-        createdAt: serverTimestamp(),
-        readAt: null,
-      });
-    });
+  for (let index = 0; index < uniqueUids.length; index += NOTIFICATION_WRITE_CONCURRENCY) {
+    const chunkUids = uniqueUids.slice(index, index + NOTIFICATION_WRITE_CONCURRENCY);
+    const results = await Promise.allSettled(
+      chunkUids.map((uid) =>
+        setDoc(doc(getNotificationCollection()), {
+          uid,
+          type: "custom",
+          category,
+          audience,
+          pushEnabled: pushEnabled === true,
+          title: normalizedTitle,
+          body: normalizedBody,
+          postId: "",
+          imageUrl: readStringValue(imageUrl),
+          isRead: false,
+          isUserSeen: false,
+          createdAt: serverTimestamp(),
+          readAt: null,
+          userSeenAt: null,
+        }),
+      ),
+    );
 
-    await batch.commit();
+    savedCount += results.filter((result) => result.status === "fulfilled").length;
   }
 
-  return uniqueUids.length;
+  return savedCount;
 };
 
 export const markUserNotificationsAsReadAsync = async ({
   uid,
   notificationIds,
+  seenByUser = true,
 }: {
   uid: string;
   notificationIds: string[];
+  seenByUser?: boolean;
 }) => {
   const normalizedUid = uid.trim();
   const uniqueIds = [...new Set(notificationIds.map((id) => id.trim()).filter(Boolean))];
@@ -271,19 +311,16 @@ export const markUserNotificationsAsReadAsync = async ({
 
   await Promise.all(
     uniqueIds.map((notificationId) =>
-      updateDoc(
-        doc(
-          firestore,
-          USERS_COLLECTION,
-          normalizedUid,
-          USER_NOTIFICATIONS_SUBCOLLECTION,
-          notificationId,
-        ),
-        {
-          isRead: true,
-          readAt: serverTimestamp(),
-        },
-      ),
+      updateDoc(getNotificationDoc(notificationId), {
+        isRead: true,
+        readAt: serverTimestamp(),
+        ...(seenByUser
+          ? {
+              isUserSeen: true,
+              userSeenAt: serverTimestamp(),
+            }
+          : {}),
+      }),
     ),
   );
 };
@@ -302,23 +339,66 @@ export const deleteUserNotificationsAsync = async ({
     return;
   }
 
-  for (let index = 0; index < uniqueIds.length; index += MAX_NOTIFICATION_BATCH_SIZE) {
-    const batch = writeBatch(firestore);
-    const batchIds = uniqueIds.slice(index, index + MAX_NOTIFICATION_BATCH_SIZE);
+  for (let index = 0; index < uniqueIds.length; index += NOTIFICATION_WRITE_CONCURRENCY) {
+    const chunkIds = uniqueIds.slice(index, index + NOTIFICATION_WRITE_CONCURRENCY);
+    await Promise.allSettled(
+      chunkIds.map((notificationId) => deleteDoc(getNotificationDoc(notificationId))),
+    );
+  }
+};
 
-    batchIds.forEach((notificationId) => {
-      batch.delete(
-        doc(
-          firestore,
-          USERS_COLLECTION,
-          normalizedUid,
-          USER_NOTIFICATIONS_SUBCOLLECTION,
-          notificationId,
-        ),
-      );
+const toTimestamp = (value: string) => {
+  const parsedValue = Date.parse(value);
+  return Number.isFinite(parsedValue) ? parsedValue : 0;
+};
+
+export const enforceUserNotificationRetentionAsync = async ({
+  uid,
+  notifications,
+}: {
+  uid: string;
+  notifications: UserNotificationRecord[];
+}) => {
+  const normalizedUid = uid.trim();
+  if (!normalizedUid || !notifications.length) {
+    return;
+  }
+
+  const now = Date.now();
+  const idsToDelete: string[] = [];
+  const idsToAutoRead: string[] = [];
+
+  notifications.forEach((notification) => {
+    const createdAtTime = toTimestamp(notification.createdAt);
+    if (!createdAtTime || notification.uid !== normalizedUid) {
+      return;
+    }
+
+    const ageMs = now - createdAtTime;
+
+    if (!notification.isUserSeen && ageMs >= DELETE_UNSEEN_AFTER_MS) {
+      idsToDelete.push(notification.id);
+      return;
+    }
+
+    if (!notification.isRead && ageMs >= AUTO_READ_AFTER_MS) {
+      idsToAutoRead.push(notification.id);
+    }
+  });
+
+  if (idsToDelete.length) {
+    await deleteUserNotificationsAsync({
+      uid: normalizedUid,
+      notificationIds: idsToDelete,
     });
+  }
 
-    await batch.commit();
+  if (idsToAutoRead.length) {
+    await markUserNotificationsAsReadAsync({
+      uid: normalizedUid,
+      notificationIds: idsToAutoRead,
+      seenByUser: false,
+    });
   }
 };
 

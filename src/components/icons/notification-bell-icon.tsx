@@ -1,10 +1,13 @@
-import Svg, { Path } from "react-native-svg";
+import Svg, { Circle, Path } from "react-native-svg";
 
 type NotificationBellIconProps = {
   color: string;
   size: number;
   filled?: boolean;
   fillColor?: string;
+  showAlertDot?: boolean;
+  alertDotColor?: string;
+  alertDotStrokeColor?: string;
 };
 
 export function NotificationBellIcon({
@@ -12,6 +15,9 @@ export function NotificationBellIcon({
   fillColor = "none",
   filled = false,
   size,
+  showAlertDot = false,
+  alertDotColor = "#FF3B30",
+  alertDotStrokeColor = "#FFFFFF",
 }: NotificationBellIconProps) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
@@ -35,6 +41,16 @@ export function NotificationBellIcon({
         strokeLinecap="round"
         strokeLinejoin="round"
       />
+      {showAlertDot ? (
+        <Circle
+          cx={18.5}
+          cy={5.5}
+          r={6.2}
+          fill={alertDotColor}
+          stroke={alertDotStrokeColor}
+          strokeWidth={1.6}
+        />
+      ) : null}
     </Svg>
   );
 }

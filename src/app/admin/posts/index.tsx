@@ -3,20 +3,21 @@ import {
   ActivityIndicator,
   Alert,
   Image,
+  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
-  TouchableOpacity,
+  TextInput,
+  useWindowDimensions,
   View,
 } from "react-native";
-import { Redirect, useRouter } from "expo-router";
+import { Redirect, Stack, useRouter } from "expo-router";
 import {
   collection,
   deleteDoc,
   doc,
   onSnapshot,
-  orderBy,
   query,
   serverTimestamp,
   setDoc,
@@ -25,25 +26,26 @@ import {
 } from "firebase/firestore";
 
 import {
-  CONTROL_SIZE,
-  FONT_SIZE,
   RADIUS,
+  SHADOWS,
   SPACING,
   type ThemeColors,
 } from "@/constants/theme";
 import {
-  CATEGORIES_COLLECTION,
   POSTS_COLLECTION,
   formatDate,
+  getContentPreviewLines,
   getPostCardThumbnailUrl,
   isPostTrashed,
-  mapCategoryRecord,
   mapPostRecord,
   sortPostsByRecency,
-  type CategoryRecord,
   type PostRecord,
   type PostStatus,
 } from "@/lib/content";
+import { ArrowRightIcon } from "@/components/icons/arrow-right-icon";
+import { MoreVerticalIcon } from "@/components/icons/more-vertical-icon";
+import { PlusIcon } from "@/components/icons/plus-icon";
+import { SearchInputIcon } from "@/components/icons/search-input-icon";
 import { TrashActionIcon } from "@/components/icons/trash-action-icon";
 import { firestore } from "@/lib/firebase";
 import { getActionErrorMessage, getRequestErrorMessage } from "@/lib/network";
@@ -52,59 +54,61 @@ import { useAuth } from "@/providers/auth-provider";
 import { useNetworkStatus } from "@/providers/network-provider";
 import { useAppTheme } from "@/providers/theme-provider";
 
-const POST_STATUSES: PostStatus[] = ["draft", "pending", "published"];
-type PostStatusFilter = "all" | PostStatus;
-const DEFAULT_CATEGORY = "general";
-
-const getStatusLabel = (status: PostStatus) => {
-  if (status === "pending") {
-    return "Pending Review";
-  }
-
-  return status === "published" ? "Published" : "Draft";
+type PostsTabKey = "published" | "pending" | "draft" | "trash";
+type SearchFilterKey = "all" | "title" | "content" | "category" | "author" | "status";
+type PostActionItem = {
+  key: string;
+  label: string;
+  destructive?: boolean;
+  onPress: () => void;
+};
+type PostActionMenuState = {
+  post: PostRecord;
+  anchorX: number;
+  anchorY: number;
 };
 
-const getPostPreview = (content: string) => {
-  const normalized = content.replace(/\s+/g, " ").trim();
-  if (!normalized) {
-    return "";
-  }
-
-  return normalized.length > 120 ? `${normalized.slice(0, 120)}...` : normalized;
-};
+const SEARCH_FILTER_OPTIONS: { key: SearchFilterKey; label: string }[] = [
+  { key: "all", label: "All" },
+  { key: "title", label: "Title" },
+  { key: "content", label: "Content" },
+  { key: "category", label: "Category" },
+  { key: "author", label: "Author" },
+  { key: "status", label: "Status" },
+];
+const POST_ACTION_MENU_WIDTH = 188;
+const POST_ACTION_MENU_ITEM_HEIGHT = 50;
+const POST_ACTION_MENU_OFFSET = 8;
 
 export default function AdminPostsListScreen() {
   const { colors, resolvedTheme } = useAppTheme();
   const { isConnected, showToast } = useNetworkStatus();
+  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const router = useRouter();
-  const { canManagePosts, canModeratePosts, isAdmin, role, user } = useAuth();
+  const { canManagePosts, canModeratePosts, role, user } = useAuth();
   const styles = createStyles(colors, resolvedTheme);
-  const [categories, setCategories] = useState<CategoryRecord[]>([]);
+
   const [posts, setPosts] = useState<PostRecord[]>([]);
-  const [isLoadingCategories, setIsLoadingCategories] = useState(true);
   const [isLoadingPosts, setIsLoadingPosts] = useState(true);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
-
-  const [statusFilter, setStatusFilter] = useState<PostStatusFilter>("all");
-  const [categoryFilter, setCategoryFilter] = useState<string>("all");
-  const [isViewingRecycleBin, setIsViewingRecycleBin] = useState(false);
+  const [activeTab, setActiveTab] = useState<PostsTabKey>("published");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [searchFilterKey, setSearchFilterKey] = useState<SearchFilterKey>("all");
+  const [isSearchFilterMenuOpen, setIsSearchFilterMenuOpen] = useState(false);
+  const [isStatusMenuOpen, setIsStatusMenuOpen] = useState(false);
+  const [activeActionMenu, setActiveActionMenu] = useState<PostActionMenuState | null>(null);
 
   useEffect(() => {
-    setIsLoadingCategories(true);
     setIsLoadingPosts(true);
 
     if (!canModeratePosts && !user?.uid) {
       setPosts([]);
-      setIsLoadingCategories(false);
       setIsLoadingPosts(false);
       return;
     }
 
-    const categoriesQuery = query(
-      collection(firestore, CATEGORIES_COLLECTION),
-      orderBy("name", "asc")
-    );
     const postsQuery = canModeratePosts
       ? query(collection(firestore, POSTS_COLLECTION))
       : query(
@@ -112,38 +116,15 @@ export default function AdminPostsListScreen() {
           where("createdBy", "==", user?.uid ?? ""),
         );
 
-    const unsubscribeCategories = onSnapshot(
-      categoriesQuery,
-      (snapshot) => {
-        setCategories(
-          snapshot.docs.map((item) =>
-            mapCategoryRecord(item.id, item.data() as DocumentData)
-          )
-        );
-        setIsLoadingCategories(false);
-        setError("");
-      },
-      (snapshotError) => {
-        setIsLoadingCategories(false);
-        setError(
-          getRequestErrorMessage({
-            error: snapshotError,
-            isConnected,
-            onlineMessage: "Unable to load categories.",
-          }),
-        );
-      }
-    );
-
     const unsubscribePosts = onSnapshot(
       postsQuery,
       (snapshot) => {
         setPosts(
           sortPostsByRecency(
             snapshot.docs.map((item) =>
-              mapPostRecord(item.id, item.data() as DocumentData)
-            )
-          )
+              mapPostRecord(item.id, item.data() as DocumentData),
+            ),
+          ),
         );
         setIsLoadingPosts(false);
         setError("");
@@ -157,16 +138,13 @@ export default function AdminPostsListScreen() {
             onlineMessage: "Unable to load posts.",
           }),
         );
-      }
+      },
     );
 
     return () => {
-      unsubscribeCategories();
       unsubscribePosts();
     };
   }, [canModeratePosts, isConnected, user?.uid]);
-
-  const isLoadingData = isLoadingCategories || isLoadingPosts;
 
   const scopedPosts = useMemo(() => {
     if (canModeratePosts) {
@@ -178,7 +156,9 @@ export default function AdminPostsListScreen() {
     }
 
     return posts.filter(
-      (post) => post.createdBy === user.uid || (!!user.email && post.createdByEmail === user.email)
+      (post) =>
+        post.createdBy === user.uid ||
+        (!!user.email && post.createdByEmail === user.email),
     );
   }, [canModeratePosts, posts, user?.email, user?.uid]);
 
@@ -192,34 +172,103 @@ export default function AdminPostsListScreen() {
     [scopedPosts],
   );
 
+  const tabCounts = useMemo(
+    () => ({
+      published: activePosts.filter((post) => post.status === "published").length,
+      pending: activePosts.filter((post) => post.status === "pending").length,
+      draft: activePosts.filter((post) => post.status === "draft").length,
+      trash: trashedPosts.length,
+    }),
+    [activePosts, trashedPosts.length],
+  );
+
+  const activeTabSourceCount = useMemo(() => {
+    if (activeTab === "trash") {
+      return tabCounts.trash;
+    }
+
+    if (activeTab === "draft") {
+      return tabCounts.draft;
+    }
+
+    if (activeTab === "pending") {
+      return tabCounts.pending;
+    }
+
+    return tabCounts.published;
+  }, [activeTab, tabCounts.draft, tabCounts.pending, tabCounts.published, tabCounts.trash]);
+
   const filteredPosts = useMemo(() => {
-    const sourcePosts = isViewingRecycleBin ? trashedPosts : activePosts;
+    const sourcePosts = activeTab === "trash" ? trashedPosts : activePosts;
+    const normalizedSearchQuery = searchQuery.trim().toLowerCase();
 
     return sourcePosts.filter((post) => {
-      if (statusFilter !== "all" && post.status !== statusFilter) {
+      if (activeTab === "published" && post.status !== "published") {
         return false;
       }
 
-      if (categoryFilter !== "all" && post.category !== categoryFilter) {
+      if (activeTab === "draft" && post.status !== "draft") {
         return false;
+      }
+
+      if (activeTab === "pending" && post.status !== "pending") {
+        return false;
+      }
+
+      if (normalizedSearchQuery) {
+        const statusSearchText = [
+          post.status,
+          post.status === "pending" ? "pending review" : "",
+          isPostTrashed(post) ? "trash trashed recycle bin" : "",
+        ]
+          .filter(Boolean)
+          .join(" ");
+        const searchableTextByFilter = {
+          all: [
+            post.title,
+            post.slug,
+            post.content,
+            post.category,
+            post.authorDisplayName,
+            post.authorUsername,
+            post.createdByEmail,
+            statusSearchText,
+          ],
+          title: [post.title, post.slug],
+          content: [post.content],
+          category: [post.category],
+          author: [post.authorDisplayName, post.authorUsername, post.createdByEmail],
+          status: [statusSearchText],
+        } as const;
+        const searchableText = searchableTextByFilter[searchFilterKey]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
+
+        if (!searchableText.includes(normalizedSearchQuery)) {
+          return false;
+        }
       }
 
       return true;
     });
-  }, [activePosts, categoryFilter, isViewingRecycleBin, statusFilter, trashedPosts]);
+  }, [activePosts, activeTab, searchFilterKey, searchQuery, trashedPosts]);
 
-  const hasActiveFilters = statusFilter !== "all" || categoryFilter !== "all";
+  const activeTabHeading = useMemo(() => {
+    if (activeTab === "draft") {
+      return "Draft Posts";
+    }
 
-  const postStats = useMemo(() => {
-    return {
-      total: activePosts.length,
-      visible: filteredPosts.length,
-      draft: activePosts.filter((post) => post.status === "draft").length,
-      pending: activePosts.filter((post) => post.status === "pending").length,
-      published: activePosts.filter((post) => post.status === "published").length,
-      trashed: trashedPosts.length,
-    };
-  }, [activePosts, filteredPosts.length, trashedPosts.length]);
+    if (activeTab === "pending") {
+      return "Pending Review Posts";
+    }
+
+    if (activeTab === "trash") {
+      return "Trash Posts";
+    }
+
+    return "Published Posts";
+  }, [activeTab]);
 
   if (!canManagePosts) {
     return <Redirect href="/settings" />;
@@ -237,31 +286,31 @@ export default function AdminPostsListScreen() {
 
     try {
       clearFeedback();
-      const postRef = doc(firestore, POSTS_COLLECTION, post.id);
       await setDoc(
-        postRef,
+        doc(firestore, POSTS_COLLECTION, post.id),
         {
           status: nextStatus,
           uploadDate: serverTimestamp(),
           submittedAt:
-            nextStatus === "published" ? post.submittedAt || serverTimestamp() : null,
+            nextStatus === "published"
+              ? post.submittedAt || serverTimestamp()
+              : null,
           publishedAt: nextStatus === "published" ? serverTimestamp() : null,
           approvedAt: nextStatus === "published" ? serverTimestamp() : null,
           approvedBy: nextStatus === "published" ? user?.uid ?? "" : null,
-          approvedByEmail: nextStatus === "published" ? user?.email ?? "" : null,
+          approvedByEmail:
+            nextStatus === "published" ? user?.email ?? "" : null,
         },
-        { merge: true }
+        { merge: true },
       );
+
       setSuccess(
         nextStatus === "published"
           ? "Post approved and published."
-          : "Post moved back to draft."
+          : "Post moved back to draft.",
       );
 
-      if (
-        nextStatus === "published" &&
-        post.status !== "published"
-      ) {
+      if (nextStatus === "published" && post.status !== "published") {
         void notifyPostPublishedAsync({
           authorUid: post.authorId,
           actorUid: user?.uid,
@@ -303,7 +352,7 @@ export default function AdminPostsListScreen() {
           approvedBy: null,
           approvedByEmail: null,
         },
-        { merge: true }
+        { merge: true },
       );
       setSuccess("Post submitted for admin approval.");
     } catch (submitError) {
@@ -328,7 +377,7 @@ export default function AdminPostsListScreen() {
           deletedByEmail: user?.email ?? "",
           uploadDate: serverTimestamp(),
         },
-        { merge: true }
+        { merge: true },
       );
       setSuccess("Post moved to recycle bin.");
     } catch (deleteError) {
@@ -353,7 +402,7 @@ export default function AdminPostsListScreen() {
           deletedByEmail: null,
           uploadDate: serverTimestamp(),
         },
-        { merge: true }
+        { merge: true },
       );
       setSuccess("Post restored from recycle bin.");
     } catch (restoreError) {
@@ -397,365 +446,470 @@ export default function AdminPostsListScreen() {
   };
 
   const handleDeletePostPermanently = (post: PostRecord) => {
-    Alert.alert("Delete Permanently", `Delete "${post.title}" permanently? This cannot be undone.`, [
-      { text: "Cancel", style: "cancel" },
+    Alert.alert(
+      "Delete Permanently",
+      `Delete "${post.title}" permanently? This cannot be undone.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: () => {
+            void runDeletePostPermanently(post);
+          },
+        },
+      ],
+    );
+  };
+
+  const getPostActionItems = (post: PostRecord): PostActionItem[] => {
+    if (isPostTrashed(post)) {
+      return [
+        {
+          key: "restore",
+          label: "Restore",
+          onPress: () => {
+            void runRestorePost(post);
+          },
+        },
+        {
+          key: "delete-forever",
+          label: "Delete Forever",
+          destructive: true,
+          onPress: () => {
+            handleDeletePostPermanently(post);
+          },
+        },
+      ];
+    }
+
+    if (canModeratePosts) {
+      return [
+        {
+          key: "edit",
+          label: "Edit",
+          onPress: () => {
+            router.push(`/admin/posts/edit?postId=${post.id}`);
+          },
+        },
+        {
+          key: "publish-toggle",
+          label:
+            post.status === "published"
+              ? "Move to Draft"
+              : post.status === "pending"
+                ? "Approve & Publish"
+                : "Publish",
+          onPress: () => {
+            void handleModeratePost(
+              post,
+              post.status === "published" ? "draft" : "published",
+            );
+          },
+        },
+        {
+          key: "move-trash",
+          label: "Move to Trash",
+          destructive: true,
+          onPress: () => {
+            handleMovePostToRecycleBin(post);
+          },
+        },
+      ];
+    }
+
+    const baseActions: PostActionItem[] = [
       {
-        text: "Delete",
-        style: "destructive",
+        key: "edit",
+        label: "Edit",
         onPress: () => {
-          void runDeletePostPermanently(post);
+          router.push(`/admin/posts/edit?postId=${post.id}`);
         },
       },
-    ]);
+    ];
+
+    if (post.status === "draft") {
+      baseActions.push({
+        key: "submit-review",
+        label: "Submit for Review",
+        onPress: () => {
+          void handleSubmitForReview(post);
+        },
+      });
+    }
+
+    baseActions.push({
+      key: "move-trash",
+      label: "Move to Trash",
+      destructive: true,
+      onPress: () => {
+        handleMovePostToRecycleBin(post);
+      },
+    });
+
+    return baseActions;
+  };
+
+  const tabs: { key: PostsTabKey; label: string; count: number }[] = [
+    { key: "published", label: "Published", count: tabCounts.published },
+    { key: "pending", label: "Pending", count: tabCounts.pending },
+    { key: "draft", label: "Draft", count: tabCounts.draft },
+    { key: "trash", label: "Trash", count: tabCounts.trash },
+  ];
+
+  const hasActiveSearch = Boolean(searchQuery.trim());
+  const activeTabLabel = tabs.find((tab) => tab.key === activeTab)?.label ?? "Published";
+  const isAnyMenuOpen = isStatusMenuOpen;
+  const activeSearchFilterLabel = SEARCH_FILTER_OPTIONS.find((item) => item.key === searchFilterKey)?.label ?? "All";
+  const postActionMenuItems = activeActionMenu
+    ? getPostActionItems(activeActionMenu.post)
+    : [];
+  const postActionMenuHeight =
+    postActionMenuItems.length * POST_ACTION_MENU_ITEM_HEIGHT +
+    Math.max(0, postActionMenuItems.length - 1) * StyleSheet.hairlineWidth;
+  const postActionMenuLeft = activeActionMenu
+    ? Math.min(
+        windowWidth - POST_ACTION_MENU_WIDTH - SPACING.lg,
+        Math.max(
+          SPACING.lg,
+          activeActionMenu.anchorX - POST_ACTION_MENU_WIDTH + 24,
+        ),
+      )
+    : SPACING.lg;
+  const postActionMenuTop = activeActionMenu
+    ? (() => {
+        const preferredTop = activeActionMenu.anchorY + POST_ACTION_MENU_OFFSET;
+        if (preferredTop + postActionMenuHeight <= windowHeight - SPACING.lg) {
+          return preferredTop;
+        }
+
+        return Math.max(
+          SPACING.lg,
+          activeActionMenu.anchorY - postActionMenuHeight - POST_ACTION_MENU_OFFSET,
+        );
+      })()
+    : SPACING.lg;
+
+  const closeAllMenus = () => {
+    setIsStatusMenuOpen(false);
+    setIsSearchFilterMenuOpen(false);
+    setActiveActionMenu(null);
   };
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      <Text style={styles.title}>{isAdmin ? "Post List" : "My Posts"}</Text>
-      <Text style={styles.subtitle}>
-        {isAdmin
-          ? "Filter, review, and publish posts quickly."
-          : "Create posts, submit them for review, and track approval status."}
-      </Text>
-
-      {error ? <Text style={styles.error}>{error}</Text> : null}
-      {success ? <Text style={styles.success}>{success}</Text> : null}
-
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Quick Action</Text>
-        <View style={styles.sectionDivider} />
-        <View style={styles.quickActionStack}>
-          <TouchableOpacity
-            style={styles.primaryButton}
-            activeOpacity={0.85}
-            onPress={() => router.push("/admin/posts/edit")}
-          >
-            <Text style={styles.primaryButtonText}>Create Post</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[
-              styles.secondaryButton,
-              styles.quickActionButton,
-              isViewingRecycleBin && styles.recycleBinButtonActive,
-            ]}
-            activeOpacity={0.85}
-            onPress={() => {
-              setIsViewingRecycleBin((current) => !current);
-              clearFeedback();
-            }}
-          >
-            <View style={styles.recycleBinButtonContent}>
-              <TrashActionIcon
-                color={isViewingRecycleBin ? colors.primaryText : colors.danger}
-                size={18}
-              />
-              <Text
-                style={[
-                  styles.recycleBinButtonText,
-                  isViewingRecycleBin && styles.recycleBinButtonTextActive,
-                ]}
+    <View style={styles.screen}>
+      <Stack.Screen
+        options={{
+          title: "Posts",
+          headerRight: () => (
+            <View style={styles.headerActionsRow}>
+              <Pressable
+                style={styles.headerActionButton}
+                onPress={() => {
+                  closeAllMenus();
+                  router.push("/admin/posts/edit");
+                }}
+                accessibilityRole="button"
+                accessibilityLabel="Add new post"
               >
-                {isViewingRecycleBin ? "Back to Posts" : `Recycle Bin (${postStats.trashed})`}
-              </Text>
+                <PlusIcon color={colors.text} size={20} />
+              </Pressable>
+              <Pressable
+                style={styles.headerActionButton}
+                onPress={() => {
+                  setIsSearchOpen((current) => {
+                    const nextValue = !current;
+                    setIsSearchFilterMenuOpen(nextValue);
+                    setIsStatusMenuOpen(false);
+                    return nextValue;
+                  });
+                }}
+                accessibilityRole="button"
+                accessibilityLabel={isSearchOpen ? "Close search" : "Open search"}
+              >
+                <SearchInputIcon color={colors.text} size={22} />
+              </Pressable>
             </View>
-          </TouchableOpacity>
-        </View>
-      </View>
+          ),
+        }}
+      />
 
-      <View style={styles.section}>
-        <View style={styles.filterHeader}>
-          <Text style={styles.sectionTitle}>Filters</Text>
-          <TouchableOpacity
-            style={[
-              styles.resetInlineButton,
-              !hasActiveFilters && styles.buttonDisabled,
-            ]}
-            activeOpacity={0.85}
+      {isSearchOpen ? (
+        <>
+          <View style={styles.searchWrap}>
+            <TextInput
+              style={styles.searchInput}
+              placeholder={`Search ${activeSearchFilterLabel.toLowerCase()}...`}
+              placeholderTextColor={colors.placeholderText}
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              autoCapitalize="none"
+              autoCorrect={false}
+              returnKeyType="search"
+            />
+          </View>
+
+          {isSearchFilterMenuOpen ? (
+            <View style={styles.searchFiltersWrap}>
+              <Text style={styles.searchFiltersLabel}>Search in</Text>
+              <View style={styles.searchFiltersRow}>
+                {SEARCH_FILTER_OPTIONS.map((option) => {
+                  const isActive = option.key === searchFilterKey;
+
+                  return (
+                    <Pressable
+                      key={option.key}
+                      style={[
+                        styles.searchFilterChip,
+                        isActive && styles.searchFilterChipActive,
+                      ]}
+                      onPress={() => {
+                        setSearchFilterKey(option.key);
+                        setIsStatusMenuOpen(false);
+                      }}
+                    >
+                      <Text
+                        style={[
+                          styles.searchFilterChipText,
+                          isActive && styles.searchFilterChipTextActive,
+                        ]}
+                      >
+                        {option.label}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </View>
+          ) : null}
+        </>
+      ) : null}
+
+      <View style={[styles.headingRow, isStatusMenuOpen && styles.headingRowMenuOpen]}>
+        <Text style={styles.headingText}>{activeTabHeading}</Text>
+
+        <View style={styles.dropdownRoot}>
+          <Pressable
+            style={styles.dropdownButton}
             onPress={() => {
-              setStatusFilter("all");
-              setCategoryFilter("all");
-              clearFeedback();
+              setIsSearchFilterMenuOpen(false);
+              setIsStatusMenuOpen((current) => !current);
             }}
-            disabled={!hasActiveFilters}
           >
-            <Text style={styles.resetInlineButtonText}>Reset</Text>
-          </TouchableOpacity>
-        </View>
-        <View style={styles.sectionDivider} />
-        {isLoadingData ? <ActivityIndicator size="small" color={colors.primary} /> : null}
+            <Text style={styles.dropdownButtonText}>{activeTabLabel}</Text>
+            <Text style={styles.dropdownCaret}>{isStatusMenuOpen ? "▲" : "▼"}</Text>
+          </Pressable>
 
-        <View style={styles.compactFilterRow}>
-          <Text style={styles.compactFilterLabel}>Status</Text>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.chipRow}
-          >
-            {(["all", ...POST_STATUSES] as PostStatusFilter[]).map((item) => (
-              <Pressable
-                key={item}
-                style={[styles.chip, statusFilter === item ? styles.chipActive : undefined]}
-                onPress={() => setStatusFilter(item)}
-              >
-                <Text
-                  style={[
-                    styles.chipText,
-                    statusFilter === item ? styles.chipTextActive : undefined,
-                  ]}
-                >
-                  {item}
-                </Text>
-              </Pressable>
-            ))}
-          </ScrollView>
-        </View>
+          {isStatusMenuOpen ? (
+            <View style={styles.dropdownMenu}>
+              {tabs.map((tab) => {
+                const isActive = tab.key === activeTab;
 
-        <View style={styles.compactFilterRow}>
-          <Text style={styles.compactFilterLabel}>Category</Text>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.chipRow}
-          >
-            <Pressable
-              style={[styles.chip, categoryFilter === "all" ? styles.chipActive : undefined]}
-              onPress={() => setCategoryFilter("all")}
-            >
-              <Text
-                style={[
-                  styles.chipText,
-                  categoryFilter === "all" ? styles.chipTextActive : undefined,
-                ]}
-              >
-                all
-              </Text>
-            </Pressable>
-            <Pressable
-              style={[
-                styles.chip,
-                categoryFilter === DEFAULT_CATEGORY ? styles.chipActive : undefined,
-              ]}
-              onPress={() => setCategoryFilter(DEFAULT_CATEGORY)}
-            >
-              <Text
-                style={[
-                  styles.chipText,
-                  categoryFilter === DEFAULT_CATEGORY ? styles.chipTextActive : undefined,
-                ]}
-              >
-                {DEFAULT_CATEGORY}
-              </Text>
-            </Pressable>
-            {categories.map((item) => (
-              <Pressable
-                key={item.id}
-                style={[styles.chip, categoryFilter === item.slug ? styles.chipActive : undefined]}
-                onPress={() => setCategoryFilter(item.slug)}
-              >
-                <Text
-                  style={[
-                    styles.chipText,
-                    categoryFilter === item.slug ? styles.chipTextActive : undefined,
-                  ]}
-                >
-                  {item.slug}
-                </Text>
-              </Pressable>
-            ))}
-          </ScrollView>
+                return (
+                  <Pressable
+                    key={tab.key}
+                    style={[styles.dropdownOption, isActive && styles.dropdownOptionActive]}
+                    onPress={() => {
+                      clearFeedback();
+                      setActiveTab(tab.key);
+                      setIsStatusMenuOpen(false);
+                    }}
+                  >
+                    <Text
+                      style={[
+                        styles.dropdownOptionText,
+                        isActive && styles.dropdownOptionTextActive,
+                      ]}
+                    >
+                      {`${tab.label} (${tab.count})`}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          ) : null}
         </View>
-
-        <Text style={styles.resultText}>
-          Showing {postStats.visible} of {isViewingRecycleBin ? postStats.trashed : postStats.total}{" "}
-          {isViewingRecycleBin ? "trashed posts" : "posts"}
-        </Text>
-        <Text style={styles.resultText}>
-          Draft {postStats.draft} • Pending {postStats.pending} • Published {postStats.published} • Recycle Bin {postStats.trashed}
-        </Text>
       </View>
 
-      <View style={styles.postsSection}>
-        <Text style={styles.sectionTitle}>{isViewingRecycleBin ? "Recycle Bin" : "Posts"}</Text>
-        {!filteredPosts.length ? (
-          <Text style={styles.emptyText}>
-            {isViewingRecycleBin
-              ? "Recycle bin is empty or nothing matches current filters."
-              : "No posts match current filters."}
-          </Text>
-        ) : null}
+      {error ? (
+        <View style={[styles.feedbackCard, styles.feedbackCardError]}>
+          <Text style={styles.feedbackTextError}>{error}</Text>
+        </View>
+      ) : null}
+      {success ? (
+        <View style={[styles.feedbackCard, styles.feedbackCardSuccess]}>
+          <Text style={styles.feedbackTextSuccess}>{success}</Text>
+        </View>
+      ) : null}
 
-        <View style={styles.postsStack}>
-          {filteredPosts.map((post) => {
-            const thumbnailUrl = getPostCardThumbnailUrl(post);
-            const isTrashed = isPostTrashed(post);
-            const updatedLabel = formatDate(post.uploadDate || post.createDate);
-            const createdLabel = formatDate(post.createDate);
-            const categoryLabel = post.category.trim() || DEFAULT_CATEGORY;
-            const postPreview = getPostPreview(post.content);
-            const activityLabel =
-              isTrashed && post.deletedAt
-                ? `Trashed ${formatDate(post.deletedAt)}`
-                : post.status === "pending" && post.submittedAt
-                ? `Submitted ${formatDate(post.submittedAt)}`
-                : post.status === "published" && post.approvedAt
-                  ? `Approved ${formatDate(post.approvedAt)}`
-                  : `Created ${createdLabel}`;
-            const authorLabel =
-              post.authorDisplayName ||
-              post.authorUsername ||
-              post.createdByEmail ||
-              "Unknown";
+      {isLoadingPosts ? (
+        <View style={styles.loadingRow}>
+          <ActivityIndicator size="small" color={colors.primary} />
+          <Text style={styles.loadingText}>Syncing posts...</Text>
+        </View>
+      ) : null}
+      {!isLoadingPosts && hasActiveSearch ? (
+        <Text style={styles.resultText}>
+          {`Showing ${filteredPosts.length} of ${activeTabSourceCount} posts`}
+        </Text>
+      ) : null}
 
-            return (
-              <View key={post.id} style={styles.postCard}>
-                <TouchableOpacity
-                  style={[
-                    styles.postCardContent,
-                    isTrashed && styles.postCardContentDisabled,
-                  ]}
-                  activeOpacity={0.9}
-                  onPress={
-                    isTrashed ? undefined : () => router.push(`/admin/posts/edit?postId=${post.id}`)
-                  }
-                  disabled={isTrashed}
-                >
-                  <View style={styles.postMainRow}>
-                    <View style={styles.postContentColumn}>
-                      <View style={styles.postTopRow}>
-                        <View style={styles.badgeRow}>
-                          <Text style={styles.categoryBadge}>{categoryLabel}</Text>
-                          {isTrashed ? (
-                            <View style={[styles.statusBadge, styles.statusBadgeTrashed]}>
-                              <Text style={[styles.statusBadgeText, styles.statusBadgeTextTrashed]}>
-                                Recycled
-                              </Text>
-                            </View>
-                          ) : null}
-                          <View
-                            style={[
-                              styles.statusBadge,
-                              post.status === "published"
-                                ? styles.statusBadgePublished
-                                : post.status === "pending"
-                                  ? styles.statusBadgePending
-                                  : styles.statusBadgeDraft,
-                            ]}
-                          >
-                            <Text
-                              style={[
-                                styles.statusBadgeText,
-                                post.status === "published"
-                                  ? styles.statusBadgeTextPublished
-                                  : post.status === "pending"
-                                    ? styles.statusBadgeTextPending
-                                    : styles.statusBadgeTextDraft,
-                              ]}
-                            >
-                              {getStatusLabel(post.status)}
-                            </Text>
-                          </View>
-                        </View>
-                        <Text style={styles.postMeta}>{updatedLabel}</Text>
-                      </View>
+      <ScrollView
+        style={styles.listContainer}
+        contentContainerStyle={styles.listContent}
+        showsVerticalScrollIndicator={false}
+        onScrollBeginDrag={() => {
+          closeAllMenus();
+        }}
+      >
+        {!isLoadingPosts && !filteredPosts.length ? (
+          <View style={styles.emptyState}>
+            <Text style={styles.emptyText}>
+              No posts found in this tab.
+            </Text>
+          </View>
+        ) : (
+          <View style={styles.cardsWrap}>
+            {filteredPosts.map((post) => {
+              const isTrashed = isPostTrashed(post);
+              const updatedLabel = formatDate(
+                post.publishedAt || post.uploadDate || post.createDate,
+              );
+              const thumbnailUrl = getPostCardThumbnailUrl(post);
+              const postTitle = post.title.trim() || "Untitled Post";
+              const postPreview = getContentPreviewLines(post.content, 1) || "-";
+              const statusLabel = isTrashed
+                ? "Trashed"
+                : post.status === "published"
+                  ? "Published"
+                  : post.status === "pending"
+                    ? "Pending Review"
+                    : "Draft";
 
-                      <Text style={styles.postTitle} numberOfLines={2}>
-                        {post.title}
-                      </Text>
-
-                      {postPreview ? (
-                        <Text style={styles.postSummary} numberOfLines={2}>
-                          {postPreview}
-                        </Text>
-                      ) : null}
-
-                      <Text style={styles.postMeta} numberOfLines={1}>
-                        {authorLabel}
-                      </Text>
-                      <Text style={styles.postMeta} numberOfLines={1}>
-                        {post.slug} • {activityLabel}
-                      </Text>
+              return (
+                <View key={post.id} style={styles.postCard}>
+                  <Pressable
+                    style={({ pressed }) => [styles.postCardBody, pressed && styles.postCardBodyPressed]}
+                    onPress={
+                      isTrashed
+                        ? undefined
+                        : () => router.push(`/admin/posts/edit?postId=${post.id}`)
+                    }
+                    disabled={isTrashed}
+                  >
+                    <View style={styles.postMediaWrap}>
+                      {thumbnailUrl ? (
+                        <Image
+                          source={{ uri: thumbnailUrl }}
+                          style={styles.postImage}
+                          resizeMode="cover"
+                        />
+                      ) : (
+                        <View style={styles.postImageFallback} />
+                      )}
                     </View>
 
-                    {thumbnailUrl ? (
-                      <Image
-                        source={{ uri: thumbnailUrl }}
-                        style={styles.thumbnail}
-                        resizeMode="cover"
-                      />
-                    ) : null}
-                  </View>
-                </TouchableOpacity>
-
-                <View style={styles.cardActions}>
-                  {isTrashed ? (
-                    <TouchableOpacity
-                      style={[styles.primaryButton, styles.actionButton]}
-                      activeOpacity={0.85}
-                      onPress={() => {
-                        void runRestorePost(post);
-                      }}
-                    >
-                      <Text style={styles.primaryButtonText}>Restore</Text>
-                    </TouchableOpacity>
-                  ) : canModeratePosts ? (
-                    <TouchableOpacity
-                      style={[styles.primaryButton, styles.actionButton]}
-                      activeOpacity={0.85}
-                      onPress={() => {
-                        void handleModeratePost(
+                    <View style={styles.postMetaWrap}>
+                      <Text style={styles.postTitle} numberOfLines={2}>
+                        {postTitle}
+                      </Text>
+                      <Text style={styles.postPreview} numberOfLines={1}>
+                        {postPreview}
+                      </Text>
+                      <Text style={styles.postDate}>{`${statusLabel} | ${updatedLabel}`}</Text>
+                    </View>
+                  </Pressable>
+                  <View style={styles.rowMenuWrap}>
+                    <Pressable
+                      style={({ pressed }) => [styles.rowMenuButton, pressed && styles.rowMenuButtonPressed]}
+                      onPress={(event) => {
+                        const { pageX, pageY } = event.nativeEvent;
+                        setIsSearchFilterMenuOpen(false);
+                        setIsStatusMenuOpen(false);
+                        setActiveActionMenu({
                           post,
-                          post.status === "published" ? "draft" : "published"
-                        );
+                          anchorX: pageX,
+                          anchorY: pageY,
+                        });
                       }}
                     >
-                      <Text style={styles.primaryButtonText}>
-                        {post.status === "published" ? "Move Draft" : "Publish"}
-                      </Text>
-                    </TouchableOpacity>
-                  ) : (
-                    <TouchableOpacity
-                      style={[
-                        styles.secondaryButton,
-                        styles.actionButton,
-                        (post.status === "pending" || post.status === "published") &&
-                          styles.buttonDisabled,
-                      ]}
-                      activeOpacity={0.85}
-                      onPress={() => {
-                        void handleSubmitForReview(post);
-                      }}
-                      disabled={post.status === "pending" || post.status === "published"}
-                    >
-                      <Text style={styles.secondaryButtonText}>
-                        {post.status === "pending"
-                          ? "In Review"
-                          : post.status === "published"
-                            ? "Published"
-                            : "Submit"}
-                      </Text>
-                    </TouchableOpacity>
-                  )}
-
-                  <TouchableOpacity
-                    style={[styles.deleteButton, styles.actionButton]}
-                    activeOpacity={0.85}
-                    onPress={() =>
-                      isTrashed
-                        ? handleDeletePostPermanently(post)
-                        : handleMovePostToRecycleBin(post)
-                    }
-                  >
-                    <Text style={styles.deleteButtonText}>
-                      {isTrashed ? "Delete Forever" : "Trash"}
-                    </Text>
-                  </TouchableOpacity>
+                      <MoreVerticalIcon color={colors.subtleText} size={20} />
+                    </Pressable>
+                  </View>
                 </View>
-              </View>
-            );
-          })}
+              );
+            })}
+          </View>
+        )}
+      </ScrollView>
+
+      {isAnyMenuOpen ? (
+        <Pressable
+          style={styles.menuBackdrop}
+          onPress={closeAllMenus}
+          accessibilityRole="button"
+          accessibilityLabel="Close open menus"
+        />
+      ) : null}
+
+      <Modal
+        animationType="fade"
+        transparent
+        visible={Boolean(activeActionMenu)}
+        onRequestClose={() => setActiveActionMenu(null)}
+      >
+        <View style={styles.actionMenuOverlay}>
+          <Pressable
+            style={styles.actionMenuBackdrop}
+            onPress={() => setActiveActionMenu(null)}
+          />
+          <View
+            style={[
+              styles.actionMenuDropdown,
+              {
+                top: postActionMenuTop,
+                left: postActionMenuLeft,
+              },
+            ]}
+          >
+            {postActionMenuItems.map((action, actionIndex) => (
+              <Pressable
+                key={action.key}
+                style={({ pressed }) => [
+                  styles.actionMenuItem,
+                  actionIndex > 0 && styles.actionMenuItemWithSeparator,
+                  pressed && styles.actionMenuItemPressed,
+                ]}
+                onPress={() => {
+                  setActiveActionMenu(null);
+                  requestAnimationFrame(() => {
+                    action.onPress();
+                  });
+                }}
+              >
+                <View style={styles.postActionItemContent}>
+                  <View style={styles.postActionIconWrap}>
+                    {action.destructive ? (
+                      <TrashActionIcon color={colors.danger} size={14} />
+                    ) : (
+                      <ArrowRightIcon color={colors.subtleText} size={14} />
+                    )}
+                  </View>
+                  <Text
+                    style={[
+                      styles.postActionItemText,
+                      action.destructive && styles.postActionItemTextDestructive,
+                    ]}
+                  >
+                    {action.label}
+                  </Text>
+                </View>
+              </Pressable>
+            ))}
+          </View>
         </View>
-      </View>
-    </ScrollView>
+      </Modal>
+    </View>
   );
 }
 
@@ -763,306 +917,370 @@ const createStyles = (colors: ThemeColors, resolvedTheme: "light" | "dark") => {
   const outlineColor = resolvedTheme === "dark" ? colors.divider : colors.border;
 
   return StyleSheet.create({
-    container: {
-      padding: SPACING.xl,
+    screen: {
+      flex: 1,
       backgroundColor: colors.background,
-      gap: SPACING.md,
     },
-    title: {
-      fontSize: FONT_SIZE.title,
-      fontWeight: "700",
-      color: colors.text,
-    },
-    subtitle: {
-      color: colors.mutedText,
-      fontSize: FONT_SIZE.body,
-    },
-    error: {
-      color: colors.danger,
-      fontSize: 13,
-    },
-    success: {
-      color: colors.success,
-      fontSize: 13,
-    },
-    section: {
-      backgroundColor: colors.surface,
-      borderRadius: RADIUS.lg,
-      padding: SPACING.lg,
+    headerActionsRow: {
+      flexDirection: "row",
+      alignItems: "center",
       gap: SPACING.sm,
     },
-    sectionTitle: {
-      fontSize: 18,
-      fontWeight: "700",
-      color: colors.text,
+    headerActionButton: {
+      width: 34,
+      height: 34,
+      borderRadius: 999,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: colors.surfaceMuted,
     },
-    sectionDivider: {
-      height: StyleSheet.hairlineWidth,
-      backgroundColor: colors.divider,
-    },
-    primaryButton: {
-      minHeight: CONTROL_SIZE.inputHeight,
+    searchWrap: {
+      marginHorizontal: SPACING.lg,
+      marginTop: SPACING.md,
       borderRadius: RADIUS.md,
-      alignItems: "center",
-      justifyContent: "center",
-      backgroundColor: colors.primary,
-      paddingHorizontal: SPACING.md,
-    },
-    quickActionStack: {
-      gap: SPACING.sm,
-    },
-    quickActionButton: {
-      minHeight: CONTROL_SIZE.inputHeight,
-      paddingHorizontal: SPACING.md,
-    },
-    recycleBinButtonActive: {
-      backgroundColor: colors.primary,
-      borderColor: colors.primary,
-    },
-    recycleBinButtonContent: {
-      flexDirection: "row",
-      alignItems: "center",
-      justifyContent: "center",
-      gap: SPACING.xs,
-    },
-    recycleBinButtonText: {
-      color: colors.text,
-      fontSize: 14,
-      fontWeight: "700",
-      textAlign: "center",
-    },
-    recycleBinButtonTextActive: {
-      color: colors.primaryText,
-    },
-    primaryButtonText: {
-      color: colors.primaryText,
-      fontSize: FONT_SIZE.button,
-      fontWeight: "700",
-      textAlign: "center",
-    },
-    filterHeader: {
-      flexDirection: "row",
-      alignItems: "center",
-      justifyContent: "space-between",
-      gap: SPACING.sm,
-    },
-    compactFilterRow: {
-      gap: SPACING.xs,
-    },
-    compactFilterLabel: {
-      color: colors.mutedText,
-      fontSize: 12,
-      fontWeight: "700",
-      textTransform: "uppercase",
-      letterSpacing: 0.3,
-    },
-    chipRow: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: SPACING.xs,
-      paddingRight: SPACING.md,
-    },
-    chip: {
       borderWidth: 1,
       borderColor: outlineColor,
-      borderRadius: 999,
-      paddingHorizontal: SPACING.sm,
-      paddingVertical: 5,
       backgroundColor: colors.surface,
+      paddingHorizontal: SPACING.lg,
+      minHeight: 48,
+      justifyContent: "center",
+      ...SHADOWS.sm,
     },
-    chipActive: {
-      backgroundColor: colors.primary,
-      borderColor: colors.primary,
-    },
-    chipText: {
+    searchInput: {
       color: colors.text,
+      fontSize: 15,
+      paddingVertical: SPACING.xs,
+    },
+    searchFiltersWrap: {
+      marginHorizontal: SPACING.lg,
+      marginTop: SPACING.sm,
+      borderRadius: RADIUS.md,
+      borderWidth: 1,
+      borderColor: outlineColor,
+      backgroundColor: colors.surface,
+      paddingHorizontal: SPACING.lg,
+      paddingVertical: SPACING.md,
+      gap: SPACING.sm,
+      ...SHADOWS.sm,
+    },
+    searchFiltersLabel: {
+      color: colors.mutedText,
       fontSize: 12,
       fontWeight: "600",
     },
-    chipTextActive: {
-      color: colors.primaryText,
+    searchFiltersRow: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      gap: SPACING.sm,
     },
-    resetInlineButton: {
+    searchFilterChip: {
+      borderRadius: RADIUS.pill,
       borderWidth: 1,
       borderColor: outlineColor,
-      borderRadius: 999,
-      paddingHorizontal: SPACING.sm,
-      paddingVertical: 5,
-      backgroundColor: colors.surface,
+      backgroundColor: colors.surfaceMuted,
+      paddingHorizontal: SPACING.md,
+      paddingVertical: SPACING.sm,
     },
-    resetInlineButtonText: {
-      color: colors.text,
+    searchFilterChipActive: {
+      borderColor: colors.accentBorder,
+      backgroundColor: colors.accentSoft,
+    },
+    searchFilterChipText: {
+      color: colors.mutedText,
       fontSize: 12,
       fontWeight: "700",
     },
-    buttonDisabled: {
-      opacity: 0.55,
+    searchFilterChipTextActive: {
+      color: colors.accent,
+    },
+    headingRow: {
+      marginHorizontal: SPACING.lg,
+      marginTop: SPACING.md,
+      marginBottom: SPACING.xs,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: SPACING.md,
+      zIndex: 12,
+    },
+    headingRowMenuOpen: {
+      position: "relative",
+      zIndex: 220,
+      elevation: 20,
+    },
+    headingText: {
+      flex: 1,
+      color: colors.text,
+      fontSize: 22,
+      fontWeight: "800",
+      lineHeight: 28,
+    },
+    dropdownRoot: {
+      position: "relative",
+      zIndex: 20,
+    },
+    dropdownButton: {
+      minWidth: 152,
+      borderRadius: RADIUS.md,
+      borderWidth: 1,
+      borderColor: outlineColor,
+      backgroundColor: colors.surface,
+      paddingHorizontal: SPACING.lg,
+      paddingVertical: SPACING.md,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: SPACING.sm,
+      ...SHADOWS.sm,
+    },
+    dropdownButtonText: {
+      color: colors.text,
+      fontSize: 14,
+      fontWeight: "700",
+    },
+    dropdownCaret: {
+      color: colors.mutedText,
+      fontSize: 10,
+      fontWeight: "700",
+    },
+    dropdownMenu: {
+      position: "absolute",
+      top: 52,
+      right: 0,
+      minWidth: 192,
+      borderRadius: RADIUS.md,
+      borderWidth: 1,
+      borderColor: outlineColor,
+      backgroundColor: colors.surface,
+      overflow: "hidden",
+      ...SHADOWS.md,
+      zIndex: 260,
+      elevation: 30,
+    },
+    dropdownOption: {
+      paddingHorizontal: SPACING.lg,
+      paddingVertical: SPACING.md,
+    },
+    dropdownOptionActive: {
+      backgroundColor: colors.activeSurface,
+    },
+    dropdownOptionText: {
+      color: colors.text,
+      fontSize: 13,
+      fontWeight: "600",
+    },
+    dropdownOptionTextActive: {
+      color: colors.accent,
+      fontWeight: "700",
+    },
+    feedbackCard: {
+      marginHorizontal: SPACING.lg,
+      marginTop: SPACING.md,
+      borderRadius: RADIUS.md,
+      paddingHorizontal: SPACING.lg,
+      paddingVertical: SPACING.md,
+      borderWidth: 1,
+    },
+    feedbackCardError: {
+      backgroundColor: colors.dangerSoft,
+      borderColor: colors.dangerBorder,
+    },
+    feedbackCardSuccess: {
+      backgroundColor: colors.successSoft,
+      borderColor: colors.successBorder,
+    },
+    feedbackTextError: {
+      color: colors.danger,
+      fontSize: 13,
+      lineHeight: 19,
+    },
+    feedbackTextSuccess: {
+      color: colors.success,
+      fontSize: 13,
+      lineHeight: 19,
+    },
+    loadingRow: {
+      marginHorizontal: SPACING.lg,
+      marginTop: SPACING.md,
+      paddingHorizontal: SPACING.lg,
+      paddingVertical: SPACING.md,
+      borderRadius: RADIUS.md,
+      borderWidth: 1,
+      borderColor: outlineColor,
+      backgroundColor: colors.surfaceMuted,
+      flexDirection: "row",
+      alignItems: "center",
+      gap: SPACING.sm,
+    },
+    loadingText: {
+      color: colors.mutedText,
+      fontSize: 12,
     },
     resultText: {
+      marginHorizontal: SPACING.lg,
+      marginTop: SPACING.sm,
       color: colors.mutedText,
       fontSize: 13,
     },
-    emptyText: {
-      color: colors.mutedText,
-      fontSize: FONT_SIZE.body,
+    listContainer: {
+      flex: 1,
+      marginTop: SPACING.md,
     },
-    postsSection: {
-      gap: SPACING.sm,
+    listContent: {
+      paddingHorizontal: SPACING.lg,
+      paddingTop: SPACING.xs,
+      paddingBottom: SPACING.xxl * 3,
+      gap: SPACING.lg,
     },
-    postsStack: {
-      gap: SPACING.sm,
-    },
-    postCard: {
+    emptyState: {
+      borderRadius: RADIUS.card,
       borderWidth: 1,
       borderColor: outlineColor,
-      borderRadius: RADIUS.md,
-      backgroundColor: colors.surface,
-      overflow: "hidden",
-    },
-    postCardContent: {
-      padding: SPACING.sm + 2,
-    },
-    postCardContentDisabled: {
-      opacity: 0.88,
-    },
-    postMainRow: {
-      flexDirection: "row",
-      alignItems: "flex-start",
-      gap: SPACING.sm,
-    },
-    postContentColumn: {
-      flex: 1,
-      gap: 6,
-    },
-    thumbnail: {
-      width: 88,
-      height: 88,
-      borderRadius: RADIUS.sm,
       backgroundColor: colors.surfaceMuted,
+      paddingHorizontal: SPACING.lg,
+      paddingVertical: SPACING.lg,
     },
-    postTopRow: {
-      flexDirection: "row",
-      alignItems: "flex-start",
-      justifyContent: "space-between",
-      gap: SPACING.sm,
+    emptyText: {
+      color: colors.mutedText,
+      fontSize: 14,
+      lineHeight: 20,
     },
-    badgeRow: {
+    cardsWrap: {
+      gap: SPACING.lg,
+    },
+    postCard: {
+      position: "relative",
+      borderRadius: RADIUS.md,
+      borderWidth: 1,
+      borderColor: outlineColor,
+      backgroundColor: colors.surface,
+      padding: SPACING.md,
       flexDirection: "row",
       alignItems: "center",
-      flexWrap: "wrap",
-      gap: SPACING.xs,
-      flex: 1,
+      gap: SPACING.md,
+      ...SHADOWS.sm,
     },
-    categoryBadge: {
+    postCardBody: {
+      flex: 1,
+      flexDirection: "row",
+      alignItems: "center",
+      gap: SPACING.md,
+    },
+    postCardBodyPressed: {
+      opacity: 0.92,
+    },
+    postMediaWrap: {
+      width: 84,
+      height: 84,
+      borderRadius: RADIUS.sm,
+      overflow: "hidden",
+      backgroundColor: colors.surfaceSoft,
+    },
+    postImage: {
+      width: 84,
+      height: 84,
+      backgroundColor: colors.surfaceSoft,
+    },
+    postImageFallback: {
+      width: 84,
+      height: 84,
+      backgroundColor: colors.surfaceMuted,
       borderWidth: 1,
-      borderColor: colors.accentBorder,
-      borderRadius: 999,
-      paddingHorizontal: SPACING.sm,
-      paddingVertical: 3,
-      backgroundColor: colors.accentSoft,
-      color: colors.accent,
-      fontSize: 11,
-      fontWeight: "700",
+      borderColor: outlineColor,
+    },
+    postMetaWrap: {
+      flex: 1,
+      justifyContent: "center",
+      gap: 8,
+      position: "relative",
     },
     postTitle: {
       color: colors.text,
-      fontSize: 15,
+      fontSize: 16,
       fontWeight: "700",
-      lineHeight: 21,
+      lineHeight: 22,
+      paddingRight: 34,
     },
-    postSummary: {
+    postPreview: {
+      color: colors.mutedText,
+      fontSize: 13,
+      lineHeight: 18,
+    },
+    postDate: {
       color: colors.mutedText,
       fontSize: 12,
       lineHeight: 18,
     },
-    postMeta: {
-      color: colors.mutedText,
-      fontSize: 11,
-    },
-    statusBadge: {
-      borderWidth: 1,
-      borderRadius: 999,
-      paddingHorizontal: SPACING.sm,
-      paddingVertical: 3,
-    },
-    statusBadgePublished: {
-      borderColor: colors.successBorder,
-      backgroundColor: colors.successSoft,
-    },
-    statusBadgeDraft: {
-      borderColor: colors.warningBorder,
-      backgroundColor: colors.warningSoft,
-    },
-    statusBadgePending: {
-      borderColor: colors.accentBorder,
-      backgroundColor: colors.accentSoft,
-    },
-    statusBadgeTrashed: {
-      borderColor: colors.dangerBorder,
-      backgroundColor: colors.dangerSoft,
-    },
-    statusBadgeText: {
-      fontSize: 11,
-      fontWeight: "700",
-      textTransform: "uppercase",
-    },
-    statusBadgeTextPublished: {
-      color: colors.success,
-    },
-    statusBadgeTextDraft: {
-      color: colors.warning,
-    },
-    statusBadgeTextPending: {
-      color: colors.accent,
-    },
-    statusBadgeTextTrashed: {
-      color: colors.danger,
-    },
-    cardActions: {
-      flexDirection: "row",
+    rowMenuButton: {
+      width: 28,
+      height: 28,
+      borderRadius: 5,
+      backgroundColor: "transparent",
       alignItems: "center",
-      gap: SPACING.xs,
-      borderTopWidth: 1,
-      borderTopColor: outlineColor,
-      padding: SPACING.sm + 2,
-      backgroundColor: colors.surfaceMuted,
+      justifyContent: "center",
     },
-    secondaryButton: {
-      minHeight: 38,
+    rowMenuButtonPressed: {
+      opacity: 0.88,
+    },
+    rowMenuWrap: {
+      position: "absolute",
+      top: SPACING.md,
+      right: SPACING.md,
+      zIndex: 20,
+    },
+    actionMenuOverlay: {
+      ...StyleSheet.absoluteFillObject,
+      zIndex: 260,
+    },
+    actionMenuBackdrop: {
+      ...StyleSheet.absoluteFillObject,
+      backgroundColor: "transparent",
+    },
+    actionMenuDropdown: {
+      position: "absolute",
+      width: POST_ACTION_MENU_WIDTH,
       borderRadius: RADIUS.md,
       borderWidth: 1,
       borderColor: outlineColor,
+      backgroundColor: colors.surface,
+      overflow: "hidden",
+      ...SHADOWS.md,
+    },
+    actionMenuItem: {
+      minHeight: 46,
+      paddingHorizontal: SPACING.lg,
+      paddingVertical: SPACING.md,
+      backgroundColor: colors.surface,
+    },
+    actionMenuItemWithSeparator: {
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: outlineColor,
+    },
+    actionMenuItemPressed: {
+      backgroundColor: colors.surfaceMuted,
+    },
+    postActionItemContent: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: SPACING.sm,
+    },
+    postActionIconWrap: {
+      width: 16,
       alignItems: "center",
       justifyContent: "center",
-      backgroundColor: colors.surface,
-      paddingHorizontal: SPACING.sm,
     },
-    secondaryButtonText: {
+    postActionItemText: {
       color: colors.text,
       fontSize: 13,
       fontWeight: "600",
-      textAlign: "center",
     },
-    deleteButton: {
-      minHeight: 38,
-      borderRadius: RADIUS.md,
-      borderWidth: 1,
-      borderColor: colors.dangerBorder,
-      alignItems: "center",
-      justifyContent: "center",
-      backgroundColor: colors.dangerSoft,
-      paddingHorizontal: SPACING.sm,
-    },
-    deleteButtonText: {
+    postActionItemTextDestructive: {
       color: colors.danger,
-      fontSize: 13,
-      fontWeight: "700",
-      textAlign: "center",
     },
-    actionButton: {
-      flex: 1,
-      minHeight: 38,
-      minWidth: 0,
+    menuBackdrop: {
+      ...StyleSheet.absoluteFillObject,
+      zIndex: 140,
+      backgroundColor: "transparent",
     },
   });
 };

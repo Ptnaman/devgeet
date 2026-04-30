@@ -26,6 +26,8 @@ type HeaderNotificationsButtonProps = {
   unreadCount: number;
   onPress: () => void;
   backgroundColor?: string;
+  badgeMode?: "count" | "dot";
+  accessibilityLabel?: string;
 };
 
 type HeaderNotificationsMenuProps = {
@@ -57,19 +59,25 @@ export function HeaderNotificationsButton({
   unreadCount,
   onPress,
   backgroundColor,
+  badgeMode = "count",
+  accessibilityLabel,
 }: HeaderNotificationsButtonProps) {
   const { colors } = useAppTheme();
   const styles = createStyles(colors, backgroundColor);
   const hasUnread = unreadCount > 0;
+  const showCountBadge = hasUnread && badgeMode === "count";
+  const showDotBadge = hasUnread && badgeMode === "dot";
+  const highlightBell = hasUnread && badgeMode === "count";
   const badgeLabel = unreadCount > 99 ? "99+" : `${unreadCount}`;
 
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={
-        unreadCount
+        accessibilityLabel ??
+        (unreadCount
           ? `Open creator notifications. ${unreadCount} unread notifications`
-          : "Open creator notifications"
+          : "Open creator notifications")
       }
       hitSlop={6}
       style={({ hovered, pressed }) => [
@@ -80,11 +88,14 @@ export function HeaderNotificationsButton({
     >
       <NotificationBellIcon
         size={22}
-        color={hasUnread ? colors.accent : colors.text}
-        filled={hasUnread}
+        color={highlightBell ? colors.accent : colors.text}
+        filled={highlightBell}
         fillColor={colors.accentSoft}
+        showAlertDot={showDotBadge}
+        alertDotColor={colors.danger}
+        alertDotStrokeColor={colors.surface}
       />
-      {unreadCount ? (
+      {showCountBadge ? (
         <View style={styles.unreadBadge}>
           <Text style={styles.unreadBadgeText}>{badgeLabel}</Text>
         </View>

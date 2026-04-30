@@ -23,6 +23,8 @@ import {
   createCustomUserNotificationAsync,
   createCustomUserNotificationsAsync,
   createPostApprovedUserNotificationAsync,
+  type UserNotificationAudience,
+  type UserNotificationCategory,
 } from "@/lib/user-notifications";
 
 export const PUSH_TOKENS_COLLECTION = "pushTokens";
@@ -31,9 +33,16 @@ const USERS_COLLECTION = "users";
 const EXPO_PUSH_API_URL = "https://exp.host/--/api/v2/push/send";
 const DEFAULT_ANDROID_CHANNEL_ID = "default";
 const PUSH_TOKEN_STORAGE_KEY = "@devgeet/expoPushToken";
+const PUSH_TOKEN_DOC_ID_STORAGE_KEY = "@devgeet/pushTokenDocId";
+const PUSH_INSTALLATION_ID_STORAGE_KEY = "@devgeet/pushInstallationId";
 const DEFAULT_POST_PUBLISH_BODY = "Tap to read it on DevGeet.";
 const MAX_POST_PUBLISH_BODY_LENGTH = 180;
 const EXPO_PUSH_TOKEN_RETRY_DELAYS_MS = [750, 1500] as const;
+const PUSH_TOKEN_DEACTIVATE_AFTER_DAYS = 30;
+const PUSH_TOKEN_DELETE_AFTER_DAYS = 60;
+const DAY_IN_MS = 24 * 60 * 60 * 1000;
+const PUSH_TOKEN_DEACTIVATE_AGE_MS = PUSH_TOKEN_DEACTIVATE_AFTER_DAYS * DAY_IN_MS;
+const PUSH_TOKEN_DELETE_AGE_MS = PUSH_TOKEN_DELETE_AFTER_DAYS * DAY_IN_MS;
 type NotificationsModule = typeof import("expo-notifications");
 
 type PushTokenRegistrationStatus =
@@ -169,6 +178,15 @@ export const ensureNotificationHandlerConfigured = () => {
 };
 
 const getPushTokenDocId = (token: string) => encodeURIComponent(token);
+const createPushInstallationId = () =>
+  `install_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+const getPushInstallationDocId = ({
+  uid,
+  installationId,
+}: {
+  uid: string;
+  installationId: string;
+}) => encodeURIComponent(`${uid}:${installationId}`);
 
 const waitAsync = (durationMs: number) =>
   new Promise<void>((resolve) => {
@@ -291,6 +309,25 @@ const getExpoProjectId = () => {
 const cachePushTokenAsync = async (token: string) => {
   await AsyncStorage.setItem(PUSH_TOKEN_STORAGE_KEY, token);
 };
+const cachePushTokenDocIdAsync = async (docId: string) => {
+  await AsyncStorage.setItem(PUSH_TOKEN_DOC_ID_STORAGE_KEY, docId);
+};
+const getCachedPushTokenDocIdAsync = async () =>
+  (await AsyncStorage.getItem(PUSH_TOKEN_DOC_ID_STORAGE_KEY))?.trim() || "";
+const getCachedPushInstallationIdAsync = async () =>
+  (await AsyncStorage.getItem(PUSH_INSTALLATION_ID_STORAGE_KEY))?.trim() || "";
+const getOrCreatePushInstallationIdAsync = async () => {
+  const cachedInstallationId =
+    (await AsyncStorage.getItem(PUSH_INSTALLATION_ID_STORAGE_KEY))?.trim() || "";
+
+  if (cachedInstallationId) {
+    return cachedInstallationId;
+  }
+
+  const nextInstallationId = createPushInstallationId();
+  await AsyncStorage.setItem(PUSH_INSTALLATION_ID_STORAGE_KEY, nextInstallationId);
+  return nextInstallationId;
+};
 
 const chunkMessages = <T,>(items: T[], size: number) => {
   const chunks: T[][] = [];
@@ -303,6 +340,53 @@ const chunkMessages = <T,>(items: T[], size: number) => {
 };
 
 const readStringValue = (value: unknown) => (typeof value === "string" ? value.trim() : "");
+const readTimestampMillis = (value: unknown) => {
+  if (!value) {
+    return NaN;
+  }
+
+  if (value instanceof Date) {
+    return value.getTime();
+  }
+
+  if (typeof value !== "object") {
+    return NaN;
+  }
+
+  const normalizedValue = value as {
+    nanoseconds?: unknown;
+    seconds?: unknown;
+    toMillis?: unknown;
+  };
+
+  if (typeof normalizedValue.toMillis === "function") {
+    const millis = (normalizedValue.toMillis as () => number)();
+    return Number.isFinite(millis) ? millis : NaN;
+  }
+
+  if (typeof normalizedValue.seconds === "number") {
+    const nanos =
+      typeof normalizedValue.nanoseconds === "number" ? normalizedValue.nanoseconds : 0;
+    return normalizedValue.seconds * 1000 + Math.floor(nanos / 1_000_000);
+  }
+
+  return NaN;
+};
+const readPushTokenLastSeenAtMillis = (data: DocumentData) => {
+  const updatedAtMillis = readTimestampMillis(data.updatedAt);
+  const lastAuthenticatedAtMillis = readTimestampMillis(data.lastAuthenticatedAt);
+
+  if (Number.isFinite(updatedAtMillis) && Number.isFinite(lastAuthenticatedAtMillis)) {
+    return Math.max(updatedAtMillis, lastAuthenticatedAtMillis);
+  }
+  if (Number.isFinite(updatedAtMillis)) {
+    return updatedAtMillis;
+  }
+  if (Number.isFinite(lastAuthenticatedAtMillis)) {
+    return lastAuthenticatedAtMillis;
+  }
+  return NaN;
+};
 
 const getUniqueStrings = (values: string[]) =>
   [...new Set(values.map((value) => value.trim()).filter(Boolean))];
@@ -454,6 +538,83 @@ const readPushTokenData = (data: DocumentData) => ({
   isActive: data.isActive !== false,
   platform: readStringValue(data.platform),
 });
+const getUniquePushTokenRecords = <
+  T extends {
+    token: string;
+  },
+>(
+  tokens: T[],
+) => {
+  const tokensByValue = new Map<string, T>();
+
+  tokens.forEach((item) => {
+    if (!tokensByValue.has(item.token)) {
+      tokensByValue.set(item.token, item);
+    }
+  });
+
+  return [...tokensByValue.values()];
+};
+const pruneStalePushTokenDocsForUserAsync = async ({
+  uid,
+  keepDocId,
+}: {
+  uid: string;
+  keepDocId: string;
+}) => {
+  const normalizedUid = uid.trim();
+  if (!normalizedUid) {
+    return;
+  }
+
+  const now = Date.now();
+  const deactivateThresholdMillis = now - PUSH_TOKEN_DEACTIVATE_AGE_MS;
+  const deleteThresholdMillis = now - PUSH_TOKEN_DELETE_AGE_MS;
+  const userTokenSnapshot = await getDocs(
+    query(
+      collection(firestore, PUSH_TOKENS_COLLECTION),
+      where("uid", "==", normalizedUid),
+    ),
+  );
+  const staleDocOperations: Promise<unknown>[] = [];
+
+  userTokenSnapshot.docs.forEach((item) => {
+    if (item.id === keepDocId) {
+      return;
+    }
+
+    const data = item.data() as DocumentData;
+    const lastSeenAtMillis = readPushTokenLastSeenAtMillis(data);
+    if (!Number.isFinite(lastSeenAtMillis)) {
+      return;
+    }
+
+    if (lastSeenAtMillis <= deleteThresholdMillis) {
+      staleDocOperations.push(deleteDoc(item.ref));
+      return;
+    }
+
+    const isActive = data.isActive !== false;
+    if (isActive && lastSeenAtMillis <= deactivateThresholdMillis) {
+      staleDocOperations.push(
+        setDoc(
+          item.ref,
+          {
+            isActive: false,
+            deactivatedAt: serverTimestamp(),
+          },
+          { merge: true },
+        ),
+      );
+    }
+  });
+
+  if (!staleDocOperations.length) {
+    return;
+  }
+
+  await Promise.allSettled(staleDocOperations);
+};
 
 const getPushRecipientCount = (tokens: { uid: string }[]) =>
   new Set(tokens.map((item) => item.uid).filter(Boolean)).size;
@@ -494,7 +655,10 @@ export const getCachedPushTokenAsync = async () =>
   (await AsyncStorage.getItem(PUSH_TOKEN_STORAGE_KEY))?.trim() || "";
 
 export const clearCachedPushTokenAsync = async () => {
-  await AsyncStorage.removeItem(PUSH_TOKEN_STORAGE_KEY);
+  await Promise.allSettled([
+    AsyncStorage.removeItem(PUSH_TOKEN_STORAGE_KEY),
+    AsyncStorage.removeItem(PUSH_TOKEN_DOC_ID_STORAGE_KEY),
+  ]);
 };
 
 export const getNotificationPostId = (response: unknown) => {
@@ -599,30 +763,43 @@ export const registerForPushNotificationsAsync =
 export const syncPushTokenAsync = async ({
   uid,
   token,
+  previousToken,
 }: {
   uid: string;
   token: string;
+  previousToken?: string;
 }) => {
   const normalizedUid = uid.trim();
   const normalizedToken = token.trim();
+  const normalizedPreviousToken = previousToken?.trim() || "";
 
   if (!normalizedUid || !normalizedToken) {
     return;
   }
 
+  const previouslyCachedDocId = await getCachedPushTokenDocIdAsync();
+  const installationId = await getOrCreatePushInstallationIdAsync();
+  const pushTokenDocId = getPushInstallationDocId({
+    uid: normalizedUid,
+    installationId,
+  });
   const pushTokenRef = doc(
     firestore,
     PUSH_TOKENS_COLLECTION,
-    getPushTokenDocId(normalizedToken),
+    pushTokenDocId,
   );
 
-  await cachePushTokenAsync(normalizedToken);
+  await Promise.all([
+    cachePushTokenAsync(normalizedToken),
+    cachePushTokenDocIdAsync(pushTokenDocId),
+  ]);
 
   await setDoc(
     pushTokenRef,
     {
       uid: normalizedUid,
       token: normalizedToken,
+      installationId,
       isActive: true,
       platform: Platform.OS,
       appOwnership: Constants.appOwnership ?? null,
@@ -633,18 +810,114 @@ export const syncPushTokenAsync = async ({
     },
     { merge: true },
   );
+
+  const legacyTokenDocIds = new Set<string>([getPushTokenDocId(normalizedToken)]);
+  if (normalizedPreviousToken && normalizedPreviousToken !== normalizedToken) {
+    legacyTokenDocIds.add(getPushTokenDocId(normalizedPreviousToken));
+  }
+  if (previouslyCachedDocId) {
+    legacyTokenDocIds.add(previouslyCachedDocId);
+  }
+
+  await Promise.allSettled(
+    [...legacyTokenDocIds]
+      .filter((legacyDocId) => legacyDocId && legacyDocId !== pushTokenDocId)
+      .map((legacyDocId) =>
+        deleteDoc(doc(firestore, PUSH_TOKENS_COLLECTION, legacyDocId)),
+      ),
+  );
+
+  const userTokenSnapshot = await getDocs(
+    query(
+      collection(firestore, PUSH_TOKENS_COLLECTION),
+      where("uid", "==", normalizedUid),
+    ),
+  );
+  const duplicateDocIds = userTokenSnapshot.docs
+    .map((item) => ({
+      docId: item.id,
+      ...readPushTokenData(item.data() as DocumentData),
+    }))
+    .filter(
+      (item) =>
+        item.docId !== pushTokenDocId &&
+        (item.token === normalizedToken ||
+          (normalizedPreviousToken && item.token === normalizedPreviousToken)),
+    )
+    .map((item) => item.docId);
+
+  if (duplicateDocIds.length) {
+    await Promise.allSettled(
+      [...new Set(duplicateDocIds)].map((docId) =>
+        deleteDoc(doc(firestore, PUSH_TOKENS_COLLECTION, docId)),
+      ),
+    );
+  }
+
+  await pruneStalePushTokenDocsForUserAsync({
+    uid: normalizedUid,
+    keepDocId: pushTokenDocId,
+  }).catch(() => {
+    // Ignore stale-doc cleanup failures to avoid blocking sign-in token sync.
+  });
 };
 
-export const deletePushTokenAsync = async (token: string) => {
-  const normalizedToken = token.trim();
+export const deletePushTokenAsync = async (
+  tokenOrPayload: string | { token: string; uid?: string },
+) => {
+  const normalizedToken =
+    typeof tokenOrPayload === "string"
+      ? tokenOrPayload.trim()
+      : tokenOrPayload.token.trim();
+  const normalizedUid =
+    typeof tokenOrPayload === "string"
+      ? ""
+      : (tokenOrPayload.uid ?? "").trim();
 
-  if (!normalizedToken) {
+  const cachedDocId = await getCachedPushTokenDocIdAsync();
+  const cachedInstallationId = await getCachedPushInstallationIdAsync();
+  if (!normalizedToken && !cachedDocId && !normalizedUid) {
     return;
   }
 
-  await deleteDoc(
-    doc(firestore, PUSH_TOKENS_COLLECTION, getPushTokenDocId(normalizedToken)),
+  const docIdsToDelete = new Set<string>();
+  if (normalizedToken) {
+    docIdsToDelete.add(getPushTokenDocId(normalizedToken));
+  }
+  if (cachedDocId) {
+    docIdsToDelete.add(cachedDocId);
+  }
+  if (normalizedUid && cachedInstallationId) {
+    docIdsToDelete.add(
+      getPushInstallationDocId({
+        uid: normalizedUid,
+        installationId: cachedInstallationId,
+      }),
+    );
+  }
+  if (normalizedUid) {
+    const userTokenSnapshot = await getDocs(
+      query(
+        collection(firestore, PUSH_TOKENS_COLLECTION),
+        where("uid", "==", normalizedUid),
+      ),
+    );
+
+    userTokenSnapshot.docs.forEach((item) => {
+      const pushTokenData = readPushTokenData(item.data() as DocumentData);
+      if (!normalizedToken || pushTokenData.token === normalizedToken) {
+        docIdsToDelete.add(item.id);
+      }
+    });
+  }
+
+  await Promise.allSettled(
+    [...docIdsToDelete]
+      .filter(Boolean)
+      .map((docId) => deleteDoc(doc(firestore, PUSH_TOKENS_COLLECTION, docId))),
   );
+
+  await clearCachedPushTokenAsync();
 };
 
 const getActivePushTokensForUserAsync = async (uid: string) => {
@@ -665,12 +938,14 @@ const getActivePushTokensForUserAsync = async (uid: string) => {
     ),
   );
 
-  return snapshot.docs
-    .map((item) => ({
-      docId: item.id,
-      ...readPushTokenData(item.data() as DocumentData),
-    }))
-     .filter((item) => item.isActive && item.token);
+  return getUniquePushTokenRecords(
+    snapshot.docs
+      .map((item) => ({
+        docId: item.id,
+        ...readPushTokenData(item.data() as DocumentData),
+      }))
+      .filter((item) => item.isActive && item.token),
+  );
 };
 
 const getActiveUsersAndPushTokensAsync = async ({
@@ -697,18 +972,20 @@ const getActiveUsersAndPushTokensAsync = async ({
     )
     .map((item) => item.uid);
   const activeUserUidSet = new Set(activeUserUids);
-  const tokens = pushTokensSnapshot.docs
-    .map((item) => ({
-      docId: item.id,
-      ...readPushTokenData(item.data() as DocumentData),
-    }))
-    .filter(
-      (item) =>
-        item.isActive &&
-        item.uid &&
-        item.token &&
-        activeUserUidSet.has(item.uid),
-    );
+  const tokens = getUniquePushTokenRecords(
+    pushTokensSnapshot.docs
+      .map((item) => ({
+        docId: item.id,
+        ...readPushTokenData(item.data() as DocumentData),
+      }))
+      .filter(
+        (item) =>
+          item.isActive &&
+          item.uid &&
+          item.token &&
+          activeUserUidSet.has(item.uid),
+      ),
+  );
 
   return {
     activeUserUids,
@@ -725,12 +1002,42 @@ const getActivePushTokensForAllActiveUsersAsync = async ({
   return tokens;
 };
 
+const deletePushTokenDocsByTokenAsync = async (token: string) => {
+  const normalizedToken = token.trim();
+  if (!normalizedToken) {
+    return;
+  }
+
+  const docIdsToDelete = new Set<string>([getPushTokenDocId(normalizedToken)]);
+
+  try {
+    const tokenSnapshot = await getDocs(
+      query(
+        collection(firestore, PUSH_TOKENS_COLLECTION),
+        where("token", "==", normalizedToken),
+      ),
+    );
+
+    tokenSnapshot.docs.forEach((item) => {
+      docIdsToDelete.add(item.id);
+    });
+  } catch {
+    // Ignore query failures when token-lookup reads are restricted for this client.
+  }
+
+  await Promise.allSettled(
+    [...docIdsToDelete]
+      .filter(Boolean)
+      .map((docId) => deleteDoc(doc(firestore, PUSH_TOKENS_COLLECTION, docId))),
+  );
+};
+
 const sendExpoPushMessagesAsync = async (messages: ExpoPushMessage[]) => {
   if (!messages.length) {
     return;
   }
 
-  const invalidTokenDocIds = new Set<string>();
+  const invalidTokens = new Set<string>();
   const ticketErrors = new Set<string>();
   const messageChunks = chunkMessages(messages, 100);
 
@@ -765,7 +1072,10 @@ const sendExpoPushMessagesAsync = async (messages: ExpoPushMessage[]) => {
 
       const errorCode = readStringValue(ticket.details?.error);
       if (errorCode === "DeviceNotRegistered") {
-        invalidTokenDocIds.add(getPushTokenDocId(chunk[index]?.to ?? ""));
+        const invalidToken = readStringValue(chunk[index]?.to ?? "");
+        if (invalidToken) {
+          invalidTokens.add(invalidToken);
+        }
         return;
       }
 
@@ -773,11 +1083,9 @@ const sendExpoPushMessagesAsync = async (messages: ExpoPushMessage[]) => {
     });
   }
 
-  if (invalidTokenDocIds.size) {
+  if (invalidTokens.size) {
     await Promise.allSettled(
-      [...invalidTokenDocIds].map((docId) =>
-        deleteDoc(doc(firestore, PUSH_TOKENS_COLLECTION, docId)),
-      ),
+      [...invalidTokens].map((token) => deletePushTokenDocsByTokenAsync(token)),
     );
   }
 
@@ -861,12 +1169,18 @@ export const sendCustomPushNotificationToUserAsync = async ({
   body,
   imageUrl,
   data,
+  category = "general",
+  sendPush = true,
+  audience = "single",
 }: {
   uid: string;
   title: string;
   body: string;
   imageUrl?: string;
   data?: Record<string, string>;
+  category?: UserNotificationCategory;
+  sendPush?: boolean;
+  audience?: UserNotificationAudience;
 }): Promise<CustomNotificationDispatchResult> => {
   const normalizedUid = uid.trim();
   const normalizedTitle = title.trim();
@@ -888,9 +1202,9 @@ export const sendCustomPushNotificationToUserAsync = async ({
     };
   }
 
-  const tokens = await getActivePushTokensForUserAsync(normalizedUid);
+  const tokens = sendPush ? await getActivePushTokensForUserAsync(normalizedUid) : [];
 
-  if (tokens.length) {
+  if (sendPush && tokens.length) {
     await sendExpoPushMessagesAsync(
       tokens.map((item) =>
         buildCustomPushMessage({
@@ -910,6 +1224,9 @@ export const sendCustomPushNotificationToUserAsync = async ({
     title: normalizedTitle,
     body: normalizedBody,
     imageUrl,
+    category,
+    audience,
+    pushEnabled: sendPush,
   });
 
   return {
@@ -925,15 +1242,24 @@ export const sendCustomPushNotificationToAllActiveUsersAsync = async ({
   imageUrl,
   data,
   excludeUids = [],
+  category = "general",
+  sendPush = true,
+  audience = "all",
 }: {
   title: string;
   body: string;
   imageUrl?: string;
   data?: Record<string, string>;
   excludeUids?: string[];
+  category?: UserNotificationCategory;
+  sendPush?: boolean;
+  audience?: UserNotificationAudience;
 }): Promise<CustomNotificationDispatchResult> => {
   const normalizedTitle = title.trim();
   const normalizedBody = body.trim();
+  const normalizedExcludedUids = new Set(
+    excludeUids.map((uid) => uid.trim()).filter(Boolean),
+  );
 
   if (!normalizedTitle || !normalizedBody) {
     return {
@@ -943,9 +1269,26 @@ export const sendCustomPushNotificationToAllActiveUsersAsync = async ({
     };
   }
 
-  const { activeUserUids, tokens } = await getActiveUsersAndPushTokensAsync({
-    excludeUids,
-  });
+  const { activeUserUids, tokens } = sendPush
+    ? await getActiveUsersAndPushTokensAsync({
+        excludeUids,
+      })
+    : {
+        activeUserUids: (
+          await getDocs(collection(firestore, USERS_COLLECTION))
+        ).docs
+          .map((item) => ({
+            uid: item.id,
+            accountStatus: readStringValue((item.data() as DocumentData)?.accountStatus),
+          }))
+          .filter(
+            (item) =>
+              !isDeletedAccountStatus(item.accountStatus) &&
+              !normalizedExcludedUids.has(item.uid),
+          )
+          .map((item) => item.uid),
+        tokens: [],
+      };
 
   if (!activeUserUids.length) {
     return {
@@ -955,7 +1298,7 @@ export const sendCustomPushNotificationToAllActiveUsersAsync = async ({
     };
   }
 
-  if (tokens.length) {
+  if (sendPush && tokens.length) {
     await sendExpoPushMessagesAsync(
       tokens.map((item) =>
         buildCustomPushMessage({
@@ -975,6 +1318,9 @@ export const sendCustomPushNotificationToAllActiveUsersAsync = async ({
     title: normalizedTitle,
     body: normalizedBody,
     imageUrl,
+    category,
+    audience,
+    pushEnabled: sendPush,
   });
 
   return {

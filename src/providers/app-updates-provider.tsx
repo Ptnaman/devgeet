@@ -40,6 +40,7 @@ type UpdatesNativeContext = {
 
 type UpdatesCheckResult = {
   isAvailable?: boolean;
+  isRollBackToEmbedded?: boolean;
 };
 
 type UpdatesFetchResult = {
@@ -290,18 +291,13 @@ export function AppUpdatesProvider({
     [isConnected, reloadIntoUpdateAsync, showOfflineToast, showToast],
   );
 
-  const applyUpdateAsync = useCallback(
-    async () => {
-      await reloadIntoUpdateAsync();
-    },
-    [reloadIntoUpdateAsync],
-  );
-  const checkForUpdatesInteractiveAsync = useCallback(
-    async () => {
-      await checkForUpdatesAsync(true);
-    },
-    [checkForUpdatesAsync],
-  );
+  const applyUpdateAsync = useCallback(async () => {
+    await reloadIntoUpdateAsync();
+  }, [reloadIntoUpdateAsync]);
+
+  const checkForUpdatesInteractiveAsync = useCallback(async () => {
+    await checkForUpdatesAsync(true);
+  }, [checkForUpdatesAsync]);
 
   useEffect(() => {
     if (!isUpdatePending || hasShownPendingToastRef.current || autoUpdateEnabled) {

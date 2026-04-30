@@ -12,10 +12,9 @@ import Animated, {
 } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import {
-  HeaderAdminButton,
-} from "@/components/header-admin-button";
+import { HeaderNotificationsButton } from "@/components/header-notifications";
 import { HeaderProfileButton } from "@/components/header-profile-button";
+import { useUserNotifications } from "@/hooks/use-user-notifications";
 import { MainTabsHeaderContext } from "@/components/main-tabs/main-tabs-header-context";
 import {
   MAIN_TAB_DEFINITIONS,
@@ -25,8 +24,7 @@ import {
 } from "@/components/main-tabs/main-tabs-config";
 import { MAIN_TAB_ORDER, type MainTabName } from "@/constants/main-tabs";
 import { SHADOWS, SPACING } from "@/constants/theme";
-import { APP_FONTS, PRODUCT_FONTS } from "@/lib/typography";
-import { useAuth } from "@/providers/auth-provider";
+import { resolveAppFontFamily, resolveProductFontFamily } from "@/lib/typography";
 import { useAppTheme } from "@/providers/theme-provider";
 
 const SWIPE_ACTIVATION_OFFSET = 14;
@@ -51,17 +49,32 @@ export function MainTabsShell() {
     home: 0,
     categories: 0,
     favorite: 0,
-    subscribe: 0,
     settings: 0,
+  });
+  const headerHiddenByTabRef = useRef<Record<MainTabName, boolean>>({
+    home: false,
+    categories: false,
+    favorite: false,
+    settings: false,
+  });
+  const tabBarHiddenByTabRef = useRef<Record<MainTabName, boolean>>({
+    home: false,
+    categories: false,
+    favorite: false,
+    settings: false,
   });
   const initialIndexRef = useRef(getMainTabIndex(initialTabRef.current));
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { canManagePosts } = useAuth();
+  const { unreadCount: unreadNotificationsCount } = useUserNotifications({
+    category: "all",
+  });
   const { colors, resolvedTheme } = useAppTheme();
   const [activeTab, setActiveTab] = useState<MainTabName>(initialTabRef.current);
   const [isHeaderElevated, setIsHeaderElevated] = useState(false);
+  const [isHeaderHidden, setIsHeaderHidden] = useState(false);
+  const [isTabBarHidden, setIsTabBarHidden] = useState(false);
   const activeIndexValue = useSharedValue(initialIndexRef.current);
   const translateX = useSharedValue(-initialIndexRef.current * width);
   const gestureStartX = useSharedValue(-initialIndexRef.current * width);
@@ -77,6 +90,8 @@ export function MainTabsShell() {
   const headerTitleText = activeTab === "home" ? appName : activeTabLabel;
   const headerBackgroundColor = activeTab === "home" ? colors.surface : colors.background;
   const homeHeaderIconBackgroundColor = activeTab === "home" ? colors.surfaceMuted : undefined;
+  const showHomeHeaderActions = activeTab === "home";
+  const showProfileHeaderAction = activeTab !== "settings";
 
   const setHeaderElevation = useCallback((nextValue: boolean) => {
     if (headerElevationRef.current === nextValue) {
@@ -87,8 +102,66 @@ export function MainTabsShell() {
     setIsHeaderElevated(nextValue);
   }, []);
 
+  const syncHeaderHiddenForTab = useCallback((tabName: MainTabName) => {
+    const nextValue = Boolean(headerHiddenByTabRef.current[tabName]);
+    setIsHeaderHidden((currentValue) =>
+      currentValue === nextValue ? currentValue : nextValue,
+    );
+  }, []);
+
+  const setHeaderHidden = useCallback((tabName: MainTabName, hidden: boolean) => {
+    const nextHiddenValue = Boolean(hidden);
+
+    if (headerHiddenByTabRef.current[tabName] === nextHiddenValue) {
+      return;
+    }
+
+    headerHiddenByTabRef.current[tabName] = nextHiddenValue;
+
+    if (tabName !== activeTabRef.current) {
+      return;
+    }
+
+    setIsHeaderHidden(nextHiddenValue);
+
+    if (nextHiddenValue) {
+      setHeaderElevation(false);
+    } else {
+      const tabOffset = Math.max(tabScrollOffsetsRef.current[tabName] ?? 0, 0);
+      setHeaderElevation(tabOffset > HEADER_SHADOW_SCROLL_THRESHOLD);
+    }
+  }, [setHeaderElevation]);
+
+  const syncTabBarHiddenForTab = useCallback((tabName: MainTabName) => {
+    const nextValue = Boolean(tabBarHiddenByTabRef.current[tabName]);
+    setIsTabBarHidden((currentValue) =>
+      currentValue === nextValue ? currentValue : nextValue,
+    );
+  }, []);
+
+  const setTabBarHidden = useCallback((tabName: MainTabName, hidden: boolean) => {
+    const nextHiddenValue = Boolean(hidden);
+
+    if (tabBarHiddenByTabRef.current[tabName] === nextHiddenValue) {
+      return;
+    }
+
+    tabBarHiddenByTabRef.current[tabName] = nextHiddenValue;
+
+    if (tabName !== activeTabRef.current) {
+      return;
+    }
+
+    setIsTabBarHidden(nextHiddenValue);
+  }, []);
+
   const syncHeaderStateForTab = useCallback(
     (tabName: MainTabName) => {
+      if (headerHiddenByTabRef.current[tabName]) {
+        setHeaderElevation(false);
+        return;
+      }
+
       const tabOffset = Math.max(tabScrollOffsetsRef.current[tabName] ?? 0, 0);
       setHeaderElevation(tabOffset > HEADER_SHADOW_SCROLL_THRESHOLD);
     },
@@ -104,6 +177,11 @@ export function MainTabsShell() {
         return;
       }
 
+      if (headerHiddenByTabRef.current[tabName]) {
+        setHeaderElevation(false);
+        return;
+      }
+
       setHeaderElevation(nextOffsetY > HEADER_SHADOW_SCROLL_THRESHOLD);
     },
     [setHeaderElevation],
@@ -116,9 +194,11 @@ export function MainTabsShell() {
       activeTabRef.current = nextTab;
       setActiveTab((currentTab) => (currentTab === nextTab ? currentTab : nextTab));
       activeIndexValue.value = nextIndex;
+      syncHeaderHiddenForTab(nextTab);
       syncHeaderStateForTab(nextTab);
+      syncTabBarHiddenForTab(nextTab);
     },
-    [activeIndexValue, syncHeaderStateForTab],
+    [activeIndexValue, syncHeaderHiddenForTab, syncHeaderStateForTab, syncTabBarHiddenForTab],
   );
 
   const snapToIndex = useCallback(
@@ -145,8 +225,10 @@ export function MainTabsShell() {
   }, [translateX, width]);
 
   useEffect(() => {
+    syncHeaderHiddenForTab(activeTabRef.current);
     syncHeaderStateForTab(activeTabRef.current);
-  }, [syncHeaderStateForTab]);
+    syncTabBarHiddenForTab(activeTabRef.current);
+  }, [syncHeaderHiddenForTab, syncHeaderStateForTab, syncTabBarHiddenForTab]);
 
   useEffect(() => {
     const nextTabParam = normalizeMainTabParam(tab);
@@ -163,8 +245,8 @@ export function MainTabsShell() {
     router.push("/profile");
   }, [router]);
 
-  const openAdminPanel = useCallback(() => {
-    router.push("/admin");
+  const openNotificationsPage = useCallback(() => {
+    router.push("/notifications");
   }, [router]);
 
   const handleTabPress = useCallback(
@@ -230,7 +312,7 @@ export function MainTabsShell() {
   }));
 
   return (
-    <MainTabsHeaderContext.Provider value={{ reportScrollOffset }}>
+    <MainTabsHeaderContext.Provider value={{ reportScrollOffset, setHeaderHidden, setTabBarHidden }}>
       <View style={[styles.screen, { backgroundColor: colors.background }]}>
         <View
           style={[
@@ -256,29 +338,44 @@ export function MainTabsShell() {
               styles.headerContainer,
               {
                 backgroundColor: headerBackgroundColor,
-                height: HEADER_ROW_HEIGHT,
+                height: isHeaderHidden ? 0 : HEADER_ROW_HEIGHT,
               },
             ]}
           >
-            <View style={styles.headerContent}>
-              <View style={styles.headerRow}>
-                <Text style={[styles.headerTitle, { color: colors.text }]} numberOfLines={1}>
-                  {headerTitleText}
-                </Text>
-                <View style={styles.headerActions}>
-                  {canManagePosts ? (
-                    <HeaderAdminButton
-                      onPress={openAdminPanel}
-                      backgroundColor={homeHeaderIconBackgroundColor}
-                    />
+            {!isHeaderHidden ? (
+              <View style={styles.headerContent}>
+                <View style={styles.headerRow}>
+                  <Text style={[styles.headerTitle, { color: colors.text }]} numberOfLines={1}>
+                    {headerTitleText}
+                  </Text>
+                  {showHomeHeaderActions || showProfileHeaderAction ? (
+                    <View style={styles.headerActions}>
+                      {showHomeHeaderActions ? (
+                        <>
+                          <HeaderNotificationsButton
+                            unreadCount={unreadNotificationsCount}
+                            onPress={openNotificationsPage}
+                            backgroundColor={homeHeaderIconBackgroundColor}
+                            badgeMode="dot"
+                            accessibilityLabel={
+                              unreadNotificationsCount
+                                ? `Open notifications. ${unreadNotificationsCount} unread notifications`
+                                : "Open notifications"
+                            }
+                          />
+                        </>
+                      ) : null}
+                      {showProfileHeaderAction ? (
+                        <HeaderProfileButton
+                          onPress={openProfilePage}
+                          backgroundColor={homeHeaderIconBackgroundColor}
+                        />
+                      ) : null}
+                    </View>
                   ) : null}
-                  <HeaderProfileButton
-                    onPress={openProfilePage}
-                    backgroundColor={homeHeaderIconBackgroundColor}
-                  />
                 </View>
               </View>
-            </View>
+            ) : null}
           </View>
         </View>
 
@@ -300,41 +397,43 @@ export function MainTabsShell() {
           </GestureDetector>
         </View>
 
-        <View
-          style={[
-            styles.tabBar,
-            {
-              backgroundColor: colors.surface,
-              borderTopColor: tabBarBorderColor,
-              height: tabBarHeight,
-              paddingTop: tabBarTopPadding,
-              paddingBottom: tabBarBottomPadding,
-            },
-          ]}
-        >
-          {MAIN_TAB_DEFINITIONS.map((item) => {
-            const isFocused = item.name === activeTab;
-            const tintColor = isFocused ? colors.tabActive : colors.tabInactive;
+        {!isTabBarHidden ? (
+          <View
+            style={[
+              styles.tabBar,
+              {
+                backgroundColor: colors.surface,
+                borderTopColor: tabBarBorderColor,
+                height: tabBarHeight,
+                paddingTop: tabBarTopPadding,
+                paddingBottom: tabBarBottomPadding,
+              },
+            ]}
+          >
+            {MAIN_TAB_DEFINITIONS.map((item) => {
+              const isFocused = item.name === activeTab;
+              const tintColor = isFocused ? colors.tabActive : colors.tabInactive;
 
-            return (
-              <Pressable
-                key={item.name}
-                accessibilityRole="button"
-                accessibilityState={{ selected: isFocused }}
-                style={({ pressed }) => [
-                  styles.tabButton,
-                  pressed && styles.tabButtonPressed,
-                ]}
-                onPress={() => handleTabPress(item.name)}
-              >
-                {item.renderIcon(tintColor, isFocused)}
-                <Text numberOfLines={1} style={[styles.tabLabel, { color: tintColor }]}>
-                  {item.label}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
+              return (
+                <Pressable
+                  key={item.name}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: isFocused }}
+                  style={({ pressed }) => [
+                    styles.tabButton,
+                    pressed && styles.tabButtonPressed,
+                  ]}
+                  onPress={() => handleTabPress(item.name)}
+                >
+                  {item.renderIcon(tintColor, isFocused)}
+                  <Text numberOfLines={1} style={[styles.tabLabel, { color: tintColor }]}>
+                    {item.label}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        ) : null}
       </View>
     </MainTabsHeaderContext.Provider>
   );
@@ -376,7 +475,7 @@ const styles = StyleSheet.create({
     fontSize: 28,
     lineHeight: 32,
     letterSpacing: -0.8,
-    fontFamily: PRODUCT_FONTS.bold,
+    fontFamily: resolveProductFontFamily("bold"),
   },
   headerActions: {
     flexDirection: "row",
@@ -415,6 +514,6 @@ const styles = StyleSheet.create({
     fontSize: 11,
     lineHeight: 14,
     letterSpacing: 0.2,
-    fontFamily: APP_FONTS.medium,
+    fontFamily: resolveAppFontFamily("medium"),
   },
 });

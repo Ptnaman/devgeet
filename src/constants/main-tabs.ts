@@ -2,7 +2,6 @@ export const MAIN_TAB_ORDER = [
   "home",
   "categories",
   "favorite",
-  "subscribe",
   "settings",
 ] as const;
 

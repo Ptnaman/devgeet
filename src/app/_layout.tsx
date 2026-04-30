@@ -9,7 +9,10 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import "@/lib/firebase";
 import "@/global.css";
-import { APP_FONTS, PRODUCT_FONTS, installGlobalTypography } from "@/lib/typography";
+import {
+  APP_FONTS,
+  installGlobalTypography,
+} from "@/lib/typography";
 import { hasNotificationsNativeSupport } from "@/lib/notifications";
 import { AppUpdatesProvider } from "@/providers/app-updates-provider";
 import { AuthProvider } from "@/providers/auth-provider";
@@ -48,32 +51,22 @@ function AppShell() {
 }
 
 export default function RootLayout() {
-  const [fontsLoaded] = useFonts({
-    [APP_FONTS.regular]: require("../../assets/fonts/GoogleSans/GoogleSans-Regular.ttf"),
-    [APP_FONTS.medium]: require("../../assets/fonts/GoogleSans/GoogleSans-Medium.ttf"),
-    [APP_FONTS.bold]: require("../../assets/fonts/GoogleSans/GoogleSans-Bold.ttf"),
-    [APP_FONTS.italic]: require("../../assets/fonts/GoogleSans/GoogleSans-Italic.ttf"),
-    [APP_FONTS.mediumItalic]: require("../../assets/fonts/GoogleSans/GoogleSans-MediumItalic.ttf"),
-    [APP_FONTS.boldItalic]: require("../../assets/fonts/GoogleSans/GoogleSans-BoldItalic.ttf"),
-    [PRODUCT_FONTS.regular]: require("../../assets/fonts/ProductSans/ProductSans-Regular.ttf"),
-    [PRODUCT_FONTS.medium]: require("../../assets/fonts/ProductSans/ProductSans-Medium.ttf"),
-    [PRODUCT_FONTS.bold]: require("../../assets/fonts/ProductSans/ProductSans-Bold.ttf"),
-    [PRODUCT_FONTS.italic]: require("../../assets/fonts/ProductSans/ProductSans-Italic.ttf"),
-    [PRODUCT_FONTS.mediumItalic]: require(
-      "../../assets/fonts/ProductSans/ProductSans-MediumItalic.ttf"
-    ),
-    [PRODUCT_FONTS.boldItalic]: require(
-      "../../assets/fonts/ProductSans/ProductSans-BoldItalic.ttf"
-    ),
+  const [fontsLoaded, fontsError] = useFonts({
+    [APP_FONTS.regular]: require("../../assets/fonts/GoogleSans-Regular.ttf"),
+    [APP_FONTS.medium]: require("../../assets/fonts/GoogleSans-Medium.ttf"),
+    [APP_FONTS.bold]: require("../../assets/fonts/GoogleSans-Bold.ttf"),
+    [APP_FONTS.italic]: require("../../assets/fonts/GoogleSans-Italic.ttf"),
+    [APP_FONTS.mediumItalic]: require("../../assets/fonts/GoogleSans-MediumItalic.ttf"),
+    [APP_FONTS.boldItalic]: require("../../assets/fonts/GoogleSans-BoldItalic.ttf"),
   });
 
   useEffect(() => {
-    if (fontsLoaded) {
+    if (fontsLoaded || fontsError) {
       void SplashScreen.hideAsync();
     }
-  }, [fontsLoaded]);
+  }, [fontsError, fontsLoaded]);
 
-  if (!fontsLoaded) {
+  if (!fontsLoaded && !fontsError) {
     return null;
   }
 

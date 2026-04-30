@@ -6,17 +6,12 @@ import {
   type ReactNode,
 } from "react";
 import {
-  EmailAuthProvider,
-  createUserWithEmailAndPassword,
   deleteUser,
   GoogleAuthProvider,
   OAuthProvider,
   onAuthStateChanged,
-  reauthenticateWithCredential,
-  sendPasswordResetEmail,
   setPersistence,
   signInWithCredential,
-  signInWithEmailAndPassword,
   signOut,
   updateProfile,
   type User,
@@ -39,8 +34,6 @@ import {
 } from "firebase/firestore";
 
 import {
-  EMAIL_VALIDATION_MESSAGE,
-  PASSWORD_VALIDATION_MESSAGE,
   normalizeEmailAddress as normalizeEmail,
   normalizeUsernameValue as normalizeUsername,
   sanitizeUsername,
@@ -58,15 +51,19 @@ import {
 import { AUTHOR_FOLLOWS_COLLECTION } from "@/lib/author-follows";
 import { auth, firestore, getAuthPersistenceForRememberMe } from "@/lib/firebase";
 import { loadGoogleSignInModule } from "@/lib/google-signin-loader";
+import {
+  deletePushTokenAsync,
+  getCachedPushTokenAsync,
+} from "@/lib/notifications";
 
 const USERNAMES_COLLECTION = "usernames";
 const USERS_COLLECTION = "users";
 const FAVORITES_COLLECTION = "favorites";
 const PUSH_TOKENS_COLLECTION = "pushTokens";
-const USER_NOTIFICATIONS_SUBCOLLECTION = "notifications";
+const NOTIFICATIONS_COLLECTION = "notifications";
 const MAX_BATCH_DELETE_COUNT = 400;
 const RECENT_LOGIN_WINDOW_MS = 5 * 60 * 1000;
-type AuthProviderName = "password" | "google" | "apple";
+type SupportedAuthProviderName = "google" | "apple";
 const USER_GENDERS = ["male", "female", "other", "prefer_not_to_say"] as const;
 type UserGender = (typeof USER_GENDERS)[number] | "";
 
@@ -98,15 +95,6 @@ type AuthContextType = {
   isBootstrapping: boolean;
   setRememberSessionPersistence: (remember: boolean) => Promise<void>;
   isUsernameAvailable: (username: string, excludeUid?: string) => Promise<boolean>;
-  loginWithEmailOrUsername: (identifier: string, password: string) => Promise<void>;
-  requestPasswordReset: (identifier: string) => Promise<void>;
-  signupWithEmail: (payload: {
-    firstName: string;
-    lastName: string;
-    email: string;
-    username?: string;
-    password: string;
-  }) => Promise<void>;
   updateCurrentUserProfile: (payload: {
     firstName: string;
     lastName: string;
@@ -115,6 +103,7 @@ type AuthContextType = {
     bio: string;
     gender: string;
   }) => Promise<void>;
+  switchCurrentUserToAuthor: () => Promise<void>;
   loginWithGoogleIdToken: (idToken: string) => Promise<void>;
   loginWithAppleCredential: (payload: {
     idToken: string;
@@ -123,7 +112,7 @@ type AuthContextType = {
     firstName?: string | null;
     lastName?: string | null;
   }) => Promise<void>;
-  deleteCurrentUserAccount: (currentPassword?: string) => Promise<void>;
+  deleteCurrentUserAccount: () => Promise<void>;
   logout: () => Promise<void>;
 };
 
@@ -149,24 +138,6 @@ const pickFirstNonEmptyValue = (...values: (string | null | undefined)[]) => {
   return "";
 };
 const readStringValue = (value: unknown) => (typeof value === "string" ? value.trim() : "");
-
-const readUsernameEmail = async (username: string) => {
-  const usernameRef = doc(firestore, USERNAMES_COLLECTION, normalizeUsername(username));
-  const usernameSnapshot = await getDoc(usernameRef);
-
-  if (!usernameSnapshot.exists()) {
-    throw new Error("Username not found.");
-  }
-
-  const data = usernameSnapshot.data() as DocumentData;
-  const email = data?.email;
-
-  if (typeof email !== "string" || !email) {
-    throw new Error("Username is not linked to an email.");
-  }
-
-  return normalizeEmail(email);
-};
 
 const isUsernameAvailableRecord = async (username: string, excludeUid?: string) => {
   const normalizedUsername = normalizeUsername(username);
@@ -201,14 +172,6 @@ const getFallbackUsername = (email: string | null, uid: string) => {
   return (sanitized || `user_${uid.slice(0, 6)}`).slice(0, 20);
 };
 
-const getEmailSignupUsername = (email: string, uid: string) => {
-  const base = sanitizeUsername(email.split("@")[0] ?? "");
-  const fallback = base || `user_${uid.slice(0, 6)}`;
-  const suffix = uid.slice(0, 4).toLowerCase();
-  const head = fallback.slice(0, Math.max(0, 20 - suffix.length - 1));
-  return `${head}_${suffix}`;
-};
-
 const ensureUniqueProviderUsername = (uid: string, email: string | null) => {
   const base = getFallbackUsername(email, uid);
   const suffix = uid.slice(0, 4).toLowerCase();
@@ -234,7 +197,7 @@ const resolveProvider = (currentUser: User | null | undefined) =>
     ? "apple"
     : currentUser?.providerData.some((item) => item.providerId === "google.com")
       ? "google"
-      : "password";
+      : "";
 
 const buildUserProfileRecord = (payload: {
   uid: string;
@@ -257,7 +220,7 @@ const buildUserProfileRecord = (payload: {
   const normalizedEmail = normalizeEmail(payload.email);
   const effectiveRole = getEffectiveUserRole(payload.role);
   const accountStatus = normalizeAccountStatus(payload.accountStatus);
-  const normalizedProvider = payload.provider.trim().toLowerCase() || "password";
+  const normalizedProvider = payload.provider.trim().toLowerCase();
   const normalizedDisplayName =
     normalizeName(payload.displayName ?? `${normalizedFirstName} ${normalizedLastName}`) ||
     normalizedUsername;
@@ -317,7 +280,7 @@ const mapUserProfile = (uid: string, data: DocumentData): UserProfile => {
     email: normalizedEmail,
     role: readStringValue(data?.role) || "user",
     accountStatus: readStringValue(data?.accountStatus) || "active",
-    provider: readStringValue(data?.provider) || "password",
+    provider: readStringValue(data?.provider),
     displayName: readStringValue(data?.displayName),
     photoURL: readStringValue(data?.photoURL),
     bio: readStringValue(data?.bio),
@@ -325,138 +288,8 @@ const mapUserProfile = (uid: string, data: DocumentData): UserProfile => {
   });
 };
 
-const ensureAccountIsActive = async (uid: string) => {
-  const userSnapshot = await getDoc(doc(firestore, USERS_COLLECTION, uid));
-
-  if (!userSnapshot.exists()) {
-    return;
-  }
-
-  const accountStatus = normalizeAccountStatus(
-    readStringValue((userSnapshot.data() as DocumentData)?.accountStatus)
-  );
-
-  if (accountStatus === "deleted") {
-    throw new Error("This account has been removed by admin.");
-  }
-};
-
 const isUsernameTakenError = (error: unknown) =>
   error instanceof Error && error.message.toLowerCase().includes("already taken");
-
-const mapEmailSignupError = (error: unknown) => {
-  const code =
-    typeof error === "object" &&
-    error !== null &&
-    "code" in error &&
-    typeof (error as { code?: unknown }).code === "string"
-      ? (error as { code: string }).code
-      : "";
-
-  if (code === "auth/email-already-in-use") {
-    return new Error("This email is already registered. Please login instead.");
-  }
-
-  if (code === "auth/invalid-email") {
-    return new Error(EMAIL_VALIDATION_MESSAGE);
-  }
-
-  if (code === "auth/weak-password") {
-    return new Error(PASSWORD_VALIDATION_MESSAGE);
-  }
-
-  if (code === "auth/operation-not-allowed") {
-    return new Error("Email signup is not available right now.");
-  }
-
-  if (error instanceof Error) {
-    return error;
-  }
-
-  return new Error("Unable to create account. Please try again.");
-};
-
-const mapPasswordResetError = (error: unknown) => {
-  const code =
-    typeof error === "object" &&
-    error !== null &&
-    "code" in error &&
-    typeof (error as { code?: unknown }).code === "string"
-      ? (error as { code: string }).code
-      : "";
-
-  if (code === "auth/invalid-email") {
-    return new Error("Enter a valid email or username.");
-  }
-
-  if (code === "auth/missing-email") {
-    return new Error("Enter your email or username first.");
-  }
-
-  if (code === "auth/user-not-found") {
-    return new Error("No account found for this email or username.");
-  }
-
-  if (error instanceof Error) {
-    return error;
-  }
-
-  return new Error("Unable to send reset email. Please try again.");
-};
-
-const mapLoginError = (error: unknown, identifier: string) => {
-  const code =
-    typeof error === "object" &&
-    error !== null &&
-    "code" in error &&
-    typeof (error as { code?: unknown }).code === "string"
-      ? (error as { code: string }).code
-      : "";
-  const normalizedIdentifier = identifier.trim();
-  const identifierLooksLikeEmail = normalizedIdentifier.includes("@");
-
-  if (code === "auth/invalid-email") {
-    return new Error(EMAIL_VALIDATION_MESSAGE);
-  }
-
-  if (code === "auth/user-not-found") {
-    return new Error(
-      identifierLooksLikeEmail
-        ? "No account found for this email."
-        : "No account found for this username.",
-    );
-  }
-
-  if (
-    code === "auth/wrong-password" ||
-    code === "auth/invalid-credential" ||
-    code === "auth/invalid-login-credentials"
-  ) {
-    return new Error("Password is incorrect.");
-  }
-
-  if (code === "auth/too-many-requests") {
-    return new Error("Too many login attempts. Try again in a few minutes.");
-  }
-
-  if (code === "auth/network-request-failed") {
-    return new Error("Check your internet connection and try again.");
-  }
-
-  if (error instanceof Error) {
-    if (error.message === "Username not found.") {
-      return new Error("No account found for this username.");
-    }
-
-    if (error.message === "Username is not linked to an email.") {
-      return new Error("This username cannot be used for login right now.");
-    }
-
-    return error;
-  }
-
-  return new Error("Unable to login. Please try again.");
-};
 
 const mapAccountDeletionError = (error: unknown) => {
   const code =
@@ -472,7 +305,7 @@ const mapAccountDeletionError = (error: unknown) => {
     code === "auth/invalid-credential" ||
     code === "auth/invalid-login-credentials"
   ) {
-    return new Error("Enter your current password to delete your account.");
+    return new Error("Login again and then retry deleting your account.");
   }
 
   if (code === "auth/requires-recent-login") {
@@ -553,7 +386,7 @@ const writeUserProfile = async (payload: {
   email: string;
   role: string;
   accountStatus?: string;
-  provider: AuthProviderName;
+  provider: string;
   displayName?: string | null;
   photoURL?: string | null;
   bio?: string | null;
@@ -613,7 +446,7 @@ const writeExistingFederatedUserProfile = async (payload: {
   photoURL: string | null;
   bio: string;
   gender: string;
-  provider: Exclude<AuthProviderName, "password">;
+  provider: SupportedAuthProviderName;
 }) => {
   await setDoc(
     doc(firestore, USERS_COLLECTION, payload.uid),
@@ -634,7 +467,7 @@ const writeExistingFederatedUserProfile = async (payload: {
 
 const persistFederatedUserProfile = async (payload: {
   authUser: User;
-  provider: Exclude<AuthProviderName, "password">;
+  provider: SupportedAuthProviderName;
   email?: string | null;
   firstName?: string | null;
   lastName?: string | null;
@@ -840,128 +673,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const isUsernameAvailable = async (username: string, excludeUid?: string) =>
     isUsernameAvailableRecord(username, excludeUid);
 
-  const doesUsernameLoginIdentifierExist = async (identifier: string) => {
-    const normalizedIdentifier = identifier.trim();
-
-    if (!normalizedIdentifier || normalizedIdentifier.includes("@")) {
-      return false;
-    }
-
-    const usernameSnapshot = await getDoc(
-      doc(firestore, USERNAMES_COLLECTION, normalizeUsername(normalizedIdentifier)),
-    );
-    return usernameSnapshot.exists();
-  };
-
-  const loginWithEmailOrUsername = async (identifier: string, password: string) => {
-    const normalizedIdentifier = identifier.trim();
-    try {
-      const identifierLooksLikeEmail = normalizedIdentifier.includes("@");
-      let email = "";
-
-      if (identifierLooksLikeEmail) {
-        email = normalizeEmail(normalizedIdentifier);
-      } else {
-        if (!(await doesUsernameLoginIdentifierExist(normalizedIdentifier))) {
-          throw new Error("No account found for this username.");
-        }
-
-        email = await readUsernameEmail(normalizedIdentifier);
-      }
-
-      const credential = await signInWithEmailAndPassword(auth, email, password);
-      await ensureAccountIsActive(credential.user.uid);
-    } catch (error) {
-      if (auth.currentUser) {
-        await signOut(auth);
-      }
-
-      throw mapLoginError(error, normalizedIdentifier);
-    }
-  };
-
-  const requestPasswordReset = async (identifier: string) => {
-    const normalizedIdentifier = identifier.trim();
-
-    if (!normalizedIdentifier) {
-      throw new Error("Enter your email or username first.");
-    }
-
-    try {
-      const email = normalizedIdentifier.includes("@")
-        ? normalizeEmail(normalizedIdentifier)
-        : await readUsernameEmail(normalizedIdentifier);
-
-      await sendPasswordResetEmail(auth, email);
-    } catch (error) {
-      throw mapPasswordResetError(error);
-    }
-  };
-
-  const signupWithEmail = async (payload: {
-    firstName: string;
-    lastName: string;
-    email: string;
-    username?: string;
-    password: string;
-  }) => {
-    const { firstName, lastName, email, username, password } = payload;
-    validateName("First name", firstName);
-    validateName("Last name", lastName);
-    const normalizedFirstName = normalizeName(firstName);
-    const normalizedLastName = normalizeName(lastName);
-    const normalizedEmail = normalizeEmail(email);
-    const normalizedUsername = normalizeUsername(username ?? "");
-    const requestedUsername = normalizedUsername || "";
-
-    if (requestedUsername) {
-      validateUsername(requestedUsername);
-      if (!(await isUsernameAvailableRecord(requestedUsername))) {
-        throw new Error("Username is already taken.");
-      }
-    }
-
-    let createdUser: User | null = null;
-
-    try {
-      const credential = await createUserWithEmailAndPassword(
-        auth,
-        normalizedEmail,
-        password
-      );
-      createdUser = credential.user;
-      const generatedUsername =
-        requestedUsername || getEmailSignupUsername(normalizedEmail, credential.user.uid);
-      validateUsername(generatedUsername);
-      const normalizedDisplayName = `${normalizedFirstName} ${normalizedLastName}`.trim();
-
-      await updateProfile(credential.user, {
-        displayName: normalizedDisplayName || generatedUsername,
-      });
-      await writeUserProfile({
-        uid: credential.user.uid,
-        username: generatedUsername,
-        firstName: normalizedFirstName,
-        lastName: normalizedLastName,
-        email: normalizedEmail,
-        role: getEffectiveUserRole("user"),
-        accountStatus: "active",
-        provider: "password",
-        displayName: normalizedDisplayName || generatedUsername,
-        photoURL: null,
-      });
-    } catch (error) {
-      if (createdUser) {
-        try {
-          await deleteUser(createdUser);
-        } catch {
-          // Keep the original signup error if cleanup fails.
-        }
-      }
-      throw mapEmailSignupError(error);
-    }
-  };
-
   const updateCurrentUserProfile = async (payload: {
     firstName: string;
     lastName: string;
@@ -1065,6 +776,59 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setProfile(nextProfile);
   };
 
+  const switchCurrentUserToAuthor = async () => {
+    const currentUser = auth.currentUser;
+
+    if (!currentUser) {
+      throw new Error("You must be logged in to switch your profile.");
+    }
+
+    const existingProfile = profile ?? createFallbackUserProfile(currentUser);
+    const currentRole = getEffectiveUserRole(existingProfile.role);
+
+    if (currentRole !== "user") {
+      throw new Error("Your author profile is already enabled.");
+    }
+
+    const userRef = doc(firestore, USERS_COLLECTION, currentUser.uid);
+
+    await runTransaction(firestore, async (transaction) => {
+      const userSnapshot = await transaction.get(userRef);
+      const dbProfile = userSnapshot.exists()
+        ? mapUserProfile(currentUser.uid, userSnapshot.data() as DocumentData)
+        : existingProfile;
+
+      if (
+        !dbProfile.firstName.trim() ||
+        !dbProfile.username.trim() ||
+        !dbProfile.gender.trim() ||
+        !dbProfile.bio.trim()
+      ) {
+        throw new Error("Complete your profile before switching to author.");
+      }
+
+      if (getEffectiveUserRole(dbProfile.role) !== "user") {
+        throw new Error("Your author profile is already enabled.");
+      }
+
+      transaction.set(
+        userRef,
+        {
+          role: "author",
+          accountStatus: "active",
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true },
+      );
+    });
+
+    setProfile({
+      ...existingProfile,
+      role: "author",
+      accountStatus: "active",
+    });
+  };
+
   const loginWithGoogleIdToken = async (idToken: string) => {
     const credential = GoogleAuthProvider.credential(idToken);
     const result = await signInWithCredential(auth, credential);
@@ -1101,7 +865,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
   };
 
-  const deleteCurrentUserAccount = async (currentPassword?: string) => {
+  const deleteCurrentUserAccount = async () => {
     const currentUser = auth.currentUser;
 
     if (!currentUser) {
@@ -1110,21 +874,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const existingProfile = profile ?? createFallbackUserProfile(currentUser);
     const provider = existingProfile.provider || resolveProvider(currentUser);
-    const normalizedEmail = normalizeEmail(existingProfile.email || currentUser.email || "");
-    const normalizedPassword = currentPassword?.trim() ?? "";
 
     try {
-      if (provider === "password" && normalizedPassword) {
-        if (!normalizedEmail) {
-          throw new Error("Unable to determine your account email.");
-        }
-
-        await reauthenticateWithCredential(
-          currentUser,
-          EmailAuthProvider.credential(normalizedEmail, normalizedPassword),
-        );
-      }
-
       if (!hasRecentLogin(currentUser)) {
         throw new Error("Login again and then retry deleting your account.");
       }
@@ -1162,11 +913,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             ),
           ),
           getDocs(
-            collection(
-              firestore,
-              USERS_COLLECTION,
-              currentUser.uid,
-              USER_NOTIFICATIONS_SUBCOLLECTION,
+            query(
+              collection(firestore, NOTIFICATIONS_COLLECTION),
+              where("uid", "==", currentUser.uid),
             ),
           ),
         ]);
@@ -1229,6 +978,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const logout = async () => {
+    const currentUser = auth.currentUser;
+    if (currentUser) {
+      const cachedPushToken = await getCachedPushTokenAsync().catch(() => "");
+      if (cachedPushToken) {
+        await deletePushTokenAsync({
+          token: cachedPushToken,
+          uid: currentUser.uid,
+        }).catch(() => {
+          // Ignore token cleanup failures during logout.
+        });
+      }
+    }
+
     await clearGoogleSessionsAsync();
 
     if (auth.currentUser) {
@@ -1248,10 +1010,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     isBootstrapping,
     setRememberSessionPersistence,
     isUsernameAvailable,
-    loginWithEmailOrUsername,
-    requestPasswordReset,
-    signupWithEmail,
     updateCurrentUserProfile,
+    switchCurrentUserToAuthor,
     loginWithGoogleIdToken,
     loginWithAppleCredential,
     deleteCurrentUserAccount,

@@ -1,17 +1,19 @@
 import { Pressable, StyleSheet } from "react-native";
 
-import { PlusIcon } from "@/components/icons/plus-icon";
+import { AdminPanelIcon } from "@/components/icons/admin-panel-icon";
 import { type ThemeColors } from "@/constants/theme";
 import { useAppTheme } from "@/providers/theme-provider";
 
 type HeaderAdminButtonProps = {
   onPress: () => void;
   backgroundColor?: string;
+  accessibilityLabel?: string;
 };
 
 export function HeaderAdminButton({
   onPress,
   backgroundColor,
+  accessibilityLabel = "Open admin panel",
 }: HeaderAdminButtonProps) {
   const { colors } = useAppTheme();
   const styles = createStyles(colors, backgroundColor);
@@ -19,7 +21,7 @@ export function HeaderAdminButton({
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel="Open post studio"
+      accessibilityLabel={accessibilityLabel}
       hitSlop={6}
       style={({ hovered, pressed }) => [
         styles.iconButton,
@@ -27,7 +29,7 @@ export function HeaderAdminButton({
       ]}
       onPress={onPress}
     >
-      <PlusIcon size={22} color={colors.text} />
+      <AdminPanelIcon size={22} color={colors.text} />
     </Pressable>
   );
 }

@@ -2,7 +2,7 @@
   "expo": {
     "name": "DevGeet",
     "slug": "devgeet",
-    "version": "1.1.2",
+    "version": "1.1.26",
     "runtimeVersion": {
       "policy": "appVersion"
     },
@@ -20,7 +20,8 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.panditnaman.devgeet",
       "usesAppleSignIn": true,
-      "icon": "./assets/images/icon.png"
+      "icon": "./assets/images/icon.png",
+      "associatedDomains": ["applinks:dev-geet.firebaseapp.com"]
     },
     "android": {
       "adaptiveIcon": {
@@ -31,14 +32,29 @@
       },
       "package": "com.panditnaman.devgeet",
       "googleServicesFile": "./google-services.json",
+      "softwareKeyboardLayoutMode": "resize",
       "blockedPermissions": [
         "android.permission.READ_EXTERNAL_STORAGE",
         "android.permission.WRITE_EXTERNAL_STORAGE",
         "android.permission.SYSTEM_ALERT_WINDOW"
       ],
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": true,
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "category": ["BROWSABLE", "DEFAULT"],
+          "data": [
+            {
+              "scheme": "https",
+              "host": "dev-geet.firebaseapp.com"
+            }
+          ]
+        }
+      ]
     },
     "web": {
+      "bundler": "metro",
       "output": "static",
       "favicon": "./assets/images/favicon.png"
     },
@@ -55,11 +71,13 @@
         "expo-splash-screen",
         {
           "backgroundColor": "#EEF0F3",
-          "android": {
-            "image": "./assets/images/splash-icon.png",
-            "imageWidth": 200,
-            "resizeMode": "cover"
-          }
+          "image": "./assets/images/splash-icon.png",
+          "dark": {
+            "backgroundColor": "#15171C",
+            "image": "./assets/images/splash-icon.png"
+          },
+          "imageWidth": 220,
+          "resizeMode": "contain"
         }
       ],
       "expo-image",

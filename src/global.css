@@ -8,8 +8,8 @@
   --color-primary-text: Canvas;
   --radius-lg: 20px;
   --radius-md: 12px;
-  --font-sans: "GoogleSans-Regular", "ProductSans-Regular", sans-serif;
-  --font-display: "ProductSans-Bold", "GoogleSans-Bold", sans-serif;
+  --font-sans: "GoogleSans-Regular", sans-serif;
+  --font-display: "GoogleSans-Bold", sans-serif;
   color-scheme: light;
 }
 

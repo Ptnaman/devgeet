@@ -30,6 +30,7 @@ export function NotificationsProvider({
   const router = useRouter();
   const { user, profile, hasProfileDocument, isBootstrapping } = useAuth();
   const lastHandledNotificationRef = useRef("");
+  const lastSyncedTokenRef = useRef("");
 
   useEffect(() => {
     if (Platform.OS === "web") {
@@ -120,13 +121,7 @@ export function NotificationsProvider({
       const cachedToken = await getCachedPushTokenAsync().catch(() => "");
 
       if (!user) {
-        if (cachedToken) {
-          try {
-            await deletePushTokenAsync(cachedToken);
-          } catch {
-            // Ignore token cleanup failures during logout.
-          }
-        }
+        lastSyncedTokenRef.current = "";
 
         await clearCachedPushTokenAsync().catch(() => {
           // Ignore local cache cleanup failures.
@@ -147,12 +142,16 @@ export function NotificationsProvider({
         } else if (registration.status === "permission-denied") {
           if (cachedToken) {
             try {
-              await deletePushTokenAsync(cachedToken);
+              await deletePushTokenAsync({
+                token: cachedToken,
+                uid: user.uid,
+              });
             } catch {
               // Ignore token cleanup failures when permissions are revoked.
             }
           }
 
+          lastSyncedTokenRef.current = "";
           await clearCachedPushTokenAsync().catch(() => {
             // Ignore local cache cleanup failures.
           });
@@ -180,7 +179,9 @@ export function NotificationsProvider({
         await syncPushTokenAsync({
           uid: user.uid,
           token: tokenToSync,
+          previousToken: cachedToken,
         });
+        lastSyncedTokenRef.current = tokenToSync;
       } catch (error) {
         if (getErrorCode(error) === "permission-denied") {
           console.warn(
@@ -193,10 +194,37 @@ export function NotificationsProvider({
       }
     };
 
+    const notifications = getOptionalNotificationsModule();
+    const tokenSubscription =
+      user && notifications
+        ? notifications.addPushTokenListener((pushToken) => {
+            const nextToken = pushToken.data.trim();
+            if (!nextToken || !active) {
+              return;
+            }
+
+            const previousToken = lastSyncedTokenRef.current;
+            if (previousToken === nextToken) {
+              return;
+            }
+
+            lastSyncedTokenRef.current = nextToken;
+
+            void syncPushTokenAsync({
+              uid: user.uid,
+              token: nextToken,
+              previousToken,
+            }).catch((error) => {
+              console.warn("Unable to sync refreshed Expo push token.", error);
+            });
+          })
+        : null;
+
     void syncDeviceRegistration();
 
     return () => {
       active = false;
+      tokenSubscription?.remove();
     };
   }, [hasProfileDocument, isBootstrapping, profile?.accountStatus, user]);
 

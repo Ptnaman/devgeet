@@ -4,12 +4,10 @@ import { CategoryTabIcon } from "@/components/icons/category-tab-icon";
 import { FavoriteTabIcon } from "@/components/icons/favorite-tab-icon";
 import { HomeTabIcon } from "@/components/icons/home-tab-icon";
 import { SettingsTabIcon } from "@/components/icons/settings-tab-icon";
-import { SubscribeTabIcon } from "@/components/icons/subscribe-tab-icon";
 import { CategoriesTabContent } from "@/components/main-tabs/categories-tab-content";
 import { FavoriteTabContent } from "@/components/main-tabs/favorite-tab-content";
 import { HomeTabContent } from "@/components/main-tabs/home-tab-content";
 import { SettingsTabContent } from "@/components/main-tabs/settings-tab-content";
-import { SubscribeTabContent } from "@/components/main-tabs/subscribe-tab-content";
 import { MAIN_TAB_ORDER, type MainTabName } from "@/constants/main-tabs";
 
 type MainTabContentComponent = ComponentType<Record<string, never>>;
@@ -44,14 +42,6 @@ export const MAIN_TAB_DEFINITIONS = [
     Content: FavoriteTabContent,
     renderIcon: (color: string, focused: boolean) => (
       <FavoriteTabIcon color={color} size={24} filled={focused} />
-    ),
-  },
-  {
-    name: "subscribe",
-    label: "Subscribe",
-    Content: SubscribeTabContent,
-    renderIcon: (color: string, focused: boolean) => (
-      <SubscribeTabIcon color={color} size={24} filled={focused} />
     ),
   },
   {

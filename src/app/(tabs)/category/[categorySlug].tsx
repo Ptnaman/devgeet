@@ -17,6 +17,7 @@ import {
   View,
 } from "react-native";
 
+import { CategoryTabIcon } from "@/components/icons/category-tab-icon";
 import { FONT_SIZE, RADIUS, SHADOWS, SPACING, type ThemeColors } from "@/constants/theme";
 import {
   createSlug,
@@ -109,9 +110,12 @@ export default function CategoryPostsScreen() {
     () =>
       isLoading
         ? "Posts loading..."
-        : `${posts.length} published post${posts.length === 1 ? "" : "s"} found.`,
-    [isLoading, posts.length],
+        : "Browse all published posts in this category.",
+    [isLoading],
   );
+  const summaryLabel = isLoading
+    ? "Updating posts..."
+    : `${posts.length} published post${posts.length === 1 ? "" : "s"}`;
 
   const openPost = (postId: string) => {
     router.push({
@@ -127,12 +131,20 @@ export default function CategoryPostsScreen() {
   return (
     <View style={styles.screen}>
       <Stack.Screen options={{ title: categoryLabel }} />
-
       <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
         <View style={styles.heroCard}>
-          <Text style={styles.eyebrow}>Category</Text>
-          <Text style={styles.title}>{categoryLabel}</Text>
-          <Text style={styles.subtitle}>{subtitle}</Text>
+          <View style={styles.heroTopRow}>
+            <View style={styles.heroIconWrap}>
+              <CategoryTabIcon color={colors.accent} size={20} />
+            </View>
+            <View style={styles.heroTextWrap}>
+              <Text style={styles.eyebrow}>Category feed</Text>
+              <Text style={styles.subtitle}>{subtitle}</Text>
+            </View>
+          </View>
+          <View style={styles.summaryChip}>
+            <Text style={styles.summaryChipText}>{summaryLabel}</Text>
+          </View>
         </View>
 
         {showInlineError ? <Text style={styles.error}>{error}</Text> : null}
@@ -206,26 +218,54 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   heroCard: {
     borderRadius: RADIUS.md,
     borderWidth: 1,
-    borderColor: colors.accentBorder,
-    backgroundColor: colors.accentSoft,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
     padding: SPACING.lg,
-    gap: SPACING.xs,
+    gap: SPACING.md,
+    ...SHADOWS.sm,
+  },
+  heroTopRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.md,
+  },
+  heroIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: RADIUS.pill,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.accentSoft,
+    borderWidth: 1,
+    borderColor: colors.accentBorder,
+  },
+  heroTextWrap: {
+    flex: 1,
+    gap: 4,
   },
   eyebrow: {
-    color: colors.accent,
-    fontSize: 12,
-    fontWeight: "700",
-    textTransform: "uppercase",
-    letterSpacing: 0.6,
-  },
-  title: {
     color: colors.text,
-    fontSize: 24,
+    fontSize: 14,
     fontWeight: "700",
   },
   subtitle: {
     color: colors.mutedText,
-    fontSize: FONT_SIZE.body,
+    fontSize: 13,
+    lineHeight: 19,
+  },
+  summaryChip: {
+    alignSelf: "flex-start",
+    borderRadius: RADIUS.pill,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.xs + 1,
+    borderWidth: 1,
+    borderColor: colors.accentBorder,
+    backgroundColor: colors.accentSoft,
+  },
+  summaryChipText: {
+    color: colors.accent,
+    fontSize: 12,
+    fontWeight: "700",
   },
   error: {
     color: colors.danger,

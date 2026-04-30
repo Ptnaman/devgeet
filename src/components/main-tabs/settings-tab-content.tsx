@@ -16,6 +16,7 @@ import Svg, { Circle, Path } from "react-native-svg";
 
 import { AdminPanelIcon } from "@/components/icons/admin-panel-icon";
 import { ArrowRightIcon } from "@/components/icons/arrow-right-icon";
+import { HelpQuestionIcon } from "@/components/icons/help-question-icon";
 import { MainTabScrollView } from "@/components/main-tabs/main-tab-scroll-view";
 import { VerifiedRoleBadge } from "@/components/verified-role-badge";
 import { APP_LINKS } from "@/constants/app-links";
@@ -491,6 +492,20 @@ export function SettingsTabContent() {
             subtitle: "Tap to update app",
             value: `v${appVersion}`,
             onPress: () => router.push("/app-updates"),
+          }}
+          isLast
+        />
+      </View>
+
+      <Text style={styles.sectionLabel}>Help</Text>
+      <View style={styles.groupCard}>
+        <SettingRow
+          item={{
+            key: "help",
+            title: "Help",
+            subtitle: "Learn how to use the app and its features",
+            icon: <HelpQuestionIcon color={colors.accent} />,
+            onPress: () => router.push("/help"),
           }}
           isLast
         />

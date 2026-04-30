@@ -1,4 +1,4 @@
-import { StyleSheet, Text, TextInput, type StyleProp, type TextStyle } from "react-native";
+import { Platform, StyleSheet, Text, TextInput, type StyleProp, type TextStyle } from "react-native";
 
 export const APP_FONTS = {
   regular: "GoogleSans-Regular",
@@ -9,19 +9,11 @@ export const APP_FONTS = {
   boldItalic: "GoogleSans-BoldItalic",
 } as const;
 
-export const PRODUCT_FONTS = {
-  regular: "ProductSans-Regular",
-  medium: "ProductSans-Medium",
-  bold: "ProductSans-Bold",
-  italic: "ProductSans-Italic",
-  mediumItalic: "ProductSans-MediumItalic",
-  boldItalic: "ProductSans-BoldItalic",
-} as const;
+type FontVariant = "regular" | "medium" | "bold";
 
 const TEXT_STYLE_KEYS: readonly (keyof TextStyle)[] = [
   "color",
   "fontSize",
-  "fontStyle",
   "fontVariant",
   "fontWeight",
   "includeFontPadding",
@@ -35,6 +27,31 @@ const TEXT_STYLE_NAME_PATTERN =
   /(text|title|label|heading|subtitle|caption|copy|body|input|placeholder|helper|error|cta)/i;
 
 let hasInstalledTypography = false;
+
+const withFallbackStack = (fontFamily: string) =>
+  Platform.OS === "web" ? `${fontFamily}, sans-serif` : fontFamily;
+
+const resolveVariantFontFamily = (variant: FontVariant, isItalic = false) => {
+  if (variant === "regular") {
+    return isItalic ? APP_FONTS.italic : APP_FONTS.regular;
+  }
+
+  if (variant === "medium") {
+    return isItalic ? APP_FONTS.mediumItalic : APP_FONTS.medium;
+  }
+
+  if (variant === "bold") {
+    return isItalic ? APP_FONTS.boldItalic : APP_FONTS.bold;
+  }
+
+  return isItalic ? APP_FONTS.italic : APP_FONTS.regular;
+};
+
+export const resolveAppFontFamily = (variant: FontVariant) =>
+  withFallbackStack(resolveVariantFontFamily(variant));
+
+export const resolveProductFontFamily = (variant: FontVariant) =>
+  withFallbackStack(resolveVariantFontFamily(variant));
 
 const parseFontWeight = (value: TextStyle["fontWeight"]) => {
   if (typeof value === "number") {
@@ -58,14 +75,14 @@ const resolveFontFamily = (style: TextStyle) => {
   const isItalic = style.fontStyle === "italic";
 
   if (weight >= 700) {
-    return isItalic ? APP_FONTS.boldItalic : APP_FONTS.bold;
+    return withFallbackStack(resolveVariantFontFamily("bold", isItalic));
   }
 
   if (weight >= 500) {
-    return isItalic ? APP_FONTS.mediumItalic : APP_FONTS.medium;
+    return withFallbackStack(resolveVariantFontFamily("medium", isItalic));
   }
 
-  return isItalic ? APP_FONTS.italic : APP_FONTS.regular;
+  return withFallbackStack(resolveVariantFontFamily("regular", isItalic));
 };
 
 const shouldApplyFontFamily = (styleName: string, style: TextStyle) =>
@@ -88,6 +105,9 @@ const patchNamedStyles = <T extends Record<string, TextStyle | object>>(styles: 
       {
         ...styleValue,
         fontFamily: resolveFontFamily(textStyle),
+        // Avoid synthetic style conflicts: custom family already encodes weight/style.
+        fontWeight: undefined,
+        fontStyle: undefined,
       },
     ];
   });
@@ -105,12 +125,14 @@ const installDefaultProps = () => {
 
   textComponent.defaultProps = {
     ...textComponent.defaultProps,
-    style: [{ fontFamily: APP_FONTS.regular }, textComponent.defaultProps?.style].filter(Boolean),
+    style: [{ fontFamily: resolveAppFontFamily("regular") }, textComponent.defaultProps?.style].filter(
+      Boolean
+    ),
   };
 
   textInputComponent.defaultProps = {
     ...textInputComponent.defaultProps,
-    style: [{ fontFamily: APP_FONTS.regular }, textInputComponent.defaultProps?.style].filter(
+    style: [{ fontFamily: resolveAppFontFamily("regular") }, textInputComponent.defaultProps?.style].filter(
       Boolean
     ),
   };

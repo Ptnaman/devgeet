@@ -1,5 +1,5 @@
 import { useRouter } from "expo-router";
-import { useEffect, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -10,26 +10,17 @@ import {
   Text,
   View,
 } from "react-native";
-import { doc, onSnapshot, type DocumentData } from "firebase/firestore";
 
 import { AdminPanelIcon } from "@/components/icons/admin-panel-icon";
 import { LockPasswordIcon } from "@/components/icons/lock-password-icon";
 import { LogoutActionIcon } from "@/components/icons/logout-action-icon";
+import { MailInputIcon } from "@/components/icons/mail-input-icon";
 import { UserAvatarIcon } from "@/components/icons/user-avatar-icon";
 import { VerifiedRoleBadge } from "@/components/verified-role-badge";
 import { ArrowRightIcon } from "@/components/icons/arrow-right-icon";
 import { RADIUS, SHADOWS, SPACING, type ThemeColors } from "@/constants/theme";
 import {
-  AUTHOR_APPLICATIONS_COLLECTION,
-  AUTHOR_APPLICATION_STATUS_LABELS,
-  mapAuthorApplicationRecord,
-  type AuthorApplicationRecord,
-} from "@/lib/author-applications";
-import { firestore } from "@/lib/firebase";
-import {
-  DEFAULT_OFFLINE_MESSAGE,
   getActionErrorMessage,
-  getRequestErrorMessage,
 } from "@/lib/network";
 import { useAuth } from "@/providers/auth-provider";
 import { useNetworkStatus } from "@/providers/network-provider";
@@ -117,45 +108,12 @@ export default function ProfileScreen() {
     logout,
     profile,
     role,
-    requestPasswordReset,
+    switchCurrentUserToAuthor,
     user,
   } = useAuth();
   const styles = createStyles(colors);
-  const [application, setApplication] = useState<AuthorApplicationRecord | null>(null);
-  const [applicationError, setApplicationError] = useState("");
-  const [passwordError, setPasswordError] = useState("");
-  const [isSendingPasswordReset, setIsSendingPasswordReset] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
-
-  useEffect(() => {
-    if (!user?.uid || role !== "user") {
-      setApplication(null);
-      setApplicationError("");
-      return;
-    }
-
-    return onSnapshot(
-      doc(firestore, AUTHOR_APPLICATIONS_COLLECTION, user.uid),
-      (snapshot) => {
-        setApplication(
-          snapshot.exists()
-            ? mapAuthorApplicationRecord(snapshot.id, snapshot.data() as DocumentData)
-            : null,
-        );
-        setApplicationError("");
-      },
-      (snapshotError) => {
-        setApplication(null);
-        setApplicationError(
-          getRequestErrorMessage({
-            error: snapshotError,
-            isConnected,
-            onlineMessage: "Unable to load your creator application status.",
-          }),
-        );
-      },
-    );
-  }, [isConnected, role, user?.uid]);
+  const [isSwitchingRole, setIsSwitchingRole] = useState(false);
 
   if (user && !profile) {
     return (
@@ -180,25 +138,20 @@ export default function ProfileScreen() {
       .map((part) => part.charAt(0).toUpperCase())
       .join("") || "U";
   const accountEmail = profile?.email || user?.email || "No email";
-  const creatorStatus = application ? AUTHOR_APPLICATION_STATUS_LABELS[application.status] : "";
-  const isPasswordAccount = profile?.provider === "password";
+  const accountProviderLabel =
+    profile?.provider === "google"
+      ? "Google"
+      : profile?.provider === "apple"
+        ? "Apple"
+        : "Connected account";
   const hasCompleteAuthorProfile = Boolean(
     profile?.firstName.trim() &&
       profile?.username.trim() &&
       profile?.gender.trim() &&
       profile?.bio.trim(),
   );
-  const hasVerifiedAuthorAccount = profile?.provider === "google" || Boolean(user?.emailVerified);
-  const needsVerificationForAuthorAccess =
-    role === "user" && !canManagePosts && !hasVerifiedAuthorAccount;
   const needsProfileCompletionForAuthorAccess =
     role === "user" && !canManagePosts && !hasCompleteAuthorProfile;
-  const passwordProviderLabel =
-    profile?.provider === "google"
-      ? "Google"
-      : profile?.provider === "apple"
-        ? "Apple"
-        : "your provider";
 
   const openCreatorAction = () => {
     if (canManagePosts) {
@@ -206,60 +159,48 @@ export default function ProfileScreen() {
       return;
     }
 
-    router.push("/author-apply");
+    if (!hasCompleteAuthorProfile) {
+      router.push("/profile-edit");
+      return;
+    }
+
+    Alert.alert(
+      "Switch to Author Profile",
+      "Once you switch to author, you cannot change back to user from this app.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Switch",
+          onPress: () => {
+            void handleSwitchToAuthor();
+          },
+        },
+      ],
+    );
   };
 
-  const runChangePassword = async () => {
+  const handleSwitchToAuthor = async () => {
     if (!isConnected) {
       showOfflineToast();
       return;
     }
 
-    if (!accountEmail || accountEmail === "No email") {
-      setPasswordError("Unable to determine your account email.");
-      return;
-    }
-
     try {
-      setIsSendingPasswordReset(true);
-      setPasswordError("");
-      await requestPasswordReset(accountEmail);
-      showToast("Password reset email sent.");
-    } catch (passwordActionError) {
-      const message = getActionErrorMessage({
-        error: passwordActionError,
-        isConnected,
-        fallbackMessage: "Unable to send password reset email right now.",
-      });
-
-      if (message === DEFAULT_OFFLINE_MESSAGE) {
-        showOfflineToast();
-      }
-
-      setPasswordError(message);
+      setIsSwitchingRole(true);
+      await switchCurrentUserToAuthor();
+      showToast("Author profile enabled.");
+    } catch (error) {
+      Alert.alert(
+        "Unable to switch profile",
+        getActionErrorMessage({
+          error,
+          isConnected,
+          fallbackMessage: "Unable to switch to author right now.",
+        }),
+      );
     } finally {
-      setIsSendingPasswordReset(false);
+      setIsSwitchingRole(false);
     }
-  };
-
-  const handleChangePassword = () => {
-    if (!isPasswordAccount) {
-      return;
-    }
-
-    Alert.alert(
-      "Change Password",
-      `A password reset email will be sent to ${accountEmail}.`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Send Email",
-          onPress: () => {
-            void runChangePassword();
-          },
-        },
-      ],
-    );
   };
 
   const runLogout = async () => {
@@ -292,30 +233,19 @@ export default function ProfileScreen() {
     ? isAdmin
       ? "Open Admin Panel"
       : "Open My Posts"
-    : application?.status === "pending"
-      ? "Author Application"
-      : application?.status === "rejected"
-        ? "Reapply for Author Access"
-        : application?.status === "withdrawn"
-          ? "Apply Again for Author Access"
-          : "Apply for Author Access";
+    : isSwitchingRole
+      ? "Switching to Author..."
+      : needsProfileCompletionForAuthorAccess
+        ? "Complete Profile to Become Author"
+        : "Switch to Author Profile";
 
   const creatorSubtitle = canManagePosts
     ? isAdmin
       ? "Review users, posts, and admin tools"
       : "Create drafts and submit them for approval"
-    : application?.status === "pending"
-      ? "Your request is under admin review."
-      : application?.status === "rejected"
-        ? "Your last request was declined. Update it and apply again."
-      : application?.status === "withdrawn"
-        ? "You withdrew your last request. You can send a fresh one anytime."
-        : needsVerificationForAuthorAccess
-          ? "Verify your email first, or use Google login, before requesting creator access."
-          : needsProfileCompletionForAuthorAccess
-            ? "Complete your profile before requesting creator access."
-          : "Request creator access to write and submit posts.";
-  const canOpenPublicAuthorPage = role === "author" || role === "admin";
+    : needsProfileCompletionForAuthorAccess
+      ? "Complete your profile first, then switch to author in one step."
+      : "This is a one-way switch. After becoming an author you cannot go back to user.";
 
   const profileItems: ProfileMenuItem[] = [
     {
@@ -325,43 +255,20 @@ export default function ProfileScreen() {
       icon: <UserAvatarIcon color={colors.accent} size={18} />,
       onPress: () => router.push("/profile-edit"),
     },
-    ...(canOpenPublicAuthorPage
-      ? [
-          {
-            key: "public-profile",
-            title: "Public Author Page",
-            subtitle: "Open your public profile page",
-            value: "Live",
-            onPress: user?.uid
-              ? () => router.push({ pathname: "/author/[authorId]", params: { authorId: user.uid } })
-              : undefined,
-          } satisfies ProfileMenuItem,
-        ]
-      : []),
     {
       key: "email",
       title: "Email Address",
       subtitle: accountEmail,
-      icon: <LockPasswordIcon color={colors.iconMuted} size={18} />,
+      icon: <MailInputIcon color={colors.iconMuted} />,
       disabled: true,
       showChevron: false,
     },
-  ];
-
-  const securityItems: ProfileMenuItem[] = [
     {
-      key: "change-password",
-      title: isSendingPasswordReset ? "Sending reset email..." : "Change Password",
-      subtitle: isPasswordAccount
-        ? "Send a reset email to update your password"
-        : `Password is managed by ${passwordProviderLabel}`,
-      icon: <LockPasswordIcon color={isPasswordAccount ? colors.accent : colors.iconMuted} size={18} />,
-      onPress: isPasswordAccount
-        ? () => {
-            handleChangePassword();
-          }
-        : undefined,
-      disabled: isSendingPasswordReset || !isPasswordAccount,
+      key: "login-method",
+      title: "Login Method",
+      subtitle: accountProviderLabel,
+      icon: <LockPasswordIcon color={colors.iconMuted} size={18} />,
+      disabled: true,
       showChevron: false,
     },
   ];
@@ -422,26 +329,13 @@ export default function ProfileScreen() {
             key: "creator",
             title: creatorTitle,
             subtitle: creatorSubtitle,
-            value: !canManagePosts && creatorStatus ? creatorStatus : undefined,
             icon: <AdminPanelIcon color={colors.accent} size={18} />,
             onPress: openCreatorAction,
+            disabled: isSwitchingRole,
           }}
           isLast
         />
       </View>
-      {applicationError ? <Text style={styles.helperError}>{applicationError}</Text> : null}
-
-      <Text style={styles.sectionLabel}>Security</Text>
-      <View style={styles.groupCard}>
-        {securityItems.map((item, index) => (
-          <ProfileMenuRow
-            key={item.key}
-            item={item}
-            isLast={index === securityItems.length - 1}
-          />
-        ))}
-      </View>
-      {passwordError ? <Text style={styles.helperError}>{passwordError}</Text> : null}
 
       <Text style={styles.sectionLabel}>Session</Text>
       <View style={styles.groupCard}>

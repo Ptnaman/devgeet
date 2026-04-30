@@ -55,7 +55,6 @@ export function CategoriesTabContent() {
   return (
     <View style={styles.screen}>
       <MainTabScrollView tabName="categories" contentContainerStyle={styles.container}>
-        <Text style={styles.title}>Categories</Text>
         <Text style={styles.subtitle}>{subtitle}</Text>
 
         {showInlineError ? <Text style={styles.error}>{error}</Text> : null}

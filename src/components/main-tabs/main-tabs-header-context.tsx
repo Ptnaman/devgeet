@@ -4,6 +4,8 @@ import { type MainTabName } from "@/constants/main-tabs";
 
 type MainTabsHeaderContextType = {
   reportScrollOffset: (tabName: MainTabName, offsetY: number) => void;
+  setHeaderHidden: (tabName: MainTabName, hidden: boolean) => void;
+  setTabBarHidden: (tabName: MainTabName, hidden: boolean) => void;
 };
 
 export const MainTabsHeaderContext = createContext<

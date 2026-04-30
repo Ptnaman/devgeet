@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Redirect } from "expo-router";
 import {
   ActivityIndicator,
+  Alert,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -11,6 +12,7 @@ import {
 } from "react-native";
 import {
   collection,
+  deleteDoc,
   doc,
   getDoc,
   onSnapshot,
@@ -51,6 +53,10 @@ export default function AdminCategoriesScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [categoryName, setCategoryName] = useState("");
+  const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
+  const [editingCategoryName, setEditingCategoryName] = useState("");
+  const [isUpdatingCategoryId, setIsUpdatingCategoryId] = useState<string | null>(null);
+  const [isDeletingCategoryId, setIsDeletingCategoryId] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
@@ -89,6 +95,98 @@ export default function AdminCategoriesScreen() {
   const clearFeedback = () => {
     setError("");
     setSuccess("");
+  };
+
+  const handleStartRenameCategory = (category: CategoryRecord) => {
+    clearFeedback();
+    setEditingCategoryId(category.id);
+    setEditingCategoryName(category.name);
+  };
+
+  const handleCancelRenameCategory = () => {
+    setEditingCategoryId(null);
+    setEditingCategoryName("");
+  };
+
+  const handleRenameCategory = async (category: CategoryRecord) => {
+    const trimmedName = editingCategoryName.trim();
+
+    if (!trimmedName) {
+      setError("Category name is required.");
+      return;
+    }
+
+    if (trimmedName === category.name.trim()) {
+      setSuccess("No changes to save.");
+      handleCancelRenameCategory();
+      return;
+    }
+
+    try {
+      setIsUpdatingCategoryId(category.id);
+      clearFeedback();
+
+      await setDoc(
+        doc(firestore, CATEGORIES_COLLECTION, category.id),
+        {
+          name: trimmedName,
+          uploadDate: serverTimestamp(),
+        },
+        { merge: true },
+      );
+
+      setSuccess("Category renamed.");
+      handleCancelRenameCategory();
+    } catch (updateError) {
+      setError(
+        getActionErrorMessage({
+          error: updateError,
+          isConnected,
+          fallbackMessage: "Unable to rename category.",
+        }),
+      );
+    } finally {
+      setIsUpdatingCategoryId(null);
+    }
+  };
+
+  const runDeleteCategory = async (category: CategoryRecord) => {
+    try {
+      setIsDeletingCategoryId(category.id);
+      clearFeedback();
+      await deleteDoc(doc(firestore, CATEGORIES_COLLECTION, category.id));
+      if (editingCategoryId === category.id) {
+        handleCancelRenameCategory();
+      }
+      setSuccess("Category deleted.");
+    } catch (deleteError) {
+      setError(
+        getActionErrorMessage({
+          error: deleteError,
+          isConnected,
+          fallbackMessage: "Unable to delete category.",
+        }),
+      );
+    } finally {
+      setIsDeletingCategoryId(null);
+    }
+  };
+
+  const handleDeleteCategory = (category: CategoryRecord) => {
+    Alert.alert(
+      "Delete Category",
+      `Delete "${category.name}" category?`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: () => {
+            void runDeleteCategory(category);
+          },
+        },
+      ],
+    );
   };
 
   if (!isAdmin) {
@@ -198,10 +296,113 @@ export default function AdminCategoriesScreen() {
         ) : null}
         {categories.map((item, index) => (
           <View key={item.id} style={[styles.card, index > 0 ? styles.cardDivider : undefined]}>
-            <Text style={styles.cardTitle}>{item.name}</Text>
+            {editingCategoryId === item.id ? (
+              <>
+                <Text style={styles.cardLabel}>Rename Category</Text>
+                <View style={styles.inputWrap}>
+                  <TextInput
+                    value={editingCategoryName}
+                    onChangeText={setEditingCategoryName}
+                    placeholder="Category name"
+                    placeholderTextColor={colors.mutedText}
+                    style={styles.input}
+                    editable={isUpdatingCategoryId !== item.id && isDeletingCategoryId !== item.id}
+                  />
+                </View>
+              </>
+            ) : (
+              <Text style={styles.cardTitle}>{item.name}</Text>
+            )}
             <Text style={styles.cardMeta}>Slug: {item.slug}</Text>
             <Text style={styles.cardMeta}>Create Date: {formatDate(item.createDate)}</Text>
             <Text style={styles.cardMeta}>Upload Date: {formatDate(item.uploadDate)}</Text>
+            <View style={styles.cardActionRow}>
+              {editingCategoryId === item.id ? (
+                <>
+                  <Pressable
+                    style={({ pressed }) => [
+                      styles.secondaryButton,
+                      styles.cardActionButton,
+                      pressed && styles.buttonPressed,
+                      (isSaving ||
+                        isUpdatingCategoryId === item.id ||
+                        isDeletingCategoryId === item.id) &&
+                        styles.buttonDisabled,
+                    ]}
+                    onPress={handleCancelRenameCategory}
+                    disabled={
+                      isSaving ||
+                      isUpdatingCategoryId === item.id ||
+                      isDeletingCategoryId === item.id
+                    }
+                  >
+                    <Text style={styles.secondaryButtonText}>Cancel</Text>
+                  </Pressable>
+                  <Pressable
+                    style={({ pressed }) => [
+                      styles.primaryButton,
+                      styles.cardActionButton,
+                      pressed && styles.buttonPressed,
+                      (isSaving ||
+                        isUpdatingCategoryId === item.id ||
+                        isDeletingCategoryId === item.id) &&
+                        styles.buttonDisabled,
+                    ]}
+                    onPress={() => {
+                      void handleRenameCategory(item);
+                    }}
+                    disabled={
+                      isSaving ||
+                      isUpdatingCategoryId === item.id ||
+                      isDeletingCategoryId === item.id
+                    }
+                  >
+                    {isUpdatingCategoryId === item.id ? (
+                      <ActivityIndicator size="small" color={colors.primaryText} />
+                    ) : (
+                      <Text style={styles.primaryButtonText}>Save</Text>
+                    )}
+                  </Pressable>
+                </>
+              ) : (
+                <>
+                  <Pressable
+                    style={({ pressed }) => [
+                      styles.secondaryButton,
+                      styles.cardActionButton,
+                      pressed && styles.buttonPressed,
+                      (isSaving || !!isUpdatingCategoryId || !!isDeletingCategoryId) &&
+                        styles.buttonDisabled,
+                    ]}
+                    onPress={() => {
+                      handleStartRenameCategory(item);
+                    }}
+                    disabled={isSaving || !!isUpdatingCategoryId || !!isDeletingCategoryId}
+                  >
+                    <Text style={styles.secondaryButtonText}>Rename</Text>
+                  </Pressable>
+                  <Pressable
+                    style={({ pressed }) => [
+                      styles.dangerButton,
+                      styles.cardActionButton,
+                      pressed && styles.buttonPressed,
+                      (isSaving || !!isUpdatingCategoryId || !!isDeletingCategoryId) &&
+                        styles.buttonDisabled,
+                    ]}
+                    onPress={() => {
+                      handleDeleteCategory(item);
+                    }}
+                    disabled={isSaving || !!isUpdatingCategoryId || !!isDeletingCategoryId}
+                  >
+                    {isDeletingCategoryId === item.id ? (
+                      <ActivityIndicator size="small" color={colors.danger} />
+                    ) : (
+                      <Text style={styles.dangerButtonText}>Delete</Text>
+                    )}
+                  </Pressable>
+                </>
+              )}
+            </View>
           </View>
         ))}
       </View>
@@ -302,6 +503,52 @@ const createStyles = (colors: ThemeColors, resolvedTheme: ThemeMode) => {
     cardMeta: {
       color: colors.mutedText,
       fontSize: 12,
+    },
+    cardLabel: {
+      color: colors.mutedText,
+      fontSize: 12,
+      fontWeight: "600",
+      textTransform: "uppercase",
+      letterSpacing: 0.3,
+    },
+    cardActionRow: {
+      marginTop: SPACING.xs,
+      flexDirection: "row",
+      gap: SPACING.sm,
+    },
+    cardActionButton: {
+      flex: 1,
+      minHeight: 42,
+    },
+    secondaryButton: {
+      minHeight: CONTROL_SIZE.inputHeight,
+      borderRadius: RADIUS.md,
+      borderWidth: 1,
+      borderColor: outlineColor,
+      backgroundColor: colors.surface,
+      alignItems: "center",
+      justifyContent: "center",
+      paddingHorizontal: SPACING.md,
+    },
+    secondaryButtonText: {
+      color: colors.text,
+      fontSize: 14,
+      fontWeight: "700",
+    },
+    dangerButton: {
+      minHeight: CONTROL_SIZE.inputHeight,
+      borderRadius: RADIUS.md,
+      borderWidth: 1,
+      borderColor: colors.dangerBorder,
+      backgroundColor: colors.dangerSoft,
+      alignItems: "center",
+      justifyContent: "center",
+      paddingHorizontal: SPACING.md,
+    },
+    dangerButtonText: {
+      color: colors.danger,
+      fontSize: 14,
+      fontWeight: "700",
     },
   });
 };

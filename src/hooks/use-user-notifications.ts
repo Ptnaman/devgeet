@@ -2,6 +2,7 @@ import { onSnapshot, type DocumentData } from "firebase/firestore";
 import { useEffect, useMemo, useState } from "react";
 
 import {
+  enforceUserNotificationRetentionAsync,
   getUserNotificationsQuery,
   isCreatorUserNotification,
   mapUserNotificationRecord,
@@ -12,6 +13,11 @@ import { useAuth } from "@/providers/auth-provider";
 
 type UseUserNotificationsOptions = {
   category?: UserNotificationCategory | "all";
+};
+
+const getNotificationSortTime = (value: string) => {
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) ? timestamp : 0;
 };
 
 export function useUserNotifications({
@@ -33,15 +39,28 @@ export function useUserNotifications({
     const unsubscribe = onSnapshot(
       getUserNotificationsQuery(user.uid),
       (snapshot) => {
-        setAllNotifications(
-          snapshot.docs.map((item) =>
-            mapUserNotificationRecord(
-              item.id,
-              user.uid,
-              item.data() as DocumentData,
-            ),
+        const mappedNotifications = snapshot.docs.map((item) =>
+          mapUserNotificationRecord(
+            item.id,
+            user.uid,
+            item.data() as DocumentData,
           ),
         );
+        const sortedNotifications = [...mappedNotifications].sort(
+          (left, right) =>
+            getNotificationSortTime(right.createdAt) -
+            getNotificationSortTime(left.createdAt),
+        );
+
+        setAllNotifications(
+          sortedNotifications,
+        );
+        void enforceUserNotificationRetentionAsync({
+          uid: user.uid,
+          notifications: sortedNotifications,
+        }).catch(() => {
+          // Ignore lifecycle sync issues while reading notifications.
+        });
         setIsLoading(false);
       },
       () => {

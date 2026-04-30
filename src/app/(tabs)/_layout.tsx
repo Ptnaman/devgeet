@@ -19,6 +19,14 @@ export default function TabsLayout() {
         <Stack.Screen name="(main)/home" options={{ headerShown: false }} />
         <Stack.Screen name="(main)/[tab]" options={{ headerShown: false }} />
         <Stack.Screen
+          name="search"
+          options={{
+            headerShown: true,
+            headerShadowVisible: false,
+            title: "",
+          }}
+        />
+        <Stack.Screen
           name="app-updates"
           options={{
             title: "App Updates",
@@ -26,6 +34,20 @@ export default function TabsLayout() {
             headerTintColor: "#0F0F10",
             headerShadowVisible: false,
             contentStyle: { backgroundColor: "#FFFFFF" },
+          }}
+        />
+        <Stack.Screen
+          name="help"
+          options={{
+            title: "Help",
+            headerBackButtonDisplayMode: "minimal",
+          }}
+        />
+        <Stack.Screen
+          name="notifications"
+          options={{
+            title: "Notifications",
+            headerBackButtonDisplayMode: "minimal",
           }}
         />
         <Stack.Screen name="profile" options={{ title: "Profile" }} />
@@ -36,18 +58,7 @@ export default function TabsLayout() {
             headerBackButtonDisplayMode: "minimal",
           }}
         />
-        <Stack.Screen name="author-apply" options={{ title: "Author Access" }} />
-        <Stack.Screen
-          name="author-access-verification"
-          options={{
-            title: "Verify Email",
-            headerBackButtonDisplayMode: "minimal",
-          }}
-        />
-        <Stack.Screen
-          name="author/[authorId]"
-          options={{ title: "Author Profile" }}
-        />
+        <Stack.Screen name="author-apply" options={{ title: "Switch to Author" }} />
         <Stack.Screen name="post/[postId]" options={{ title: "Post Details" }} />
         <Stack.Screen
           name="category/[categorySlug]"
