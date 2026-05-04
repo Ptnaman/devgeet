@@ -164,6 +164,10 @@ export default function CategoryPostsScreen() {
         {!isLoading
           ? posts.map((post) => {
               const thumbnailUrl = getPostCardThumbnailUrl(post);
+              const authorName =
+                post.authorDisplayName.trim() ||
+                post.authorUsername.trim() ||
+                "Unknown Author";
 
               return (
                 <Pressable
@@ -194,6 +198,9 @@ export default function CategoryPostsScreen() {
                       ellipsizeMode="tail"
                     >
                       {post.content.trim() || "-"}
+                    </Text>
+                    <Text style={styles.postAuthor} numberOfLines={1}>
+                      {`By ${authorName}`}
                     </Text>
                   </View>
                 </Pressable>
@@ -291,8 +298,6 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   postCard: {
     borderRadius: RADIUS.sm,
     backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
     padding: SPACING.md,
     gap: SPACING.md,
     flexDirection: "row",
@@ -330,5 +335,11 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     color: colors.mutedText,
     fontSize: FONT_SIZE.body,
     lineHeight: 19,
+  },
+  postAuthor: {
+    color: colors.subtleText,
+    fontSize: 12,
+    fontWeight: "600",
+    lineHeight: 17,
   },
 });

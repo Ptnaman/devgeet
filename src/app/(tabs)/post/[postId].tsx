@@ -41,7 +41,6 @@ import {
   RADIUS,
   SHADOWS,
   SPACING,
-  STATIC_COLORS,
   type ThemeColors,
 } from "@/constants/theme";
 import { ArrowRightIcon } from "@/components/icons/arrow-right-icon";
@@ -388,7 +387,6 @@ function PostDetailsPage({
         >
           <View style={styles.categoryLinkContent}>
             <Text style={styles.categoryLinkText}>{`Category: ${categoryLabel}`}</Text>
-            <ArrowRightIcon color={STATIC_COLORS.black} size={12} />
           </View>
         </Pressable>
         <Text style={styles.metaSeparator}>·</Text>
@@ -528,6 +526,7 @@ export default function PostDetailsScreen() {
   const { isConnected, showOfflineToast, showToast } = useNetworkStatus();
   const router = useRouter();
   const { width } = useWindowDimensions();
+  const swipeWidth = Math.max(width, 1);
   const {
     postId: postIdParam,
     swipeSource: swipeSourceParam,
@@ -1054,12 +1053,11 @@ export default function PostDetailsScreen() {
       const direction = getSwipeDirection(event.translationX);
       const targetPostId = direction === "left" ? nextSwipePostId : previousSwipePostId;
       const hasAdjacentPost = Boolean(targetPostId) && targetPostId !== currentPostId;
-      const safeWidth = Math.max(width, 1);
       const dampenedOffset = hasAdjacentPost
         ? event.translationX
         : event.translationX * EDGE_RESISTANCE;
       const maxOffset =
-        safeWidth * (hasAdjacentPost ? MAX_DRAG_RATIO : EDGE_RESISTANCE);
+        swipeWidth * (hasAdjacentPost ? MAX_DRAG_RATIO : EDGE_RESISTANCE);
       const nextPreviewDirection = hasAdjacentPost ? direction : null;
       const nextPreviewDirectionValue =
         nextPreviewDirection === "left" ? 1 : nextPreviewDirection === "right" ? 2 : 0;
@@ -1079,7 +1077,6 @@ export default function PostDetailsScreen() {
       const direction = getSwipeDirection(event.translationX);
       const targetPostId = direction === "left" ? nextSwipePostId : previousSwipePostId;
       const hasAdjacentPost = Boolean(targetPostId) && targetPostId !== currentPostId;
-      const safeWidth = Math.max(width, 1);
       const passedThreshold =
         Math.abs(event.translationX) >= SWIPE_DISTANCE_THRESHOLD ||
         Math.abs(event.velocityX) >= SWIPE_VELOCITY_THRESHOLD;
@@ -1091,7 +1088,7 @@ export default function PostDetailsScreen() {
 
       isSwipeNavigating.value = true;
       translateX.value = withTiming(
-        direction === "left" ? -safeWidth : safeWidth,
+        direction === "left" ? -swipeWidth : swipeWidth,
         { duration: RELEASE_DURATION },
         (finished) => {
           if (!finished) {
@@ -1123,15 +1120,14 @@ export default function PostDetailsScreen() {
     });
 
   const currentPageStyle = useAnimatedStyle(() => {
-    const safeWidth = Math.max(width, 1);
     const distance = Math.abs(translateX.value);
 
     return {
-      opacity: interpolate(distance, [0, safeWidth], [1, 0.94], Extrapolation.CLAMP),
+      opacity: interpolate(distance, [0, swipeWidth], [1, 0.94], Extrapolation.CLAMP),
       transform: [
         { translateX: translateX.value },
         {
-          scale: interpolate(distance, [0, safeWidth], [1, 0.992], Extrapolation.CLAMP),
+          scale: interpolate(distance, [0, swipeWidth], [1, 0.992], Extrapolation.CLAMP),
         },
       ],
     };
@@ -1139,16 +1135,26 @@ export default function PostDetailsScreen() {
 
   const previousPageStyle = useAnimatedStyle(() => ({
     opacity: canSwipeToPreviousPost
-      ? interpolate(translateX.value, [0, width * 0.25, width], [0.18, 0.75, 1], Extrapolation.CLAMP)
+      ? interpolate(
+          translateX.value,
+          [0, swipeWidth * 0.25, swipeWidth],
+          [0.18, 0.75, 1],
+          Extrapolation.CLAMP,
+        )
       : 0,
-    transform: [{ translateX: -width + translateX.value }],
+    transform: [{ translateX: -swipeWidth + translateX.value }],
   }));
 
   const nextPageStyle = useAnimatedStyle(() => ({
     opacity: canSwipeToNextPost
-      ? interpolate(-translateX.value, [0, width * 0.25, width], [0.18, 0.75, 1], Extrapolation.CLAMP)
+      ? interpolate(
+          -translateX.value,
+          [0, swipeWidth * 0.25, swipeWidth],
+          [0.18, 0.75, 1],
+          Extrapolation.CLAMP,
+        )
       : 0,
-    transform: [{ translateX: width + translateX.value }],
+    transform: [{ translateX: swipeWidth + translateX.value }],
   }));
 
   if (isLoading) {
@@ -1393,7 +1399,7 @@ export default function PostDetailsScreen() {
             >
               <View style={styles.headerMenuActionIconWrap}>
                 <BookmarkMenuIcon
-                  color={colors.text}
+                  color={colors.subtleText}
                   active={Boolean(post && isFavorite(post.id))}
                   size={18}
                 />
@@ -1504,17 +1510,21 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   },
   categoryLink: {
     borderRadius: RADIUS.pill,
+    borderWidth: 1,
+    borderColor: colors.accentBorder,
+    backgroundColor: colors.accentSoft,
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: 4,
   },
   categoryLinkContent: {
     flexDirection: "row",
     alignItems: "center",
-    gap: SPACING.xs,
   },
   categoryLinkPressed: {
     opacity: 0.7,
   },
   categoryLinkText: {
-    color: STATIC_COLORS.black,
+    color: colors.accent,
     fontSize: 12,
     fontWeight: "700",
   },

@@ -1,4 +1,4 @@
-import Svg, { Path, Rect } from "react-native-svg";
+import Svg, { Path } from "react-native-svg";
 
 type BookmarkMenuIconProps = {
   active?: boolean;
@@ -16,15 +16,30 @@ export function BookmarkMenuIcon({
 }: BookmarkMenuIconProps) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-      <Path d={BOOKMARK_PATH} fill={color} opacity={active ? 1 : 0.9} />
-      {active ? (
-        <Rect x="8.2" y="11.05" width="7.6" height="1.9" rx="0.95" fill="#FFFFFF" />
-      ) : (
-        <>
-          <Rect x="8.2" y="11.05" width="7.6" height="1.9" rx="0.95" fill="#FFFFFF" />
-          <Rect x="11.05" y="8.2" width="1.9" height="7.6" rx="0.95" fill="#FFFFFF" />
-        </>
-      )}
+      <Path
+        d={BOOKMARK_PATH}
+        fill="none"
+        stroke={color}
+        strokeWidth={1.5}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <Path
+        d="M14.5 10.6499H9.5"
+        stroke={color}
+        strokeWidth={1.5}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      {!active ? (
+        <Path
+          d="M12 8.20996V13.21"
+          stroke={color}
+          strokeWidth={1.5}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      ) : null}
     </Svg>
   );
 }

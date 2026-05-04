@@ -292,7 +292,7 @@ export default function SearchScreen() {
                 hasScrolled ? styles.headerSearchContainerScrolled : null,
                 {
                   paddingTop: Math.max(insets.top, SPACING.sm),
-                  backgroundColor: colors.surface,
+                  backgroundColor: "#FFFFFF",
                 },
               ]}
             >
@@ -447,6 +447,10 @@ export default function SearchScreen() {
               const favorite = isFavorite(post.id);
               const updatedLabel = formatDate(post.uploadDate || post.createDate);
               const previewText = getContentPreviewLines(post.content);
+              const authorName =
+                post.authorDisplayName.trim() ||
+                post.authorUsername.trim() ||
+                "Unknown Author";
 
               return (
                 <View key={post.id} style={styles.card}>
@@ -503,6 +507,9 @@ export default function SearchScreen() {
                     >
                       {previewText}
                     </Text>
+                    <Text style={styles.cardAuthor} numberOfLines={1}>
+                      {`By ${authorName}`}
+                    </Text>
                   </Pressable>
 
                   <View style={styles.cardFooter}>
@@ -521,14 +528,14 @@ export default function SearchScreen() {
 const createStyles = (colors: ThemeColors) => StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: colors.surface,
+    backgroundColor: colors.background,
   },
   container: {
     flexGrow: 1,
     paddingHorizontal: SPACING.xxl,
     paddingBottom: SPACING.xxl,
     gap: SPACING.xl,
-    backgroundColor: colors.surface,
+    backgroundColor: colors.background,
   },
   headerSearchContainer: {
     paddingHorizontal: SPACING.xxl,
@@ -647,8 +654,11 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     fontSize: 12,
   },
   card: {
-    padding: SPACING.sm,
+    borderRadius: RADIUS.md,
+    backgroundColor: colors.surface,
+    padding: SPACING.md,
     gap: SPACING.sm,
+    ...SHADOWS.sm,
   },
   cardBody: {
     gap: SPACING.sm,
@@ -681,6 +691,12 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     fontSize: FONT_SIZE.body,
     color: colors.mutedText,
     lineHeight: 21,
+  },
+  cardAuthor: {
+    fontSize: 12,
+    color: colors.subtleText,
+    fontWeight: "600",
+    lineHeight: 18,
   },
   cardFooter: {
     marginTop: SPACING.xs,

@@ -26,6 +26,7 @@ type HeaderNotificationsButtonProps = {
   unreadCount: number;
   onPress: () => void;
   backgroundColor?: string;
+  iconColor?: string;
   badgeMode?: "count" | "dot";
   accessibilityLabel?: string;
 };
@@ -59,6 +60,7 @@ export function HeaderNotificationsButton({
   unreadCount,
   onPress,
   backgroundColor,
+  iconColor,
   badgeMode = "count",
   accessibilityLabel,
 }: HeaderNotificationsButtonProps) {
@@ -88,7 +90,7 @@ export function HeaderNotificationsButton({
     >
       <NotificationBellIcon
         size={22}
-        color={highlightBell ? colors.accent : colors.text}
+        color={highlightBell ? colors.accent : iconColor ?? colors.text}
         filled={highlightBell}
         fillColor={colors.accentSoft}
         showAlertDot={showDotBadge}

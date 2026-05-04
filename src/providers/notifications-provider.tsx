@@ -7,12 +7,19 @@ import {
   deletePushTokenAsync,
   ensureNotificationHandlerConfigured,
   getCachedPushTokenAsync,
+  getNotificationBody,
   getNotificationPostId,
+  getNotificationRequestId,
+  getNotificationTitle,
   getOptionalNotificationsModule,
+  isCustomNotificationPayload,
   registerForPushNotificationsAsync,
   syncPushTokenAsync,
 } from "@/lib/notifications";
 import { useAuth } from "@/providers/auth-provider";
+import { useNetworkStatus } from "@/providers/network-provider";
+
+const MAX_CUSTOM_TOAST_MESSAGE_LENGTH = 180;
 
 const getErrorCode = (error: unknown) =>
   typeof error === "object" &&
@@ -22,6 +29,14 @@ const getErrorCode = (error: unknown) =>
     ? ((error as { code: string }).code || "").trim()
     : "";
 
+const truncateText = (value: string, limit: number) => {
+  if (value.length <= limit) {
+    return value;
+  }
+
+  return `${value.slice(0, Math.max(0, limit - 3)).trimEnd()}...`;
+};
+
 export function NotificationsProvider({
   children,
 }: {
@@ -29,7 +44,9 @@ export function NotificationsProvider({
 }) {
   const router = useRouter();
   const { user, profile, hasProfileDocument, isBootstrapping } = useAuth();
+  const { showToast } = useNetworkStatus();
   const lastHandledNotificationRef = useRef("");
+  const lastCustomNotificationToastRef = useRef("");
   const lastSyncedTokenRef = useRef("");
 
   useEffect(() => {
@@ -46,25 +63,43 @@ export function NotificationsProvider({
 
     let active = true;
 
+    const showCustomForegroundNotification = (notification: unknown) => {
+      if (!isCustomNotificationPayload(notification)) {
+        return;
+      }
+
+      const requestId = getNotificationRequestId(notification);
+      if (
+        requestId &&
+        requestId === lastCustomNotificationToastRef.current
+      ) {
+        return;
+      }
+
+      const title = getNotificationTitle(notification);
+      const body = getNotificationBody(notification);
+      const message = title && body ? `${title}: ${body}` : title || body;
+
+      if (!message) {
+        return;
+      }
+
+      if (requestId) {
+        lastCustomNotificationToastRef.current = requestId;
+      }
+
+      showToast(
+        truncateText(message, MAX_CUSTOM_TOAST_MESSAGE_LENGTH),
+      );
+    };
+
     const openNotificationTarget = (response: unknown) => {
       if (!response) {
         return;
       }
 
-      const requestId =
-        typeof response === "object" && response !== null
-          ? (
-              response as {
-                notification?: {
-                  request?: {
-                    identifier?: unknown;
-                  };
-                };
-              }
-            ).notification?.request?.identifier
-          : "";
-
-      if (typeof requestId !== "string" || !requestId) {
+      const requestId = getNotificationRequestId(response);
+      if (!requestId) {
         return;
       }
 
@@ -89,6 +124,10 @@ export function NotificationsProvider({
       notifications.addNotificationResponseReceivedListener(
         openNotificationTarget,
       );
+    const foregroundSubscription =
+      notifications.addNotificationReceivedListener(
+        showCustomForegroundNotification,
+      );
 
     void notifications.getLastNotificationResponseAsync()
       .then((response) => {
@@ -103,8 +142,9 @@ export function NotificationsProvider({
     return () => {
       active = false;
       subscription.remove();
+      foregroundSubscription.remove();
     };
-  }, [router]);
+  }, [router, showToast]);
 
   useEffect(() => {
     if (

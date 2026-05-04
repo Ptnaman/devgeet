@@ -192,6 +192,10 @@ export function FavoriteTabContent() {
 
         {favoritePosts.map((post) => {
           const thumbnailUrl = getPostCardThumbnailUrl(post);
+          const authorName =
+            post.authorDisplayName.trim() ||
+            post.authorUsername.trim() ||
+            "Unknown Author";
 
           return (
             <View key={post.id} style={styles.card}>
@@ -220,6 +224,9 @@ export function FavoriteTabContent() {
                   </Text>
                   <Text style={styles.cardPreview} numberOfLines={1} ellipsizeMode="tail">
                     {post.content.trim() || "-"}
+                  </Text>
+                  <Text style={styles.cardAuthor} numberOfLines={1}>
+                    {`By ${authorName}`}
                   </Text>
                 </View>
               </Pressable>
@@ -363,8 +370,6 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     backgroundColor: colors.surface,
     borderRadius: RADIUS.md,
     padding: SPACING.md,
-    borderWidth: 1,
-    borderColor: colors.border,
     ...SHADOWS.sm,
     flexDirection: "row",
     alignItems: "center",
@@ -410,6 +415,12 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     color: colors.mutedText,
     fontSize: 13,
     lineHeight: 18,
+  },
+  cardAuthor: {
+    color: colors.subtleText,
+    fontSize: 12,
+    fontWeight: "600",
+    lineHeight: 17,
   },
   removeButton: {
     alignItems: "center",

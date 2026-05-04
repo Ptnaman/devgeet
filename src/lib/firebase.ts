@@ -12,6 +12,7 @@ import {
 } from "firebase/auth";
 import type { Analytics } from "firebase/analytics";
 import { getFirestore } from "firebase/firestore";
+import { getFunctions } from "firebase/functions";
 import { Platform } from "react-native";
 
 const firebaseConfig = {
@@ -74,6 +75,7 @@ const createAuthInstance = (): Auth => {
 
 export const auth = createAuthInstance();
 export const firestore = getFirestore(firebaseApp);
+export const functions = getFunctions(firebaseApp, "us-central1");
 
 let analytics: Analytics | null = null;
 

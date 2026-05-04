@@ -87,6 +87,10 @@ export function HomeTabContent() {
           ? publishedPosts.map((post) => {
             const thumbnailUrl = getPostCardThumbnailUrl(post);
             const previewText = getContentPreviewLines(post.content);
+            const authorName =
+              post.authorDisplayName.trim() ||
+              post.authorUsername.trim() ||
+              "Unknown Author";
 
             return (
               <View key={post.id} style={styles.card}>
@@ -118,6 +122,9 @@ export function HomeTabContent() {
                   >
                     {previewText}
                   </Text>
+                  <Text style={styles.cardAuthor} numberOfLines={1}>
+                    {`By ${authorName}`}
+                  </Text>
                 </Pressable>
               </View>
             );
@@ -133,8 +140,8 @@ const createStyles = (
   resolvedTheme: "light" | "dark",
 ) => {
   const isDarkTheme = resolvedTheme === "dark";
-  const launcherBorderColor = isDarkTheme ? colors.inputBorderHover : colors.inputBorder || colors.border;
-  const launcherBackgroundColor = isDarkTheme ? colors.surfaceMuted : colors.inputBorder;
+  const launcherBorderColor = isDarkTheme ? colors.inputBorderHover : colors.border;
+  const launcherBackgroundColor = isDarkTheme ? colors.surface : "#FFFFFF";
 
   return StyleSheet.create({
     screen: {
@@ -144,7 +151,7 @@ const createStyles = (
       flexGrow: 1,
       padding: SPACING.xxl,
       gap: SPACING.xl,
-      backgroundColor: colors.surface,
+      backgroundColor: colors.background,
     },
     searchLauncher: {
       minHeight: 56,
@@ -156,7 +163,7 @@ const createStyles = (
       flexDirection: "row",
       alignItems: "center",
       gap: SPACING.sm,
-      ...(isDarkTheme ? null : SHADOWS.sm),
+      ...SHADOWS.sm,
     },
     searchLauncherPressed: {
       opacity: 0.86,
@@ -166,8 +173,11 @@ const createStyles = (
       fontSize: 15,
     },
     card: {
-      padding: SPACING.sm,
+      borderRadius: 14,
+      backgroundColor: colors.surface,
+      padding: SPACING.md,
       gap: SPACING.sm,
+      ...SHADOWS.sm,
     },
     cardBody: {
       gap: SPACING.sm,
@@ -181,13 +191,13 @@ const createStyles = (
     thumbnail: {
       width: "100%",
       height: 156,
-      borderRadius: RADIUS.md,
+      borderRadius: 9,
       backgroundColor: colors.surfaceSoft,
     },
     thumbnailFallback: {
       width: "100%",
       height: 156,
-      borderRadius: RADIUS.md,
+      borderRadius: 9,
       backgroundColor: colors.surfaceSoft,
     },
     cardTitle: {
@@ -200,6 +210,12 @@ const createStyles = (
       fontSize: FONT_SIZE.body,
       color: colors.mutedText,
       lineHeight: 21,
+    },
+    cardAuthor: {
+      fontSize: 12,
+      color: colors.subtleText,
+      fontWeight: "600",
+      lineHeight: 18,
     },
     cardFooter: {
       marginTop: SPACING.xs,

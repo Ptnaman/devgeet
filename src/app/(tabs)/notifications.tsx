@@ -1,7 +1,8 @@
-import { useMemo } from "react";
-import { useRouter } from "expo-router";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Stack, useRouter } from "expo-router";
 import {
   ActivityIndicator,
+  Alert,
   Image,
   Pressable,
   ScrollView,
@@ -11,9 +12,11 @@ import {
 } from "react-native";
 
 import { NotificationBellIcon } from "@/components/icons/notification-bell-icon";
+import { TrashActionIcon } from "@/components/icons/trash-action-icon";
 import { RADIUS, SHADOWS, SPACING, type ThemeColors } from "@/constants/theme";
 import { useUserNotifications } from "@/hooks/use-user-notifications";
 import {
+  deleteUserNotificationsAsync,
   formatUserNotificationRelativeTime,
   markUserNotificationsAsReadAsync,
   type UserNotificationRecord,
@@ -37,8 +40,17 @@ export default function NotificationsScreen() {
   const { notifications, unreadCount, isLoading } = useUserNotifications({
     category: "all",
   });
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const selectedCount = selectedIds.length;
+  const isSelectionMode = selectedCount > 0;
+  const selectedIdSet = useMemo(() => new Set(selectedIds), [selectedIds]);
 
   const subtitle = useMemo(() => {
+    if (isSelectionMode) {
+      return `${selectedCount} selected`;
+    }
+
     if (isLoading) {
       return "Loading notifications...";
     }
@@ -52,102 +64,225 @@ export default function NotificationsScreen() {
     }
 
     return `${unreadCount} unread of ${notifications.length}`;
-  }, [isLoading, notifications.length, unreadCount]);
+  }, [isLoading, isSelectionMode, notifications.length, selectedCount, unreadCount]);
 
-  const handleOpenNotification = (notification: UserNotificationRecord) => {
-    if (user?.uid && !notification.isRead) {
-      void markUserNotificationsAsReadAsync({
+  useEffect(() => {
+    if (!selectedIds.length) {
+      return;
+    }
+
+    const availableIdSet = new Set(notifications.map((item) => item.id));
+    setSelectedIds((currentIds) => {
+      const nextIds = currentIds.filter((id) => availableIdSet.has(id));
+      return nextIds.length === currentIds.length ? currentIds : nextIds;
+    });
+  }, [notifications, selectedIds.length]);
+
+  const toggleSelection = useCallback((notificationId: string) => {
+    setSelectedIds((currentIds) => {
+      if (currentIds.includes(notificationId)) {
+        return currentIds.filter((id) => id !== notificationId);
+      }
+
+      return [...currentIds, notificationId];
+    });
+  }, []);
+
+  const handleDeleteSelectedNotifications = useCallback(async () => {
+    if (!user?.uid || !selectedIds.length || isDeleting) {
+      return;
+    }
+
+    setIsDeleting(true);
+    try {
+      await deleteUserNotificationsAsync({
         uid: user.uid,
-        notificationIds: [notification.id],
-      }).catch(() => {
-        // Ignore read-state write issues.
+        notificationIds: selectedIds,
       });
+      setSelectedIds([]);
+    } catch {
+      Alert.alert(
+        "Unable to delete notifications",
+        "Please try again in a moment.",
+      );
+    } finally {
+      setIsDeleting(false);
+    }
+  }, [isDeleting, selectedIds, user?.uid]);
+
+  const handleConfirmDeleteSelected = useCallback(() => {
+    if (!selectedIds.length || isDeleting) {
+      return;
     }
 
-    if (notification.postId) {
-      router.push({
-        pathname: "/post/[postId]",
-        params: { postId: notification.postId },
-      });
-    }
-  };
+    Alert.alert(
+      "Delete selected notifications?",
+      `${selectedIds.length} notification${selectedIds.length === 1 ? "" : "s"} will be removed.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: () => {
+            void handleDeleteSelectedNotifications();
+          },
+        },
+      ],
+    );
+  }, [handleDeleteSelectedNotifications, isDeleting, selectedIds.length]);
+
+  const handleOpenNotification = useCallback(
+    (notification: UserNotificationRecord) => {
+      if (user?.uid && !notification.isRead) {
+        void markUserNotificationsAsReadAsync({
+          uid: user.uid,
+          notificationIds: [notification.id],
+        }).catch(() => {
+          // Ignore read-state write issues.
+        });
+      }
+
+      if (notification.postId) {
+        router.push({
+          pathname: "/post/[postId]",
+          params: { postId: notification.postId },
+        });
+      }
+    },
+    [router, user?.uid],
+  );
+
+  const handlePressNotification = useCallback(
+    (notification: UserNotificationRecord) => {
+      if (isSelectionMode) {
+        toggleSelection(notification.id);
+        return;
+      }
+
+      handleOpenNotification(notification);
+    },
+    [handleOpenNotification, isSelectionMode, toggleSelection],
+  );
+
+  const handleLongPressNotification = useCallback(
+    (notificationId: string) => {
+      toggleSelection(notificationId);
+    },
+    [toggleSelection],
+  );
 
   return (
-    <ScrollView
-      contentContainerStyle={styles.container}
-      showsVerticalScrollIndicator={false}
-    >
-      <View style={styles.headerCard}>
-        <Text style={styles.headerTitle}>Notifications</Text>
-        <Text style={styles.headerSubtitle}>{subtitle}</Text>
-      </View>
-
-      {isLoading ? (
-        <View style={styles.loadingWrap}>
-          <ActivityIndicator size="small" color={colors.primary} />
-        </View>
-      ) : null}
-
-      {!isLoading && !notifications.length ? (
-        <View style={styles.emptyCard}>
-          <View style={styles.emptyIconWrap}>
-            <NotificationBellIcon size={22} color={colors.mutedText} />
-          </View>
-          <Text style={styles.emptyTitle}>No notifications yet</Text>
-          <Text style={styles.emptyText}>
-            New updates and approvals will appear here.
-          </Text>
-        </View>
-      ) : null}
-
-      {!isLoading
-        ? notifications.map((notification) => {
-            const timeLabel = getTimeLabel(notification.createdAt);
-
-            return (
+    <>
+      <Stack.Screen
+        options={{
+          headerRight: () =>
+            isSelectionMode ? (
               <Pressable
-                key={notification.id}
                 style={({ pressed }) => [
-                  styles.card,
-                  !notification.isRead && styles.cardUnread,
-                  pressed && styles.cardPressed,
+                  styles.headerDeleteButton,
+                  pressed && styles.headerDeleteButtonPressed,
+                  isDeleting && styles.headerDeleteButtonDisabled,
                 ]}
-                onPress={() => handleOpenNotification(notification)}
+                onPress={handleConfirmDeleteSelected}
+                disabled={isDeleting}
+                accessibilityRole="button"
+                accessibilityLabel={`Delete ${selectedCount} selected notification${selectedCount === 1 ? "" : "s"}`}
               >
-                {notification.imageUrl ? (
-                  <Image source={{ uri: notification.imageUrl }} style={styles.cardImage} />
-                ) : (
-                  <View style={styles.cardImageFallback}>
-                    <NotificationBellIcon
-                      size={20}
-                      color={notification.isRead ? colors.subtleText : colors.primary}
-                    />
-                  </View>
-                )}
-
-                <View style={styles.cardBody}>
-                  <View style={styles.cardTopRow}>
-                    <Text style={styles.cardTitle} numberOfLines={1}>
-                      {notification.title}
-                    </Text>
-                    <View style={styles.cardMetaWrap}>
-                      {timeLabel ? (
-                        <Text style={styles.cardTime} numberOfLines={1}>
-                          {timeLabel}
-                        </Text>
-                      ) : null}
-                      {!notification.isRead ? <View style={styles.unreadDot} /> : null}
-                    </View>
-                  </View>
-                  <Text style={styles.cardText} numberOfLines={2}>
-                    {notification.body || "-"}
-                  </Text>
-                </View>
+                <TrashActionIcon size={18} color={colors.danger} />
               </Pressable>
-            );
-          })
-        : null}
-    </ScrollView>
+            ) : null,
+        }}
+      />
+
+      <ScrollView
+        contentContainerStyle={styles.container}
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={styles.headerCard}>
+          <Text style={styles.headerTitle}>Notifications</Text>
+          <Text style={styles.headerSubtitle}>{subtitle}</Text>
+        </View>
+
+        {isLoading ? (
+          <View style={styles.loadingWrap}>
+            <ActivityIndicator size="small" color={colors.primary} />
+          </View>
+        ) : null}
+
+        {!isLoading && !notifications.length ? (
+          <View style={styles.emptyCard}>
+            <View style={styles.emptyIconWrap}>
+              <NotificationBellIcon size={22} color={colors.mutedText} />
+            </View>
+            <Text style={styles.emptyTitle}>No notifications yet</Text>
+            <Text style={styles.emptyText}>
+              New updates and approvals will appear here.
+            </Text>
+          </View>
+        ) : null}
+
+        {!isLoading
+          ? notifications.map((notification) => {
+              const timeLabel = getTimeLabel(notification.createdAt);
+              const isSelected = selectedIdSet.has(notification.id);
+
+              return (
+                <Pressable
+                  key={notification.id}
+                  style={({ pressed }) => [
+                    styles.card,
+                    !notification.isRead && styles.cardUnread,
+                    isSelected && styles.cardSelected,
+                    pressed && styles.cardPressed,
+                  ]}
+                  onPress={() => {
+                    handlePressNotification(notification);
+                  }}
+                  onLongPress={() => {
+                    handleLongPressNotification(notification.id);
+                  }}
+                  delayLongPress={220}
+                >
+                  {notification.imageUrl ? (
+                    <Image source={{ uri: notification.imageUrl }} style={styles.cardImage} />
+                  ) : (
+                    <View style={styles.cardImageFallback}>
+                      <NotificationBellIcon
+                        size={20}
+                        color={notification.isRead ? colors.subtleText : colors.primary}
+                      />
+                    </View>
+                  )}
+
+                  <View style={styles.cardBody}>
+                    <View style={styles.cardTopRow}>
+                      <Text style={styles.cardTitle} numberOfLines={1}>
+                        {notification.title}
+                      </Text>
+                      <View style={styles.cardMetaWrap}>
+                        {isSelected ? (
+                          <View style={styles.selectedPill}>
+                            <Text style={styles.selectedPillText}>Selected</Text>
+                          </View>
+                        ) : null}
+                        {timeLabel ? (
+                          <Text style={styles.cardTime} numberOfLines={1}>
+                            {timeLabel}
+                          </Text>
+                        ) : null}
+                        {!notification.isRead ? <View style={styles.unreadDot} /> : null}
+                      </View>
+                    </View>
+                    <Text style={styles.cardText} numberOfLines={2}>
+                      {notification.body || "-"}
+                    </Text>
+                  </View>
+                </Pressable>
+              );
+            })
+          : null}
+      </ScrollView>
+    </>
   );
 }
 
@@ -232,6 +367,10 @@ const createStyles = (colors: ThemeColors) =>
       borderColor: colors.accentBorder,
       backgroundColor: colors.activeSurface,
     },
+    cardSelected: {
+      borderColor: colors.accent,
+      backgroundColor: colors.accentSoft,
+    },
     cardPressed: {
       opacity: 0.9,
     },
@@ -275,6 +414,21 @@ const createStyles = (colors: ThemeColors) =>
       gap: 7,
       flexShrink: 0,
     },
+    selectedPill: {
+      borderRadius: 999,
+      borderWidth: 1,
+      borderColor: colors.accentBorder,
+      backgroundColor: colors.accentSoft,
+      paddingHorizontal: 8,
+      paddingVertical: 3,
+    },
+    selectedPillText: {
+      color: colors.accent,
+      fontSize: 10,
+      fontWeight: "700",
+      lineHeight: 12,
+      textTransform: "uppercase",
+    },
     cardTime: {
       color: colors.subtleText,
       fontSize: 12,
@@ -290,5 +444,22 @@ const createStyles = (colors: ThemeColors) =>
       color: colors.mutedText,
       fontSize: 14,
       lineHeight: 22,
+    },
+    headerDeleteButton: {
+      width: 36,
+      height: 36,
+      borderRadius: 10,
+      borderWidth: 1,
+      borderColor: colors.dangerBorder,
+      backgroundColor: colors.dangerSoft,
+      alignItems: "center",
+      justifyContent: "center",
+      marginRight: 2,
+    },
+    headerDeleteButtonPressed: {
+      opacity: 0.86,
+    },
+    headerDeleteButtonDisabled: {
+      opacity: 0.56,
     },
   });

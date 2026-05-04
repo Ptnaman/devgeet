@@ -360,6 +360,10 @@ service cloud.firestore {
     }
 
     match /pushTokens/{tokenId} {
+      function isValidPushTokenProvider(provider) {
+        return provider == "fcm" || provider == "apns" || provider == "expo";
+      }
+
       function hasValidPushTokenDocId() {
         return !request.resource.data.keys().hasAny(["installationId"]) ||
           tokenId == (request.auth.uid + "%3A" + request.resource.data.installationId);
@@ -379,6 +383,13 @@ service cloud.firestore {
           ) &&
           request.resource.data.isActive == true &&
           request.resource.data.platform is string &&
+          (
+            !request.resource.data.keys().hasAny(["provider"]) ||
+            (
+              request.resource.data.provider is string &&
+              isValidPushTokenProvider(request.resource.data.provider)
+            )
+          ) &&
           (request.resource.data.appOwnership == null || request.resource.data.appOwnership is string) &&
           (request.resource.data.deviceName == null || request.resource.data.deviceName is string) &&
           (request.resource.data.deviceBrand == null || request.resource.data.deviceBrand is string) &&
@@ -388,6 +399,7 @@ service cloud.firestore {
             "installationId",
             "isActive",
             "platform",
+            "provider",
             "appOwnership",
             "deviceName",
             "deviceBrand",

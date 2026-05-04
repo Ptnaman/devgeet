@@ -19,9 +19,14 @@ const getAvatarUri = (...values: (string | null | undefined)[]) => {
 type HeaderProfileButtonProps = {
   onPress: () => void;
   backgroundColor?: string;
+  iconColor?: string;
 };
 
-export function HeaderProfileButton({ onPress, backgroundColor }: HeaderProfileButtonProps) {
+export function HeaderProfileButton({
+  onPress,
+  backgroundColor,
+  iconColor,
+}: HeaderProfileButtonProps) {
   const { colors } = useAppTheme();
   const { user, profile } = useAuth();
   const [hasImageError, setHasImageError] = useState(false);
@@ -52,7 +57,7 @@ export function HeaderProfileButton({ onPress, backgroundColor }: HeaderProfileB
         />
       ) : (
         <View style={[styles.avatarImage, styles.avatarFallback]}>
-          <UserAvatarIcon size={20} color={colors.text} />
+          <UserAvatarIcon size={20} color={iconColor ?? colors.text} />
         </View>
       )}
     </Pressable>

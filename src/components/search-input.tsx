@@ -82,7 +82,10 @@ export function SearchInput({
         autoCorrect={false}
         autoFocus={autoFocus}
         returnKeyType="search"
-        style={styles.input}
+        style={[
+          styles.input,
+          isFocused && styles.inputFocused,
+        ]}
         accessibilityLabel={accessibilityLabel ?? placeholder}
         selectionColor={colors.accent}
         onFocus={() => {
@@ -112,11 +115,11 @@ export function SearchInput({
 
 const createStyles = (colors: ThemeColors, resolvedTheme: "light" | "dark") => {
   const isDarkTheme = resolvedTheme === "dark";
-  const outlineColor = isDarkTheme ? colors.divider : colors.border;
   const containerBorderColor = isDarkTheme
     ? colors.inputBorderHover
-    : colors.inputBorder || outlineColor;
-  const containerBackgroundColor = isDarkTheme ? colors.surfaceMuted : colors.inputBorder;
+    : colors.border;
+  const containerBackgroundColor = isDarkTheme ? colors.surface : "#FFFFFF";
+  const focusedBorderColor = isDarkTheme ? colors.accentBorder : colors.inputBorderHover;
 
   return StyleSheet.create({
     container: {
@@ -130,10 +133,10 @@ const createStyles = (colors: ThemeColors, resolvedTheme: "light" | "dark") => {
       flexDirection: "row",
       alignItems: "center",
       gap: SPACING.sm,
-      ...(isDarkTheme ? null : SHADOWS.sm),
+      ...SHADOWS.sm,
     },
     containerFocused: {
-      borderColor: "transparent",
+      borderColor: focusedBorderColor,
     },
     input: {
       flex: 1,
@@ -145,6 +148,9 @@ const createStyles = (colors: ThemeColors, resolvedTheme: "light" | "dark") => {
       paddingBottom: 0,
       paddingHorizontal: 0,
       textAlignVertical: "center",
+    },
+    inputFocused: {
+      color: colors.accent,
     },
     backButton: {
       width: 34,

@@ -10,8 +10,8 @@ export default function TabsLayout() {
     <MainTabDataProvider>
       <Stack
         screenOptions={{
-          headerStyle: { backgroundColor: colors.surface },
-          headerTintColor: colors.text,
+          headerStyle: { backgroundColor: "#FFFFFF" },
+          headerTintColor: "#0F0F10",
           headerShadowVisible: false,
           contentStyle: { backgroundColor: colors.background },
         }}

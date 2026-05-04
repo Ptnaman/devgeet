@@ -14,11 +14,12 @@ import {
   where,
   type DocumentData,
 } from "firebase/firestore";
+import { httpsCallable } from "firebase/functions";
 import { Platform } from "react-native";
 
 import { LIGHT_COLORS } from "@/constants/theme";
 import { normalizeAccountStatus } from "@/lib/access";
-import { firestore } from "@/lib/firebase";
+import { firestore, functions } from "@/lib/firebase";
 import {
   createCustomUserNotificationAsync,
   createCustomUserNotificationsAsync,
@@ -31,18 +32,23 @@ export const PUSH_TOKENS_COLLECTION = "pushTokens";
 const USERS_COLLECTION = "users";
 
 const EXPO_PUSH_API_URL = "https://exp.host/--/api/v2/push/send";
+const PUSH_DISPATCH_FUNCTION_NAME = "dispatchPushNotifications";
 const DEFAULT_ANDROID_CHANNEL_ID = "default";
 const PUSH_TOKEN_STORAGE_KEY = "@devgeet/expoPushToken";
 const PUSH_TOKEN_DOC_ID_STORAGE_KEY = "@devgeet/pushTokenDocId";
 const PUSH_INSTALLATION_ID_STORAGE_KEY = "@devgeet/pushInstallationId";
 const DEFAULT_POST_PUBLISH_BODY = "Tap to read it on DevGeet.";
 const MAX_POST_PUBLISH_BODY_LENGTH = 180;
-const EXPO_PUSH_TOKEN_RETRY_DELAYS_MS = [750, 1500] as const;
+const DEVICE_PUSH_TOKEN_RETRY_DELAYS_MS = [750, 1500] as const;
 const PUSH_TOKEN_DEACTIVATE_AFTER_DAYS = 30;
 const PUSH_TOKEN_DELETE_AFTER_DAYS = 60;
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
 const PUSH_TOKEN_DEACTIVATE_AGE_MS = PUSH_TOKEN_DEACTIVATE_AFTER_DAYS * DAY_IN_MS;
 const PUSH_TOKEN_DELETE_AGE_MS = PUSH_TOKEN_DELETE_AFTER_DAYS * DAY_IN_MS;
+const useLegacyClientPushDispatch = false;
+const CUSTOM_NOTIFICATION_TYPE = "custom_notification";
+const NOTIFICATION_DATA_TITLE_KEY = "notificationTitle";
+const NOTIFICATION_DATA_BODY_KEY = "notificationBody";
 type NotificationsModule = typeof import("expo-notifications");
 
 type PushTokenRegistrationStatus =
@@ -86,6 +92,83 @@ export type CustomNotificationDispatchResult = {
   savedCount: number;
   pushRecipientCount: number;
   pushTokenCount: number;
+};
+
+type PushDispatchCallableRequest =
+  | {
+      action: "post-published";
+      payload: {
+        actorUid?: string;
+        authorUid?: string;
+        imageUrl?: string;
+        postContent: string;
+        postId: string;
+        postTitle: string;
+      };
+    }
+  | {
+      action: "post-published-to-all";
+      payload: {
+        excludeUids?: string[];
+        imageUrl?: string;
+        postContent: string;
+        postId: string;
+        postTitle: string;
+      };
+    }
+  | {
+      action: "post-published-to-user";
+      payload: {
+        imageUrl?: string;
+        postId: string;
+        postTitle: string;
+        uid: string;
+      };
+    }
+  | {
+      action: "custom-single";
+      payload: {
+        audience?: UserNotificationAudience;
+        body: string;
+        category?: UserNotificationCategory;
+        data?: Record<string, string>;
+        imageUrl?: string;
+        sendPush?: boolean;
+        title: string;
+        uid: string;
+      };
+    }
+  | {
+      action: "custom-all";
+      payload: {
+        audience?: UserNotificationAudience;
+        body: string;
+        category?: UserNotificationCategory;
+        data?: Record<string, string>;
+        excludeUids?: string[];
+        imageUrl?: string;
+        sendPush?: boolean;
+        title: string;
+      };
+    }
+  | {
+      action: "test-token";
+      payload: {
+        accountName?: string;
+        platform?: string;
+        token: string;
+      };
+    };
+
+const callPushDispatchAsync = async <TResponse>(
+  requestPayload: PushDispatchCallableRequest,
+) => {
+  const callable = httpsCallable<PushDispatchCallableRequest, TResponse>(
+    functions,
+    PUSH_DISPATCH_FUNCTION_NAME,
+  );
+  const response = await callable(requestPayload);
+  return response.data;
 };
 
 let cachedNotificationsModule: NotificationsModule | null | undefined;
@@ -150,6 +233,103 @@ export const getOptionalNotificationsModule = (): NotificationsModule | null => 
   return cachedNotificationsModule;
 };
 
+const readTrimmedString = (value: unknown) =>
+  typeof value === "string" ? value.trim() : "";
+
+type NotificationRequestContentShape = {
+  body?: unknown;
+  data?: unknown;
+  title?: unknown;
+};
+
+type NotificationRequestShape = {
+  content?: NotificationRequestContentShape;
+  identifier?: unknown;
+};
+
+const getNotificationRequest = (payload: unknown): NotificationRequestShape | null => {
+  if (!payload || typeof payload !== "object") {
+    return null;
+  }
+
+  const normalizedPayload = payload as {
+    notification?: {
+      request?: NotificationRequestShape;
+    };
+    request?: NotificationRequestShape;
+  };
+
+  if (normalizedPayload.notification?.request) {
+    return normalizedPayload.notification.request;
+  }
+
+  if (normalizedPayload.request) {
+    return normalizedPayload.request;
+  }
+
+  return null;
+};
+
+const getNotificationRequestContent = (payload: unknown) => {
+  const request = getNotificationRequest(payload);
+  if (!request?.content || typeof request.content !== "object") {
+    return null;
+  }
+
+  return request.content;
+};
+
+const readNotificationPayloadData = (payload: unknown) => {
+  const content = getNotificationRequestContent(payload);
+  if (!content?.data || typeof content.data !== "object") {
+    return {} as Record<string, string>;
+  }
+
+  const result: Record<string, string> = {};
+
+  Object.entries(content.data as Record<string, unknown>).forEach(([key, value]) => {
+    const normalizedKey = readTrimmedString(key);
+    const normalizedValue = readTrimmedString(value);
+    if (normalizedKey && normalizedValue) {
+      result[normalizedKey] = normalizedValue;
+    }
+  });
+
+  return result;
+};
+
+export const getNotificationPayloadData = (payload: unknown) =>
+  readNotificationPayloadData(payload);
+
+export const getNotificationPayloadType = (payload: unknown) =>
+  readTrimmedString(readNotificationPayloadData(payload).type).toLowerCase();
+
+export const isCustomNotificationPayload = (payload: unknown) =>
+  getNotificationPayloadType(payload) === CUSTOM_NOTIFICATION_TYPE;
+
+export const getNotificationRequestId = (payload: unknown) =>
+  readTrimmedString(getNotificationRequest(payload)?.identifier);
+
+export const getNotificationTitle = (payload: unknown) => {
+  const payloadData = readNotificationPayloadData(payload);
+  const titleFromData = readTrimmedString(payloadData[NOTIFICATION_DATA_TITLE_KEY]);
+  if (titleFromData) {
+    return titleFromData;
+  }
+
+  return readTrimmedString(getNotificationRequestContent(payload)?.title);
+};
+
+export const getNotificationBody = (payload: unknown) => {
+  const payloadData = readNotificationPayloadData(payload);
+  const bodyFromData = readTrimmedString(payloadData[NOTIFICATION_DATA_BODY_KEY]);
+  if (bodyFromData) {
+    return bodyFromData;
+  }
+
+  return readTrimmedString(getNotificationRequestContent(payload)?.body);
+};
+
 export const ensureNotificationHandlerConfigured = () => {
   if (hasConfiguredNotificationHandler) {
     return true;
@@ -162,12 +342,20 @@ export const ensureNotificationHandlerConfigured = () => {
 
   try {
     notifications.setNotificationHandler({
-      handleNotification: async () => ({
-        shouldShowBanner: true,
-        shouldShowList: true,
-        shouldPlaySound: true,
-        shouldSetBadge: false,
-      }),
+      handleNotification: async (notification) =>
+        isCustomNotificationPayload(notification)
+          ? {
+              shouldShowBanner: false,
+              shouldShowList: false,
+              shouldPlaySound: false,
+              shouldSetBadge: false,
+            }
+          : {
+              shouldShowBanner: true,
+              shouldShowList: true,
+              shouldPlaySound: true,
+              shouldSetBadge: false,
+            },
     });
     hasConfiguredNotificationHandler = true;
     return true;
@@ -208,75 +396,68 @@ const getErrorMessage = (error: unknown) =>
       ? error.trim()
       : "";
 
-const getExpoTokenFetchStatusCode = (message: string) => {
-  const matchedStatus = message.match(/\breceived:\s*(\d{3})\b/i);
-  return matchedStatus ? Number.parseInt(matchedStatus[1] ?? "", 10) : NaN;
-};
+const getPushTokenProvider = (platform: string) =>
+  platform.trim().toLowerCase() === "android"
+    ? "fcm"
+    : platform.trim().toLowerCase() === "ios"
+      ? "apns"
+      : "unknown";
 
-const getExpoTokenFetchRequestId = (message: string) => {
-  const matchedRequestId = message.match(/"requestId":"([^"]+)"/);
-  return matchedRequestId?.[1]?.trim() || "";
-};
-
-const getPushRegistrationRequestIdSuffix = (message: string) => {
-  const requestId = getExpoTokenFetchRequestId(message);
-  return requestId ? ` Request ID: ${requestId}.` : "";
-};
-
-const isRetryableExpoPushTokenError = (error: unknown) => {
+const isRetryableDevicePushTokenError = (error: unknown) => {
   const errorCode = getErrorCode(error);
   if (errorCode === "ERR_NOTIFICATIONS_NETWORK_ERROR") {
     return true;
   }
 
-  if (errorCode !== "ERR_NOTIFICATIONS_SERVER_ERROR") {
+  if (errorCode === "ERR_NOTIFICATIONS_SERVER_ERROR") {
+    return true;
+  }
+
+  const errorMessage = getErrorMessage(error).toLowerCase();
+  if (!errorMessage) {
     return false;
   }
 
-  const statusCode = getExpoTokenFetchStatusCode(getErrorMessage(error));
-  return Number.isNaN(statusCode) || statusCode >= 500;
+  return (
+    errorMessage.includes("timed out") ||
+    errorMessage.includes("timeout") ||
+    errorMessage.includes("temporar") ||
+    errorMessage.includes("network")
+  );
 };
 
 const createPushRegistrationFailureResult = ({
   error,
-  projectId,
 }: {
   error: unknown;
-  projectId: string;
 }): PushTokenRegistrationResult => {
   const debugMessage = getErrorMessage(error);
   const errorCode = getErrorCode(error);
-  const requestIdSuffix = getPushRegistrationRequestIdSuffix(debugMessage);
 
   if (errorCode === "ERR_NOTIFICATIONS_NETWORK_ERROR") {
     return {
       status: "network-error",
       token: null,
       errorMessage:
-        "Couldn't reach Expo's push notification service. Check the device connection and try again.",
+        "Couldn't reach the push notification service. Check the device connection and try again.",
       debugMessage,
     };
   }
 
   if (
     errorCode === "ERR_NOTIFICATIONS_NO_EXPERIENCE_ID" ||
-    errorCode === "ERR_NOTIFICATIONS_NO_APPLICATION_ID"
+    errorCode === "ERR_NOTIFICATIONS_NO_APPLICATION_ID" ||
+    errorCode === "ERR_NOTIFICATIONS_UNAVAILABLE"
   ) {
     return {
       status: "configuration-error",
       token: null,
       errorMessage:
-        "Push notification configuration is incomplete. Verify the Expo project ID and native app identifiers, then rebuild the app.",
-      debugMessage,
-    };
-  }
-
-  const statusCode = getExpoTokenFetchStatusCode(debugMessage);
-  if (!Number.isNaN(statusCode) && statusCode >= 400 && statusCode < 500) {
-    return {
-      status: "configuration-error",
-      token: null,
-      errorMessage: `Expo rejected push token registration. Verify that EAS project ${projectId} is linked to this app and rebuild if native IDs changed.${requestIdSuffix}`,
+        Platform.OS === "android"
+          ? "Push notification configuration is incomplete. Verify Firebase/FCM app configuration and rebuild the app."
+          : Platform.OS === "ios"
+            ? "Push notification configuration is incomplete. Verify APNs entitlements/capabilities and rebuild the app."
+            : "Push notification configuration is incomplete.",
       debugMessage,
     };
   }
@@ -286,24 +467,12 @@ const createPushRegistrationFailureResult = ({
     token: null,
     errorMessage:
       Platform.OS === "android"
-        ? `Expo push token registration failed on the server. This usually means Android FCM V1 credentials are missing or outdated for EAS project ${projectId}, or Expo had a temporary backend failure. Verify the credentials, then rebuild the app if they changed.${requestIdSuffix}`
+        ? "Failed to register Android device token for FCM. Verify Firebase configuration and retry."
         : Platform.OS === "ios"
-          ? `Expo push token registration failed on the server. Verify the APNs credentials for EAS project ${projectId}, then rebuild the app if they changed.${requestIdSuffix}`
-          : `Expo push token registration failed on the server.${requestIdSuffix}`,
+          ? "Failed to register iOS device token for APNs. Verify APNs setup and retry."
+          : "Push token registration failed.",
     debugMessage,
   };
-};
-
-const getExpoProjectId = () => {
-  const easProjectId = Constants.easConfig?.projectId;
-  if (typeof easProjectId === "string" && easProjectId.trim()) {
-    return easProjectId.trim();
-  }
-
-  const extraProjectId = Constants.expoConfig?.extra?.eas?.projectId;
-  return typeof extraProjectId === "string" && extraProjectId.trim()
-    ? extraProjectId.trim()
-    : "";
 };
 
 const cachePushTokenAsync = async (token: string) => {
@@ -662,27 +831,7 @@ export const clearCachedPushTokenAsync = async () => {
 };
 
 export const getNotificationPostId = (response: unknown) => {
-  const data =
-    typeof response === "object" && response !== null
-      ? (
-          response as {
-            notification?: {
-              request?: {
-                content?: {
-                  data?: unknown;
-                };
-              };
-            };
-          }
-        ).notification?.request?.content?.data
-      : null;
-
-  if (!data || typeof data !== "object") {
-    return "";
-  }
-
-  const postId = (data as Record<string, unknown>).postId;
-  return typeof postId === "string" && postId.trim() ? postId.trim() : "";
+  return readTrimmedString(getNotificationPayloadData(response).postId);
 };
 
 export const registerForPushNotificationsAsync =
@@ -715,26 +864,20 @@ export const registerForPushNotificationsAsync =
       return { status: "permission-denied", token: null };
     }
 
-    const projectId = getExpoProjectId();
-    if (!projectId) {
-      return {
-        status: "configuration-error",
-        token: null,
-        errorMessage:
-          "Expo project ID is missing from app configuration. Add extra.eas.projectId and rebuild the app.",
-      };
-    }
-
     let registrationError: unknown = null;
 
-    for (const [attemptIndex, delayMs] of [0, ...EXPO_PUSH_TOKEN_RETRY_DELAYS_MS].entries()) {
+    for (const [attemptIndex, delayMs] of [0, ...DEVICE_PUSH_TOKEN_RETRY_DELAYS_MS].entries()) {
       if (delayMs > 0) {
         await waitAsync(delayMs);
       }
 
       try {
-        const expoPushToken = await notifications.getExpoPushTokenAsync({ projectId });
-        const token = expoPushToken.data.trim();
+        const devicePushToken = await notifications.getDevicePushTokenAsync();
+        const token = readStringValue(devicePushToken.data);
+
+        if (!token) {
+          throw new Error("Empty native push token received.");
+        }
 
         await cachePushTokenAsync(token);
 
@@ -744,9 +887,9 @@ export const registerForPushNotificationsAsync =
         };
       } catch (error) {
         registrationError = error;
-        const isLastAttempt = attemptIndex === EXPO_PUSH_TOKEN_RETRY_DELAYS_MS.length;
+        const isLastAttempt = attemptIndex === DEVICE_PUSH_TOKEN_RETRY_DELAYS_MS.length;
 
-        if (!isRetryableExpoPushTokenError(error) || isLastAttempt) {
+        if (!isRetryableDevicePushTokenError(error) || isLastAttempt) {
           break;
         }
       }
@@ -755,8 +898,7 @@ export const registerForPushNotificationsAsync =
     return createPushRegistrationFailureResult({
       error:
         registrationError ??
-        new Error("Unable to register the device with Expo push notifications."),
-      projectId,
+        new Error("Unable to register the device for push notifications."),
     });
   };
 
@@ -802,6 +944,7 @@ export const syncPushTokenAsync = async ({
       installationId,
       isActive: true,
       platform: Platform.OS,
+      provider: getPushTokenProvider(Platform.OS),
       appOwnership: Constants.appOwnership ?? null,
       deviceName: Device.deviceName?.trim() || null,
       deviceBrand: Device.brand ?? null,
@@ -1107,6 +1250,26 @@ export const sendPostPublishedNotificationToUserAsync = async ({
   postTitle: string;
   imageUrl?: string;
 }) => {
+  const normalizedUid = uid.trim();
+  const normalizedPostId = postId.trim();
+  const normalizedPostTitle = postTitle.trim();
+
+  if (!normalizedUid || !normalizedPostId) {
+    return false;
+  }
+
+  if (!useLegacyClientPushDispatch) {
+    return callPushDispatchAsync<boolean>({
+      action: "post-published-to-user",
+      payload: {
+        uid: normalizedUid,
+        postId: normalizedPostId,
+        postTitle: normalizedPostTitle,
+        imageUrl,
+      },
+    });
+  }
+
   const tokens = await getActivePushTokensForUserAsync(uid);
 
   if (!tokens.length) {
@@ -1141,6 +1304,28 @@ export const sendPostPublishedNotificationToAllActiveUsersAsync = async ({
   imageUrl?: string;
   excludeUids?: string[];
 }) => {
+  const normalizedPostId = postId.trim();
+  const normalizedPostTitle = postTitle.trim();
+  const normalizedPostContent = postContent.trim();
+  const normalizedExcludeUids = getUniqueStrings(excludeUids);
+
+  if (!normalizedPostId || !normalizedPostTitle || !normalizedPostContent) {
+    return false;
+  }
+
+  if (!useLegacyClientPushDispatch) {
+    return callPushDispatchAsync<boolean>({
+      action: "post-published-to-all",
+      payload: {
+        postId: normalizedPostId,
+        postTitle: normalizedPostTitle,
+        postContent: normalizedPostContent,
+        imageUrl,
+        excludeUids: normalizedExcludeUids,
+      },
+    });
+  }
+
   const tokens = await getActivePushTokensForAllActiveUsersAsync({ excludeUids });
 
   if (!tokens.length) {
@@ -1192,6 +1377,22 @@ export const sendCustomPushNotificationToUserAsync = async ({
       pushRecipientCount: 0,
       pushTokenCount: 0,
     };
+  }
+
+  if (!useLegacyClientPushDispatch) {
+    return callPushDispatchAsync<CustomNotificationDispatchResult>({
+      action: "custom-single",
+      payload: {
+        uid: normalizedUid,
+        title: normalizedTitle,
+        body: normalizedBody,
+        imageUrl,
+        data,
+        category,
+        sendPush,
+        audience,
+      },
+    });
   }
 
   if (!(await isExistingActiveUserAsync(normalizedUid))) {
@@ -1267,6 +1468,22 @@ export const sendCustomPushNotificationToAllActiveUsersAsync = async ({
       pushRecipientCount: 0,
       pushTokenCount: 0,
     };
+  }
+
+  if (!useLegacyClientPushDispatch) {
+    return callPushDispatchAsync<CustomNotificationDispatchResult>({
+      action: "custom-all",
+      payload: {
+        title: normalizedTitle,
+        body: normalizedBody,
+        imageUrl,
+        data,
+        excludeUids: [...normalizedExcludedUids],
+        category,
+        sendPush,
+        audience,
+      },
+    });
   }
 
   const { activeUserUids, tokens } = sendPush
@@ -1347,6 +1564,25 @@ export const notifyPostPublishedAsync = async ({
 }) => {
   const normalizedAuthorUid = authorUid?.trim() || "";
   const normalizedActorUid = actorUid?.trim() || "";
+
+  if (!postId.trim() || !postTitle.trim() || !postContent.trim()) {
+    return false;
+  }
+
+  if (!useLegacyClientPushDispatch) {
+    return callPushDispatchAsync<boolean>({
+      action: "post-published",
+      payload: {
+        authorUid: normalizedAuthorUid,
+        actorUid: normalizedActorUid,
+        postId: postId.trim(),
+        postTitle: postTitle.trim(),
+        postContent: postContent.trim(),
+        imageUrl,
+      },
+    });
+  }
+
   const shouldNotifyAuthor =
     normalizedAuthorUid && normalizedAuthorUid !== normalizedActorUid;
   const tasks: Promise<boolean>[] = [
@@ -1403,6 +1639,17 @@ export const sendTestPushNotificationAsync = async ({
 
   if (!normalizedToken) {
     return false;
+  }
+
+  if (!useLegacyClientPushDispatch) {
+    return callPushDispatchAsync<boolean>({
+      action: "test-token",
+      payload: {
+        token: normalizedToken,
+        accountName,
+        platform,
+      },
+    });
   }
 
   const normalizedAccountName = accountName?.trim() || "your account";

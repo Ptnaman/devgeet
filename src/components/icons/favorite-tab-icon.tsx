@@ -1,7 +1,5 @@
 import Svg, { Path } from "react-native-svg";
 
-import { STATIC_COLORS } from "@/constants/theme";
-
 type FavoriteTabIconProps = {
   color: string;
   filled?: boolean;
@@ -15,15 +13,13 @@ export function FavoriteTabIcon({
   filled = false,
   size,
 }: FavoriteTabIconProps) {
-  const activeColor = filled ? STATIC_COLORS.black : color;
-
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-      {filled ? <Path d={BOOKMARK_PATH} fill={activeColor} /> : null}
+      {filled ? <Path d={BOOKMARK_PATH} fill={color} /> : null}
       <Path
         d={BOOKMARK_PATH}
         fill="none"
-        stroke={activeColor}
+        stroke={color}
         strokeWidth={1.5}
         strokeLinecap="round"
         strokeLinejoin="round"

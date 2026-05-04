@@ -88,8 +88,9 @@ export function MainTabsShell() {
   const activeTabItem = MAIN_TAB_DEFINITIONS.find((item) => item.name === activeTab);
   const activeTabLabel = activeTabItem ? activeTabItem.label : appName;
   const headerTitleText = activeTab === "home" ? appName : activeTabLabel;
-  const headerBackgroundColor = activeTab === "home" ? colors.surface : colors.background;
-  const homeHeaderIconBackgroundColor = activeTab === "home" ? colors.surfaceMuted : undefined;
+  const headerBackgroundColor = colors.surface;
+  const headerForegroundColor = colors.text;
+  const homeHeaderIconBackgroundColor = colors.surfaceMuted;
   const showHomeHeaderActions = activeTab === "home";
   const showProfileHeaderAction = activeTab !== "settings";
 
@@ -249,13 +250,6 @@ export function MainTabsShell() {
     router.push("/notifications");
   }, [router]);
 
-  const handleTabPress = useCallback(
-    (tabName: MainTabName) => {
-      snapToIndex(getMainTabIndex(tabName), false);
-    },
-    [snapToIndex],
-  );
-
   const panGesture = Gesture.Pan()
     .activeOffsetX([-SWIPE_ACTIVATION_OFFSET, SWIPE_ACTIVATION_OFFSET])
     .failOffsetY([-12, 12])
@@ -311,6 +305,13 @@ export function MainTabsShell() {
     transform: [{ translateX: translateX.value }],
   }));
 
+  const handleTabPress = useCallback(
+    (tabName: MainTabName) => {
+      snapToIndex(getMainTabIndex(tabName), false);
+    },
+    [snapToIndex],
+  );
+
   return (
     <MainTabsHeaderContext.Provider value={{ reportScrollOffset, setHeaderHidden, setTabBarHidden }}>
       <View style={[styles.screen, { backgroundColor: colors.background }]}>
@@ -345,7 +346,7 @@ export function MainTabsShell() {
             {!isHeaderHidden ? (
               <View style={styles.headerContent}>
                 <View style={styles.headerRow}>
-                  <Text style={[styles.headerTitle, { color: colors.text }]} numberOfLines={1}>
+                  <Text style={[styles.headerTitle, { color: headerForegroundColor }]} numberOfLines={1}>
                     {headerTitleText}
                   </Text>
                   {showHomeHeaderActions || showProfileHeaderAction ? (
@@ -356,6 +357,7 @@ export function MainTabsShell() {
                             unreadCount={unreadNotificationsCount}
                             onPress={openNotificationsPage}
                             backgroundColor={homeHeaderIconBackgroundColor}
+                            iconColor={headerForegroundColor}
                             badgeMode="dot"
                             accessibilityLabel={
                               unreadNotificationsCount
@@ -369,6 +371,7 @@ export function MainTabsShell() {
                         <HeaderProfileButton
                           onPress={openProfilePage}
                           backgroundColor={homeHeaderIconBackgroundColor}
+                          iconColor={headerForegroundColor}
                         />
                       ) : null}
                     </View>
