@@ -3,6 +3,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type ReactNode,
@@ -20,7 +21,8 @@ type NetworkContextType = {
   showOnlineToast: () => void;
 };
 
-const CHECK_INTERVAL_MS = 15000;
+const CHECK_INTERVAL_ONLINE_MS = 30000;
+const CHECK_INTERVAL_OFFLINE_MS = 60000;
 const CHECK_TIMEOUT_MS = 5000;
 const NETWORK_PING_URL = "https://www.gstatic.com/generate_204";
 const TOAST_HIDE_DELAY_MS = 2200;
@@ -64,7 +66,7 @@ const pingInternet = async () => {
   try {
     const response = await withTimeout(
       fetch(`${NETWORK_PING_URL}?t=${Date.now()}`, {
-        method: "GET",
+        method: "HEAD",
         headers: { "Cache-Control": "no-cache" },
       }),
       CHECK_TIMEOUT_MS,
@@ -127,9 +129,12 @@ export function NetworkProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (Platform.OS !== "web") {
       void refreshConnection();
+      const nextIntervalMs = isConnected
+        ? CHECK_INTERVAL_ONLINE_MS
+        : CHECK_INTERVAL_OFFLINE_MS;
       const intervalId = setInterval(() => {
         void refreshConnection();
-      }, CHECK_INTERVAL_MS);
+      }, nextIntervalMs);
       const subscription = AppState.addEventListener("change", (nextState: AppStateStatus) => {
         if (nextState === "active") {
           void refreshConnection();
@@ -155,7 +160,7 @@ export function NetworkProvider({ children }: { children: ReactNode }) {
       window.removeEventListener("online", syncBrowserState);
       window.removeEventListener("offline", syncBrowserState);
     };
-  }, [refreshConnection]);
+  }, [isConnected, refreshConnection]);
 
   useEffect(() => {
     if (previousConnectionRef.current === null) {
@@ -185,14 +190,24 @@ export function NetworkProvider({ children }: { children: ReactNode }) {
     };
   }, [clearToastTimer]);
 
-  const value: NetworkContextType = {
-    isConnected,
-    isCheckingConnection,
-    refreshConnection,
-    showToast,
-    showOfflineToast,
-    showOnlineToast,
-  };
+  const value = useMemo<NetworkContextType>(
+    () => ({
+      isConnected,
+      isCheckingConnection,
+      refreshConnection,
+      showToast,
+      showOfflineToast,
+      showOnlineToast,
+    }),
+    [
+      isCheckingConnection,
+      isConnected,
+      refreshConnection,
+      showOfflineToast,
+      showOnlineToast,
+      showToast,
+    ],
+  );
 
   return (
     <NetworkContext.Provider value={value}>

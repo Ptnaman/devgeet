@@ -10,8 +10,8 @@ export default function TabsLayout() {
     <MainTabDataProvider>
       <Stack
         screenOptions={{
-          headerStyle: { backgroundColor: "#FFFFFF" },
-          headerTintColor: "#0F0F10",
+          headerStyle: { backgroundColor: colors.surface },
+          headerTintColor: colors.text,
           headerShadowVisible: false,
           contentStyle: { backgroundColor: colors.background },
         }}
@@ -30,10 +30,10 @@ export default function TabsLayout() {
           name="app-updates"
           options={{
             title: "App Updates",
-            headerStyle: { backgroundColor: "#FFFFFF" },
-            headerTintColor: "#0F0F10",
+            headerStyle: { backgroundColor: colors.surface },
+            headerTintColor: colors.text,
             headerShadowVisible: false,
-            contentStyle: { backgroundColor: "#FFFFFF" },
+            contentStyle: { backgroundColor: colors.background },
           }}
         />
         <Stack.Screen

@@ -282,6 +282,7 @@ export default function ProfileScreen() {
       onPress: () => {
         void handleLogout();
       },
+      destructive: true,
       disabled: isLoggingOut,
       showChevron: false,
     },

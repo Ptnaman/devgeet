@@ -87,7 +87,8 @@ export function SearchInput({
           isFocused && styles.inputFocused,
         ]}
         accessibilityLabel={accessibilityLabel ?? placeholder}
-        selectionColor={colors.accent}
+        selectionColor={colors.inputFocus}
+        cursorColor={colors.inputFocus}
         onFocus={() => {
           setIsFocused(true);
           onFocusChange?.(true);
@@ -116,10 +117,10 @@ export function SearchInput({
 const createStyles = (colors: ThemeColors, resolvedTheme: "light" | "dark") => {
   const isDarkTheme = resolvedTheme === "dark";
   const containerBorderColor = isDarkTheme
-    ? colors.inputBorderHover
+    ? colors.inputBorder
     : colors.border;
   const containerBackgroundColor = isDarkTheme ? colors.surface : "#FFFFFF";
-  const focusedBorderColor = isDarkTheme ? colors.accentBorder : colors.inputBorderHover;
+  const focusedBorderColor = colors.inputBorderHover;
 
   return StyleSheet.create({
     container: {
@@ -150,7 +151,7 @@ const createStyles = (colors: ThemeColors, resolvedTheme: "light" | "dark") => {
       textAlignVertical: "center",
     },
     inputFocused: {
-      color: colors.accent,
+      color: colors.text,
     },
     backButton: {
       width: 34,

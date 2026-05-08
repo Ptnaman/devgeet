@@ -1309,7 +1309,7 @@ export const sendPostPublishedNotificationToAllActiveUsersAsync = async ({
   const normalizedPostContent = postContent.trim();
   const normalizedExcludeUids = getUniqueStrings(excludeUids);
 
-  if (!normalizedPostId || !normalizedPostTitle || !normalizedPostContent) {
+  if (!normalizedPostId || !normalizedPostTitle) {
     return false;
   }
 
@@ -1564,8 +1564,11 @@ export const notifyPostPublishedAsync = async ({
 }) => {
   const normalizedAuthorUid = authorUid?.trim() || "";
   const normalizedActorUid = actorUid?.trim() || "";
+  const normalizedPostId = postId.trim();
+  const normalizedPostTitle = postTitle.trim();
+  const normalizedPostContent = postContent.trim();
 
-  if (!postId.trim() || !postTitle.trim() || !postContent.trim()) {
+  if (!normalizedPostId || !normalizedPostTitle) {
     return false;
   }
 
@@ -1575,9 +1578,9 @@ export const notifyPostPublishedAsync = async ({
       payload: {
         authorUid: normalizedAuthorUid,
         actorUid: normalizedActorUid,
-        postId: postId.trim(),
-        postTitle: postTitle.trim(),
-        postContent: postContent.trim(),
+        postId: normalizedPostId,
+        postTitle: normalizedPostTitle,
+        postContent: normalizedPostContent,
         imageUrl,
       },
     });
@@ -1587,9 +1590,9 @@ export const notifyPostPublishedAsync = async ({
     normalizedAuthorUid && normalizedAuthorUid !== normalizedActorUid;
   const tasks: Promise<boolean>[] = [
     sendPostPublishedNotificationToAllActiveUsersAsync({
-      postId,
-      postTitle,
-      postContent,
+      postId: normalizedPostId,
+      postTitle: normalizedPostTitle,
+      postContent: normalizedPostContent,
       imageUrl,
       excludeUids: shouldNotifyAuthor ? [normalizedAuthorUid] : [],
     }),
@@ -1599,16 +1602,16 @@ export const notifyPostPublishedAsync = async ({
     tasks.push(
       sendPostPublishedNotificationToUserAsync({
         uid: normalizedAuthorUid,
-        postId,
-        postTitle,
+        postId: normalizedPostId,
+        postTitle: normalizedPostTitle,
         imageUrl,
       }),
     );
     tasks.push(
       createPostApprovedUserNotificationAsync({
         uid: normalizedAuthorUid,
-        postId,
-        postTitle,
+        postId: normalizedPostId,
+        postTitle: normalizedPostTitle,
         imageUrl,
       }).then(() => true),
     );

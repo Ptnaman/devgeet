@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Redirect, useRouter, type Href } from "expo-router";
 import {
   ActivityIndicator,
@@ -69,6 +69,7 @@ const getPostActivityTimestamp = (post: PostRecord) =>
 export default function AdminOverviewScreen() {
   const { colors, resolvedTheme } = useAppTheme();
   const { isConnected } = useNetworkStatus();
+  const isConnectedRef = useRef(isConnected);
   const router = useRouter();
   const { canManagePosts, isAdmin, profile } = useAuth();
   const styles = createStyles(colors, resolvedTheme);
@@ -80,8 +81,14 @@ export default function AdminOverviewScreen() {
   const ownerUid = profile?.uid ?? "";
 
   useEffect(() => {
+    isConnectedRef.current = isConnected;
+  }, [isConnected]);
+
+  useEffect(() => {
     const categoriesQuery = query(collection(firestore, CATEGORIES_COLLECTION), orderBy("name", "asc"));
-    const postsQuery = query(collection(firestore, POSTS_COLLECTION));
+    const postsQuery = query(
+      collection(firestore, POSTS_COLLECTION),
+    );
 
     const unsubscribeCategories = onSnapshot(
       categoriesQuery,
@@ -94,7 +101,7 @@ export default function AdminOverviewScreen() {
         setError(
           getRequestErrorMessage({
             error: snapshotError,
-            isConnected,
+            isConnected: isConnectedRef.current,
             onlineMessage: "Unable to load categories.",
           }),
         );
@@ -115,7 +122,7 @@ export default function AdminOverviewScreen() {
         setError(
           getRequestErrorMessage({
             error: snapshotError,
-            isConnected,
+            isConnected: isConnectedRef.current,
             onlineMessage: "Unable to load posts.",
           }),
         );
@@ -127,7 +134,7 @@ export default function AdminOverviewScreen() {
       unsubscribeCategories();
       unsubscribePosts();
     };
-  }, [isConnected]);
+  }, []);
 
   const stats = useMemo(() => {
     const ownedPosts = isAdmin

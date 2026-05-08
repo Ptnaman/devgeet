@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { Image } from "expo-image";
 import {
   ActivityIndicator,
+  Animated as RNAnimated,
   Alert,
-  Image,
-  Linking,
+  Easing,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -15,8 +16,9 @@ import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useKeepAwake } from "expo-keep-awake";
 import {
   collection,
+  documentId,
   doc,
-  getDoc,
+  getDocs,
   onSnapshot,
   query,
   where,
@@ -67,6 +69,7 @@ import {
 } from "@/lib/network";
 import { useAuth } from "@/providers/auth-provider";
 import { useLyricsReaderPreferences } from "@/providers/lyrics-reader-preferences-provider";
+import { useMainTabData } from "@/providers/main-tab-data-provider";
 import { useNetworkStatus } from "@/providers/network-provider";
 import { useAppTheme } from "@/providers/theme-provider";
 
@@ -93,11 +96,17 @@ const RESET_SPRING = {
   stiffness: 240,
 };
 const LYRICS_KEEP_AWAKE_TAG = "lyrics-reader-screen";
+const FAVORITE_SWIPE_FETCH_BATCH_SIZE = 10;
+const AUTHOR_ROLE_FETCH_CHUNK_SIZE = 10;
+const BOOKMARK_PROMPT_HIDDEN_OFFSET = 46;
+const BOOKMARK_PROMPT_SHOW_DURATION_MS = 260;
+const BOOKMARK_PROMPT_HIDE_DURATION_MS = 220;
+const POST_DETAILS_HEADER_TITLE = "Lyrics";
 const authorRoleCache = new Map<string, UserRole>();
 
 type SwipeDirection = "left" | "right";
 type SwipeSource = "author" | "category" | "favorite";
-type PostAuthorSnapshot = Pick<PostRecord, "authorId" | "authorRole" | "createdBy" | "hasAuthorRole">;
+type BookmarkPromptMode = "added" | "removed";
 
 function clamp(value: number, min: number, max: number) {
   "worklet";
@@ -177,10 +186,10 @@ function getPostAuthorUserId(
   return post?.authorId || post?.createdBy || "";
 }
 
-function getResolvedAuthorRole(
-  post: PostAuthorSnapshot | null,
+function resolvePostAuthorRole(
+  post: Pick<PostRecord, "authorId" | "authorRole" | "createdBy" | "hasAuthorRole"> | null,
   authorRolesByUserId: Record<string, UserRole>,
-) {
+): UserRole {
   if (!post) {
     return "user";
   }
@@ -197,12 +206,27 @@ function getResolvedAuthorRole(
   return authorRolesByUserId[authorUserId] || authorRoleCache.get(authorUserId) || "user";
 }
 
-function useResolvedAuthorRoles(posts: (PostAuthorSnapshot | null)[]) {
+function chunkPostIds(ids: string[], chunkSize: number) {
+  const chunks: string[][] = [];
+
+  for (let index = 0; index < ids.length; index += chunkSize) {
+    chunks.push(ids.slice(index, index + chunkSize));
+  }
+
+  return chunks;
+}
+
+function useResolvedAuthorRoles(
+  posts: (
+    Pick<PostRecord, "authorId" | "authorRole" | "createdBy" | "hasAuthorRole">
+    | null
+  )[],
+) {
   const [authorRolesByUserId, setAuthorRolesByUserId] = useState<Record<string, UserRole>>({});
-  const pendingAuthorRoleIdsRef = useRef(new Set<string>());
-  const isMountedRef = useRef(true);
-  const relevantPosts = useMemo(() => {
-    const postsByAuthorId = new Map<string, PostAuthorSnapshot>();
+
+  useEffect(() => {
+    const immediateRoles: Record<string, UserRole> = {};
+    const missingAuthorIds = new Set<string>();
 
     posts.forEach((post) => {
       if (!post) {
@@ -214,108 +238,123 @@ function useResolvedAuthorRoles(posts: (PostAuthorSnapshot | null)[]) {
         return;
       }
 
-      const currentPost = postsByAuthorId.get(authorUserId);
-      if (!currentPost || post.hasAuthorRole) {
-        postsByAuthorId.set(authorUserId, post);
-      }
-    });
-
-    return Array.from(postsByAuthorId.values());
-  }, [posts]);
-
-  useEffect(() => {
-    return () => {
-      isMountedRef.current = false;
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!relevantPosts.length) {
-      return;
-    }
-
-    const nextResolvedRoles: Record<string, UserRole> = {};
-
-    relevantPosts.forEach((post) => {
-      const authorUserId = getPostAuthorUserId(post);
-      if (!authorUserId) {
-        return;
-      }
-
       if (post.hasAuthorRole) {
         authorRoleCache.set(authorUserId, post.authorRole);
-        nextResolvedRoles[authorUserId] = post.authorRole;
+        immediateRoles[authorUserId] = post.authorRole;
         return;
       }
 
-      const cachedAuthorRole = authorRoleCache.get(authorUserId);
-      if (cachedAuthorRole) {
-        nextResolvedRoles[authorUserId] = cachedAuthorRole;
+      const cachedRole = authorRoleCache.get(authorUserId);
+      if (cachedRole) {
+        immediateRoles[authorUserId] = cachedRole;
         return;
       }
 
-      if (pendingAuthorRoleIdsRef.current.has(authorUserId)) {
-        return;
-      }
-
-      pendingAuthorRoleIdsRef.current.add(authorUserId);
-      void getDoc(doc(firestore, USERS_COLLECTION, authorUserId))
-        .then((snapshot) => {
-          const data = snapshot.data() as DocumentData | undefined;
-          const resolvedRole = snapshot.exists()
-            ? getEffectiveUserRole(typeof data?.role === "string" ? data.role : "")
-            : "user";
-
-          authorRoleCache.set(authorUserId, resolvedRole);
-
-          if (!isMountedRef.current) {
-            return;
-          }
-
-          setAuthorRolesByUserId((current) =>
-            current[authorUserId] === resolvedRole
-              ? current
-              : { ...current, [authorUserId]: resolvedRole },
-          );
-        })
-        .catch(() => {
-          authorRoleCache.set(authorUserId, "user");
-
-          if (!isMountedRef.current) {
-            return;
-          }
-
-          setAuthorRolesByUserId((current) =>
-            current[authorUserId] === "user"
-              ? current
-              : { ...current, [authorUserId]: "user" },
-          );
-        })
-        .finally(() => {
-          pendingAuthorRoleIdsRef.current.delete(authorUserId);
-        });
+      missingAuthorIds.add(authorUserId);
     });
 
-    if (!Object.keys(nextResolvedRoles).length) {
+    if (Object.keys(immediateRoles).length) {
+      setAuthorRolesByUserId((current) => {
+        let changed = false;
+        const nextState = { ...current };
+
+        Object.entries(immediateRoles).forEach(([authorUserId, role]) => {
+          if (nextState[authorUserId] === role) {
+            return;
+          }
+
+          nextState[authorUserId] = role;
+          changed = true;
+        });
+
+        return changed ? nextState : current;
+      });
+    }
+
+    if (!missingAuthorIds.size) {
       return;
     }
 
-    setAuthorRolesByUserId((current) => {
-      let hasChanges = false;
-      const nextState = { ...current };
+    const chunks = chunkPostIds(
+      Array.from(missingAuthorIds),
+      AUTHOR_ROLE_FETCH_CHUNK_SIZE,
+    );
+    let cancelled = false;
 
-      Object.entries(nextResolvedRoles).forEach(([authorUserId, role]) => {
-        if (nextState[authorUserId] === role) {
+    void Promise.all(
+      chunks.map((chunk) =>
+        getDocs(
+          query(
+            collection(firestore, USERS_COLLECTION),
+            where(documentId(), "in", chunk),
+          ),
+        ),
+      ),
+    )
+      .then((snapshots) => {
+        if (cancelled) {
           return;
         }
 
-        nextState[authorUserId] = role;
-        hasChanges = true;
+        const fetchedRoles: Record<string, UserRole> = {};
+        const seenIds = new Set<string>();
+
+        snapshots.forEach((snapshot) => {
+          snapshot.docs.forEach((item) => {
+            const data = item.data() as DocumentData;
+            const resolvedRole = getEffectiveUserRole(
+              typeof data.role === "string" ? data.role : "",
+            );
+
+            authorRoleCache.set(item.id, resolvedRole);
+            fetchedRoles[item.id] = resolvedRole;
+            seenIds.add(item.id);
+          });
+        });
+
+        missingAuthorIds.forEach((authorUserId) => {
+          if (seenIds.has(authorUserId)) {
+            return;
+          }
+
+          authorRoleCache.set(authorUserId, "user");
+          fetchedRoles[authorUserId] = "user";
+        });
+
+        setAuthorRolesByUserId((current) => {
+          let changed = false;
+          const nextState = { ...current };
+
+          Object.entries(fetchedRoles).forEach(([authorUserId, role]) => {
+            if (nextState[authorUserId] === role) {
+              return;
+            }
+
+            nextState[authorUserId] = role;
+            changed = true;
+          });
+
+          return changed ? nextState : current;
+        });
+      })
+      .catch(() => {
+        if (cancelled) {
+          return;
+        }
+
+        const fallbackRoles: Record<string, UserRole> = {};
+        missingAuthorIds.forEach((authorUserId) => {
+          authorRoleCache.set(authorUserId, "user");
+          fallbackRoles[authorUserId] = "user";
+        });
+
+        setAuthorRolesByUserId((current) => ({ ...fallbackRoles, ...current }));
       });
 
-      return hasChanges ? nextState : current;
-    });
-  }, [relevantPosts]);
+    return () => {
+      cancelled = true;
+    };
+  }, [posts]);
 
   return authorRolesByUserId;
 }
@@ -328,7 +367,6 @@ type PostDetailsPageProps = {
   onDecreaseLyricsFontSize: () => void;
   onIncreaseLyricsFontSize: () => void;
   onOpenCategory: (post: PostRecord) => void;
-  onOpenInYouTube: (url: string) => Promise<void>;
   onVideoPlaybackChange?: (isPlaying: boolean) => void;
   post: PostRecord;
   scrollViewRef?: RefObject<ScrollView | null>;
@@ -345,7 +383,6 @@ function PostDetailsPage({
   onDecreaseLyricsFontSize,
   onIncreaseLyricsFontSize,
   onOpenCategory,
-  onOpenInYouTube,
   onVideoPlaybackChange,
   post,
   scrollViewRef,
@@ -370,7 +407,13 @@ function PostDetailsPage({
       showsVerticalScrollIndicator={false}
     >
       {thumbnailUrl ? (
-        <Image source={{ uri: thumbnailUrl }} style={styles.thumbnail} resizeMode="cover" />
+        <Image
+          cachePolicy="memory-disk"
+          contentFit="cover"
+          source={{ uri: thumbnailUrl }}
+          style={styles.thumbnail}
+          transition={140}
+        />
       ) : null}
 
       <Text style={styles.title}>{post.title}</Text>
@@ -386,17 +429,22 @@ function PostDetailsPage({
           disabled={!interactive}
         >
           <View style={styles.categoryLinkContent}>
-            <Text style={styles.categoryLinkText}>{`Category: ${categoryLabel}`}</Text>
+            <Text style={styles.categoryLinkText}>{categoryLabel}</Text>
           </View>
         </Pressable>
-        <Text style={styles.metaSeparator}>·</Text>
-        <Text style={styles.meta}>{`Published: ${publishedLabel}`}</Text>
+        <Text style={[styles.meta, styles.metaPublished]}>{`Published: ${publishedLabel}`}</Text>
       </View>
 
       {post.authorId || post.createdBy ? (
         <View style={styles.authorCard}>
           {post.authorPhotoURL ? (
-            <Image source={{ uri: post.authorPhotoURL }} style={styles.authorAvatar} />
+            <Image
+              cachePolicy="memory-disk"
+              contentFit="cover"
+              source={{ uri: post.authorPhotoURL }}
+              style={styles.authorAvatar}
+              transition={120}
+            />
           ) : (
             <View style={[styles.authorAvatar, styles.authorAvatarFallback]}>
               <Text style={styles.authorAvatarText}>
@@ -477,6 +525,7 @@ function PostDetailsPage({
               height={220}
               videoId={youtubeVideoId}
               play={isVideoPlaying}
+              forceAndroidAutoplay
               initialPlayerParams={{ rel: false, modestbranding: true }}
               webViewStyle={styles.video}
               onError={(event: string) => {
@@ -501,17 +550,6 @@ function PostDetailsPage({
             {youtubePlayerError ? (
               <Text style={styles.videoErrorText}>Video not playing here.</Text>
             ) : null}
-            <Pressable
-              style={({ pressed }) => [
-                styles.openYoutubeButton,
-                interactive && pressed && styles.openYoutubeButtonPressed,
-              ]}
-              onPress={() => {
-                void onOpenInYouTube(post.youtubeVideoUrl);
-              }}
-            >
-              <Text style={styles.openYoutubeButtonText}>Open in YouTube</Text>
-            </Pressable>
           </View>
         </View>
       ) : null}
@@ -520,10 +558,11 @@ function PostDetailsPage({
 }
 
 export default function PostDetailsScreen() {
-  const { colors } = useAppTheme();
+  const { colors, resolvedTheme } = useAppTheme();
   const { canManagePosts, canModeratePosts, user } = useAuth();
   const { keepLyricsScreenAwakeEnabled } = useLyricsReaderPreferences();
   const { isConnected, showOfflineToast, showToast } = useNetworkStatus();
+  const isConnectedRef = useRef(isConnected);
   const router = useRouter();
   const { width } = useWindowDimensions();
   const swipeWidth = Math.max(width, 1);
@@ -541,10 +580,12 @@ export default function PostDetailsScreen() {
     swipePostIds?: string;
   }>();
   const { isFavorite, toggleFavorite } = useFavorites();
-  const styles = createStyles(colors);
+  const { publishedPosts } = useMainTabData();
+  const styles = createStyles(colors, resolvedTheme === "dark");
 
   const routePostId = resolvePostId(postIdParam);
   const swipeSource = resolveSwipeSource(swipeSourceParam);
+  const isSwipeDisabledForFavoriteSource = swipeSource === "favorite";
   const swipeAuthorId = resolveSwipeAuthorId(swipeAuthorIdParam);
   const swipeCategorySlug = resolveCategorySlug(swipeCategorySlugParam);
   const swipePostIds = useMemo(() => resolveSwipePostIds(swipePostIdsParam), [swipePostIdsParam]);
@@ -559,11 +600,112 @@ export default function PostDetailsScreen() {
   const [isVideoPlaying, setIsVideoPlaying] = useState(false);
   const [lyricsFontSize, setLyricsFontSize] = useState(DEFAULT_LYRICS_FONT_SIZE);
   const [isHeaderMenuVisible, setIsHeaderMenuVisible] = useState(false);
+  const [bookmarkPromptMode, setBookmarkPromptMode] = useState<BookmarkPromptMode | null>(null);
+  const bookmarkPromptOpacity = useRef(new RNAnimated.Value(0)).current;
+  const bookmarkPromptTranslateY = useRef(new RNAnimated.Value(BOOKMARK_PROMPT_HIDDEN_OFFSET)).current;
+  const bookmarkPromptAnimationRef = useRef<RNAnimated.CompositeAnimation | null>(null);
   const translateX = useSharedValue(0);
   const isSwipeNavigating = useSharedValue(false);
   const previewDirectionValue = useSharedValue(0);
   const [previewDirection, setPreviewDirection] = useState<SwipeDirection | null>(null);
   const [settlingPreviewPost, setSettlingPreviewPost] = useState<PostRecord | null>(null);
+
+  const stopBookmarkPromptAnimation = useCallback(() => {
+    if (bookmarkPromptAnimationRef.current) {
+      bookmarkPromptAnimationRef.current.stop();
+      bookmarkPromptAnimationRef.current = null;
+    }
+  }, []);
+
+  const resetBookmarkPromptAnimationValues = useCallback(() => {
+    bookmarkPromptOpacity.setValue(0);
+    bookmarkPromptTranslateY.setValue(BOOKMARK_PROMPT_HIDDEN_OFFSET);
+  }, [bookmarkPromptOpacity, bookmarkPromptTranslateY]);
+
+  const runBookmarkPromptAnimation = useCallback(
+    (open: boolean, onComplete?: () => void) => {
+      stopBookmarkPromptAnimation();
+
+      const nextOpacity = open ? 1 : 0;
+      const nextTranslateY = open ? 0 : BOOKMARK_PROMPT_HIDDEN_OFFSET;
+      const animation = RNAnimated.parallel([
+        RNAnimated.timing(bookmarkPromptOpacity, {
+          toValue: nextOpacity,
+          duration: open ? BOOKMARK_PROMPT_SHOW_DURATION_MS : BOOKMARK_PROMPT_HIDE_DURATION_MS,
+          easing: open
+            ? Easing.out(Easing.cubic)
+            : Easing.inOut(Easing.cubic),
+          useNativeDriver: true,
+        }),
+        RNAnimated.timing(bookmarkPromptTranslateY, {
+          toValue: nextTranslateY,
+          duration: open ? BOOKMARK_PROMPT_SHOW_DURATION_MS : BOOKMARK_PROMPT_HIDE_DURATION_MS,
+          easing: open
+            ? Easing.out(Easing.bezier(0.22, 1, 0.36, 1))
+            : Easing.inOut(Easing.bezier(0.4, 0, 1, 1)),
+          useNativeDriver: true,
+        }),
+      ]);
+
+      bookmarkPromptAnimationRef.current = animation;
+      animation.start(({ finished }) => {
+        if (bookmarkPromptAnimationRef.current === animation) {
+          bookmarkPromptAnimationRef.current = null;
+        }
+
+        if (finished) {
+          onComplete?.();
+        }
+      });
+    },
+    [
+      bookmarkPromptOpacity,
+      bookmarkPromptTranslateY,
+      stopBookmarkPromptAnimation,
+    ],
+  );
+
+  const dismissBookmarkPromptImmediately = useCallback(() => {
+    stopBookmarkPromptAnimation();
+    setBookmarkPromptMode(null);
+    resetBookmarkPromptAnimationValues();
+  }, [resetBookmarkPromptAnimationValues, stopBookmarkPromptAnimation]);
+
+  const closeBookmarkPrompt = useCallback(() => {
+    if (!bookmarkPromptMode) {
+      return;
+    }
+
+    runBookmarkPromptAnimation(false, () => {
+      setBookmarkPromptMode((current) => (current ? null : current));
+      resetBookmarkPromptAnimationValues();
+    });
+  }, [
+    bookmarkPromptMode,
+    resetBookmarkPromptAnimationValues,
+    runBookmarkPromptAnimation,
+  ]);
+
+  const showBookmarkPrompt = useCallback((mode: BookmarkPromptMode) => {
+    setBookmarkPromptMode(mode);
+    if (!bookmarkPromptMode) {
+      resetBookmarkPromptAnimationValues();
+    }
+    runBookmarkPromptAnimation(true);
+  }, [
+    bookmarkPromptMode,
+    resetBookmarkPromptAnimationValues,
+    runBookmarkPromptAnimation,
+  ]);
+
+  const handleViewBookmark = useCallback(() => {
+    closeBookmarkPrompt();
+    router.push({ pathname: "/home", params: { tab: "favorite" } });
+  }, [closeBookmarkPrompt, router]);
+
+  useEffect(() => {
+    isConnectedRef.current = isConnected;
+  }, [isConnected]);
 
   useEffect(() => {
     translateX.value = 0;
@@ -573,7 +715,14 @@ export default function PostDetailsScreen() {
   useEffect(() => {
     setIsHeaderMenuVisible(false);
     setIsVideoPlaying(false);
-  }, [post?.id]);
+    dismissBookmarkPromptImmediately();
+  }, [dismissBookmarkPromptImmediately, post?.id]);
+
+  useEffect(() => {
+    return () => {
+      stopBookmarkPromptAnimation();
+    };
+  }, [stopBookmarkPromptAnimation]);
 
   useEffect(() => {
     const pendingRoutePostId = pendingRoutePostIdRef.current;
@@ -629,6 +778,10 @@ export default function PostDetailsScreen() {
     () => swipePosts.find((item) => item.id === activePostId) ?? null,
     [activePostId, swipePosts],
   );
+  const cachedActivePost = useMemo(
+    () => publishedPosts.find((item) => item.id === activePostId) ?? null,
+    [activePostId, publishedPosts],
+  );
 
   useEffect(() => {
     if (!activePostId) {
@@ -648,10 +801,20 @@ export default function PostDetailsScreen() {
       return;
     }
 
+    if (cachedActivePost) {
+      setYoutubePlayerError("");
+      setPost((currentPost) =>
+        currentPost?.id === cachedActivePost.id ? currentPost : cachedActivePost,
+      );
+      setError("");
+      setIsLoading(false);
+      return;
+    }
+
     if (post?.id !== activePostId) {
       setIsLoading(true);
     }
-  }, [activePostId, activeSwipePost, post?.id]);
+  }, [activePostId, activeSwipePost, cachedActivePost, post?.id]);
 
   useEffect(() => {
     if (!activePostId) {
@@ -683,10 +846,18 @@ export default function PostDetailsScreen() {
         setIsLoading(false);
       },
       (snapshotError) => {
+        if (cachedActivePost) {
+          setYoutubePlayerError("");
+          setPost(cachedActivePost);
+          setError("");
+          setIsLoading(false);
+          return;
+        }
+
         setError(
           getRequestErrorMessage({
             error: snapshotError,
-            isConnected,
+            isConnected: isConnectedRef.current,
             onlineMessage: "Unable to load post details.",
           }),
         );
@@ -696,7 +867,7 @@ export default function PostDetailsScreen() {
     );
 
     return unsubscribe;
-  }, [activePostId, isConnected]);
+  }, [activePostId, cachedActivePost]);
 
   useEffect(() => {
     if (swipeSource === "author") {
@@ -805,26 +976,36 @@ export default function PostDetailsScreen() {
 
       let isActive = true;
 
+      const favoritePostIdChunks = chunkPostIds(
+        swipePostIds,
+        FAVORITE_SWIPE_FETCH_BATCH_SIZE,
+      );
+
       void Promise.all(
-        swipePostIds.map((postId) => getDoc(doc(firestore, POSTS_COLLECTION, postId))),
+        favoritePostIdChunks.map((postIdChunk) =>
+          getDocs(
+            query(
+              collection(firestore, POSTS_COLLECTION),
+              where(documentId(), "in", postIdChunk),
+            ),
+          ),
+        ),
       )
-        .then((snapshots) => {
+        .then((snapshotsByChunk) => {
           if (!isActive) {
             return;
           }
 
           const postsById = new Map<string, PostRecord>();
-          snapshots.forEach((snapshot) => {
-            if (!snapshot.exists()) {
-              return;
-            }
+          snapshotsByChunk.forEach((chunkSnapshot) => {
+            chunkSnapshot.docs.forEach((snapshot) => {
+              const nextPost = mapPostRecord(snapshot.id, snapshot.data() as DocumentData);
+              if (!isSwipeEligiblePost(nextPost)) {
+                return;
+              }
 
-            const nextPost = mapPostRecord(snapshot.id, snapshot.data() as DocumentData);
-            if (!isSwipeEligiblePost(nextPost)) {
-              return;
-            }
-
-            postsById.set(nextPost.id, nextPost);
+              postsById.set(nextPost.id, nextPost);
+            });
           });
 
           setSwipePosts(swipePostIds.map((postId) => postsById.get(postId)).filter(Boolean) as PostRecord[]);
@@ -844,9 +1025,14 @@ export default function PostDetailsScreen() {
   }, [swipeAuthorId, swipeCategorySlug, swipePostIds, swipeSource]);
 
   const handleToggleFavorite = async (targetPost: PostRecord) => {
+    const promptMode: BookmarkPromptMode = isFavorite(targetPost.id) ? "removed" : "added";
+    showBookmarkPrompt(promptMode);
+
     try {
-      await toggleFavorite(targetPost);
+      await toggleFavorite(targetPost, { showToast: false });
     } catch (toggleError) {
+      dismissBookmarkPromptImmediately();
+
       const message = getActionErrorMessage({
         error: toggleError,
         isConnected,
@@ -877,17 +1063,6 @@ export default function PostDetailsScreen() {
     setIsHeaderMenuVisible((current) => !current);
   };
 
-  const handleOpenInYouTube = async (url: string) => {
-    if (!isConnected) {
-      showOfflineToast();
-      return;
-    }
-
-    await Linking.openURL(url).catch(() => {
-      Alert.alert("YouTube unavailable", "Unable to open YouTube right now.");
-    });
-  };
-
   const handleOpenCategory = (targetPost: PostRecord) => {
     const categorySlug = createSlug(targetPost.category);
     if (!categorySlug) {
@@ -904,14 +1079,13 @@ export default function PostDetailsScreen() {
     router.push(`/admin/posts/edit?postId=${targetPost.id}`);
   };
 
-  const handleToggleVideoPlayback = (targetPost: PostRecord) => {
-    if (!getYouTubeVideoId(targetPost.youtubeVideoUrl)) {
-      Alert.alert("Video unavailable", "This post does not have a playable video.");
+  const handleBackNavigation = () => {
+    if (router.canGoBack()) {
+      router.back();
       return;
     }
 
-    setYoutubePlayerError("");
-    setIsVideoPlaying((current) => !current);
+    router.replace("/home");
   };
 
   const handleDecreaseLyricsFontSize = () => {
@@ -952,8 +1126,7 @@ export default function PostDetailsScreen() {
     [nextSwipePost, post, previousSwipePost, settlingPreviewPost],
   );
   const authorRolesByUserId = useResolvedAuthorRoles(visibleAuthorPosts);
-  const currentPostAuthorRole = getResolvedAuthorRole(post, authorRolesByUserId);
-  const canPlayCurrentPostVideo = Boolean(post && getYouTubeVideoId(post.youtubeVideoUrl));
+  const currentPostAuthorRole = resolvePostAuthorRole(post, authorRolesByUserId);
   const canEditCurrentPost = Boolean(
     post &&
       canManagePosts &&
@@ -971,7 +1144,9 @@ export default function PostDetailsScreen() {
   const nextSwipePostId = nextSwipePost?.id ?? "";
   const canSwipeToPreviousPost = Boolean(previousSwipePostId) && previousSwipePostId !== currentPostId;
   const canSwipeToNextPost = Boolean(nextSwipePostId) && nextSwipePostId !== currentPostId;
-  const isSwipeNavigationEnabled = canSwipeToPreviousPost || canSwipeToNextPost;
+  const isSwipeNavigationEnabled =
+    !isSwipeDisabledForFavoriteSource &&
+    (canSwipeToPreviousPost || canSwipeToNextPost);
   const setActivePreview = (direction: SwipeDirection | null) => {
     setPreviewDirection((currentDirection) =>
       currentDirection === direction ? currentDirection : direction,
@@ -1162,11 +1337,10 @@ export default function PostDetailsScreen() {
       <View style={styles.screen}>
         <Stack.Screen
           options={{
-            title: "Post Details",
+            title: POST_DETAILS_HEADER_TITLE,
             animation: "none",
-            headerStyle: {
-              backgroundColor: colors.surface,
-            },
+            headerShadowVisible: false,
+            headerTintColor: colors.text,
           }}
         />
         <View style={styles.loadingContainer}>
@@ -1181,18 +1355,17 @@ export default function PostDetailsScreen() {
       <View style={styles.screen}>
         <Stack.Screen
           options={{
-            title: "Post Details",
+            title: POST_DETAILS_HEADER_TITLE,
             animation: "none",
-            headerStyle: {
-              backgroundColor: colors.surface,
-            },
+            headerShadowVisible: false,
+            headerTintColor: colors.text,
           }}
         />
         <View style={styles.errorContainer}>
           <Text style={styles.errorTitle}>{error || "Post not available."}</Text>
           <Pressable
             style={({ pressed }) => [styles.backButton, pressed && styles.backButtonPressed]}
-            onPress={() => router.back()}
+            onPress={handleBackNavigation}
           >
             <Text style={styles.backButtonText}>Go Back</Text>
           </Pressable>
@@ -1206,11 +1379,10 @@ export default function PostDetailsScreen() {
       {keepLyricsScreenAwakeEnabled ? <LyricsReaderKeepAwake /> : null}
       <Stack.Screen
         options={{
-          title: "Post Details",
+          title: POST_DETAILS_HEADER_TITLE,
           animation: "none",
-          headerStyle: {
-            backgroundColor: colors.surface,
-          },
+          headerShadowVisible: false,
+          headerTintColor: colors.text,
           headerRight: () => (
             <Pressable
               style={({ pressed }) => [
@@ -1229,13 +1401,12 @@ export default function PostDetailsScreen() {
       {isSwipeNavigationEnabled && previewDirection === "right" && canSwipeToPreviousPost ? (
         <Animated.View pointerEvents="none" style={[styles.page, styles.pageCard, previousPageStyle]}>
           <PostDetailsPage
-            authorRole={getResolvedAuthorRole(previousSwipePost, authorRolesByUserId)}
+            authorRole={resolvePostAuthorRole(previousSwipePost, authorRolesByUserId)}
             interactive={false}
             lyricsFontSize={lyricsFontSize}
             onDecreaseLyricsFontSize={handleDecreaseLyricsFontSize}
             onIncreaseLyricsFontSize={handleIncreaseLyricsFontSize}
             onOpenCategory={handleOpenCategory}
-            onOpenInYouTube={handleOpenInYouTube}
             post={previousSwipePost as PostRecord}
             styles={styles}
           />
@@ -1245,13 +1416,12 @@ export default function PostDetailsScreen() {
       {isSwipeNavigationEnabled && previewDirection === "left" && canSwipeToNextPost ? (
         <Animated.View pointerEvents="none" style={[styles.page, styles.pageCard, nextPageStyle]}>
           <PostDetailsPage
-            authorRole={getResolvedAuthorRole(nextSwipePost, authorRolesByUserId)}
+            authorRole={resolvePostAuthorRole(nextSwipePost, authorRolesByUserId)}
             interactive={false}
             lyricsFontSize={lyricsFontSize}
             onDecreaseLyricsFontSize={handleDecreaseLyricsFontSize}
             onIncreaseLyricsFontSize={handleIncreaseLyricsFontSize}
             onOpenCategory={handleOpenCategory}
-            onOpenInYouTube={handleOpenInYouTube}
             post={nextSwipePost as PostRecord}
             styles={styles}
           />
@@ -1268,7 +1438,6 @@ export default function PostDetailsScreen() {
               onDecreaseLyricsFontSize={handleDecreaseLyricsFontSize}
               onIncreaseLyricsFontSize={handleIncreaseLyricsFontSize}
               onOpenCategory={handleOpenCategory}
-              onOpenInYouTube={handleOpenInYouTube}
               onVideoPlaybackChange={setIsVideoPlaying}
               post={post}
               scrollViewRef={scrollViewRef}
@@ -1288,7 +1457,6 @@ export default function PostDetailsScreen() {
             onDecreaseLyricsFontSize={handleDecreaseLyricsFontSize}
             onIncreaseLyricsFontSize={handleIncreaseLyricsFontSize}
             onOpenCategory={handleOpenCategory}
-            onOpenInYouTube={handleOpenInYouTube}
             onVideoPlaybackChange={setIsVideoPlaying}
             post={post}
             scrollViewRef={scrollViewRef}
@@ -1303,13 +1471,12 @@ export default function PostDetailsScreen() {
       {settlingPreviewPost ? (
         <View pointerEvents="none" style={[styles.page, styles.pageCard]}>
           <PostDetailsPage
-            authorRole={getResolvedAuthorRole(settlingPreviewPost, authorRolesByUserId)}
+            authorRole={resolvePostAuthorRole(settlingPreviewPost, authorRolesByUserId)}
             interactive={false}
             lyricsFontSize={lyricsFontSize}
             onDecreaseLyricsFontSize={handleDecreaseLyricsFontSize}
             onIncreaseLyricsFontSize={handleIncreaseLyricsFontSize}
             onOpenCategory={handleOpenCategory}
-            onOpenInYouTube={handleOpenInYouTube}
             post={settlingPreviewPost}
             styles={styles}
           />
@@ -1343,35 +1510,6 @@ export default function PostDetailsScreen() {
                     <ArrowRightIcon color={colors.subtleText} size={14} />
                   </View>
                   <Text style={styles.headerMenuActionTitle}>Edit post</Text>
-                </Pressable>
-                <View style={styles.headerMenuActionDivider} />
-              </>
-            ) : null}
-
-            {canPlayCurrentPostVideo ? (
-              <>
-                <Pressable
-                  style={({ pressed }) => [
-                    styles.headerMenuAction,
-                    pressed && styles.headerMenuActionPressed,
-                  ]}
-                  onPress={() => {
-                    if (!post) {
-                      return;
-                    }
-
-                    closeHeaderMenu();
-                    handleToggleVideoPlayback(post);
-                  }}
-                  accessibilityRole="button"
-                  accessibilityLabel={isVideoPlaying ? "Pause video" : "Play video"}
-                >
-                  <View style={styles.headerMenuActionIconWrap}>
-                    <ArrowRightIcon color={colors.subtleText} size={14} />
-                  </View>
-                  <Text style={styles.headerMenuActionTitle}>
-                    {isVideoPlaying ? "Pause video" : "Play video"}
-                  </Text>
                 </Pressable>
                 <View style={styles.headerMenuActionDivider} />
               </>
@@ -1411,11 +1549,79 @@ export default function PostDetailsScreen() {
           </View>
         </View>
       ) : null}
+
+      {bookmarkPromptMode ? (
+        <RNAnimated.View
+          style={[
+            styles.bookmarkPromptOverlay,
+            { opacity: bookmarkPromptOpacity },
+          ]}
+        >
+          <Pressable style={styles.bookmarkPromptBackdrop} onPress={closeBookmarkPrompt} />
+          <RNAnimated.View
+            style={[
+              styles.bookmarkPromptSheet,
+              { transform: [{ translateY: bookmarkPromptTranslateY }] },
+            ]}
+          >
+            <View style={styles.bookmarkPromptHandle} />
+            <View style={styles.bookmarkPromptIconWrap}>
+              <View style={styles.bookmarkPromptIconCircle}>
+                <BookmarkMenuIcon active color="#FFFFFF" size={34} />
+              </View>
+            </View>
+            <Text style={styles.bookmarkPromptTitle}>
+              {bookmarkPromptMode === "added" ? "Added to Bookmarks" : "Removed from Bookmarks"}
+            </Text>
+            <Text style={styles.bookmarkPromptDescription}>
+              {bookmarkPromptMode === "added"
+                ? "Post has been added to your bookmarks."
+                : "Post has been removed from your bookmarks."}
+            </Text>
+            <View
+              style={[
+                styles.bookmarkPromptActions,
+                bookmarkPromptMode === "removed" && styles.bookmarkPromptActionsSingle,
+              ]}
+            >
+              {bookmarkPromptMode === "added" ? (
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.bookmarkPromptPrimaryAction,
+                    pressed && styles.bookmarkPromptActionPressed,
+                  ]}
+                  onPress={handleViewBookmark}
+                  accessibilityRole="button"
+                  accessibilityLabel="View bookmarks"
+                >
+                  <Text style={styles.bookmarkPromptPrimaryActionText}>View Bookmarks</Text>
+                </Pressable>
+              ) : null}
+              <Pressable
+                style={({ pressed }) => [
+                  styles.bookmarkPromptSecondaryAction,
+                  bookmarkPromptMode === "removed" && styles.bookmarkPromptSecondaryActionSingle,
+                  pressed && styles.bookmarkPromptActionPressed,
+                ]}
+                onPress={closeBookmarkPrompt}
+                accessibilityRole="button"
+                accessibilityLabel={
+                  bookmarkPromptMode === "removed" ? "Continue browsing" : "Continue"
+                }
+              >
+                <Text style={styles.bookmarkPromptActionText}>
+                  {bookmarkPromptMode === "removed" ? "Continue Browsing" : "Continue"}
+                </Text>
+              </Pressable>
+            </View>
+          </RNAnimated.View>
+        </RNAnimated.View>
+      ) : null}
     </View>
   );
 }
 
-const createStyles = (colors: ThemeColors) => StyleSheet.create({
+const createStyles = (colors: ThemeColors, isDarkTheme: boolean) => StyleSheet.create({
   screen: {
     flex: 1,
     backgroundColor: colors.background,
@@ -1498,22 +1704,19 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     color: colors.mutedText,
     fontSize: 12,
   },
+  metaPublished: {
+    marginLeft: SPACING.sm,
+  },
   metaRow: {
     flexDirection: "row",
     alignItems: "center",
     flexWrap: "wrap",
     gap: SPACING.xs,
   },
-  metaSeparator: {
-    color: colors.mutedText,
-    fontSize: 12,
-  },
   categoryLink: {
     borderRadius: RADIUS.pill,
-    borderWidth: 1,
-    borderColor: colors.accentBorder,
-    backgroundColor: colors.accentSoft,
-    paddingHorizontal: SPACING.sm,
+    backgroundColor: isDarkTheme ? colors.surfaceMuted : "#FFFFFF",
+    paddingHorizontal: SPACING.md,
     paddingVertical: 4,
   },
   categoryLinkContent: {
@@ -1524,9 +1727,9 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     opacity: 0.7,
   },
   categoryLinkText: {
-    color: colors.accent,
+    color: colors.text,
     fontSize: 12,
-    fontWeight: "700",
+    fontWeight: "600",
   },
   authorCard: {
     flexDirection: "row",
@@ -1535,7 +1738,7 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     borderRadius: 9,
     borderWidth: 1,
     borderColor: colors.border,
-    backgroundColor: colors.surfaceMuted,
+    backgroundColor: isDarkTheme ? colors.surfaceMuted : "#FFFFFF",
     padding: SPACING.md,
     marginVertical: SPACING.sm,
   },
@@ -1589,7 +1792,7 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   },
   headerMenuDropdown: {
     position: "absolute",
-    top: SPACING.sm,
+    top: SPACING.xl,
     right: SPACING.lg,
     minWidth: 188,
     borderRadius: RADIUS.inputSm,
@@ -1712,21 +1915,102 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     color: colors.mutedText,
     fontSize: 12,
   },
-  openYoutubeButton: {
-    alignSelf: "flex-start",
-    borderWidth: 1,
-    borderColor: colors.border,
+  bookmarkPromptOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 56,
+    justifyContent: "flex-end",
+  },
+  bookmarkPromptBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: colors.backdropOverlay,
+  },
+  bookmarkPromptSheet: {
+    borderTopLeftRadius: RADIUS.xl,
+    borderTopRightRadius: RADIUS.xl,
+    backgroundColor: colors.surface,
+    paddingHorizontal: SPACING.xl,
+    paddingTop: SPACING.sm,
+    paddingBottom: SPACING.xl,
+    alignItems: "center",
+    ...SHADOWS.lg,
+  },
+  bookmarkPromptHandle: {
+    width: 56,
+    height: 5,
+    borderRadius: RADIUS.pill,
+    backgroundColor: colors.border,
+    marginBottom: SPACING.lg,
+  },
+  bookmarkPromptIconWrap: {
+    width: "100%",
+    alignItems: "center",
+    marginBottom: SPACING.md,
+  },
+  bookmarkPromptIconCircle: {
+    width: 96,
+    height: 96,
     borderRadius: 999,
-    backgroundColor: colors.surfaceMuted,
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.sm,
+    backgroundColor: colors.brandAccent,
+    alignItems: "center",
+    justifyContent: "center",
   },
-  openYoutubeButtonPressed: {
-    opacity: 0.85,
-  },
-  openYoutubeButtonText: {
+  bookmarkPromptTitle: {
     color: colors.text,
-    fontSize: 12,
+    fontSize: FONT_SIZE.title,
+    fontWeight: "700",
+    textAlign: "center",
+    marginBottom: SPACING.sm,
+  },
+  bookmarkPromptDescription: {
+    color: colors.mutedText,
+    fontSize: 16,
+    textAlign: "center",
+    lineHeight: 23,
+    marginBottom: SPACING.lg,
+  },
+  bookmarkPromptActions: {
+    width: "100%",
+    flexDirection: "row",
+    gap: SPACING.sm,
+  },
+  bookmarkPromptActionsSingle: {
+    justifyContent: "center",
+  },
+  bookmarkPromptPrimaryAction: {
+    flex: 1,
+    minHeight: 52,
+    borderRadius: RADIUS.sm,
+    backgroundColor: colors.primary,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: SPACING.md,
+  },
+  bookmarkPromptSecondaryAction: {
+    flex: 1,
+    minHeight: 52,
+    borderRadius: RADIUS.sm,
+    borderWidth: 1,
+    borderColor: colors.inputBorderHover,
+    backgroundColor: colors.surface,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: SPACING.md,
+  },
+  bookmarkPromptSecondaryActionSingle: {
+    flex: 0,
+    minWidth: 220,
+  },
+  bookmarkPromptActionPressed: {
+    opacity: 0.82,
+  },
+  bookmarkPromptActionText: {
+    color: colors.text,
+    fontSize: FONT_SIZE.button,
+    fontWeight: "600",
+  },
+  bookmarkPromptPrimaryActionText: {
+    color: colors.primaryText,
+    fontSize: FONT_SIZE.button,
     fontWeight: "700",
   },
 });

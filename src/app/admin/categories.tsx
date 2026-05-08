@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Redirect } from "expo-router";
 import {
   ActivityIndicator,
@@ -47,6 +47,7 @@ import { useAppTheme } from "@/providers/theme-provider";
 export default function AdminCategoriesScreen() {
   const { colors, resolvedTheme } = useAppTheme();
   const { isConnected } = useNetworkStatus();
+  const isConnectedRef = useRef(isConnected);
   const { isAdmin, user } = useAuth();
   const styles = createStyles(colors, resolvedTheme);
   const [categories, setCategories] = useState<CategoryRecord[]>([]);
@@ -59,6 +60,10 @@ export default function AdminCategoriesScreen() {
   const [isDeletingCategoryId, setIsDeletingCategoryId] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+
+  useEffect(() => {
+    isConnectedRef.current = isConnected;
+  }, [isConnected]);
 
   useEffect(() => {
     const categoriesQuery = query(
@@ -81,7 +86,7 @@ export default function AdminCategoriesScreen() {
         setError(
           getRequestErrorMessage({
             error: snapshotError,
-            isConnected,
+            isConnected: isConnectedRef.current,
             onlineMessage: "Unable to load categories.",
           }),
         );
@@ -90,7 +95,7 @@ export default function AdminCategoriesScreen() {
     );
 
     return unsubscribe;
-  }, [isConnected]);
+  }, []);
 
   const clearFeedback = () => {
     setError("");

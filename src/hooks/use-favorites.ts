@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   collection,
   deleteDoc,
@@ -24,6 +24,9 @@ import { useAuth } from "@/providers/auth-provider";
 import { useNetworkStatus } from "@/providers/network-provider";
 
 type FavoriteMutationResult = "added" | "removed";
+type FavoriteToggleOptions = {
+  showToast?: boolean;
+};
 
 const createFavoriteDocId = (uid: string, postId: string) => `${uid}_${postId}`;
 const createOptimisticFavorite = (uid: string, postId: string): FavoriteRecord => {
@@ -55,9 +58,14 @@ const toSortTime = (value: FavoriteRecord) => {
 export function useFavorites() {
   const { user } = useAuth();
   const { isConnected, showToast } = useNetworkStatus();
+  const isConnectedRef = useRef(isConnected);
   const [favorites, setFavorites] = useState<FavoriteRecord[]>([]);
   const [isLoadingFavorites, setIsLoadingFavorites] = useState(true);
   const [favoritesError, setFavoritesError] = useState("");
+
+  useEffect(() => {
+    isConnectedRef.current = isConnected;
+  }, [isConnected]);
 
   useEffect(() => {
     if (!user?.uid) {
@@ -88,18 +96,18 @@ export function useFavorites() {
       (snapshotError) => {
         setFavorites([]);
         setFavoritesError(
-          getRequestErrorMessage({
-            error: snapshotError,
-            isConnected,
-            onlineMessage: "Unable to sync bookmarks right now.",
-          }),
+            getRequestErrorMessage({
+              error: snapshotError,
+              isConnected: isConnectedRef.current,
+              onlineMessage: "Unable to sync bookmarks right now.",
+            }),
         );
         setIsLoadingFavorites(false);
       },
     );
 
     return unsubscribe;
-  }, [isConnected, user?.uid]);
+  }, [user?.uid]);
 
   const favoritePostIds = useMemo(
     () => new Set(favorites.map((item) => item.postId)),
@@ -114,6 +122,7 @@ export function useFavorites() {
   const toggleFavorite = useCallback(
     async (
       post: Pick<PostRecord, "id" | "title" | "slug">,
+      options: FavoriteToggleOptions = {},
     ): Promise<FavoriteMutationResult> => {
       if (!user?.uid) {
         throw new Error("Please login to manage bookmarks.");
@@ -126,6 +135,7 @@ export function useFavorites() {
       const favoriteDocId = createFavoriteDocId(user.uid, post.id);
       const favoriteRef = doc(firestore, FAVORITES_COLLECTION, favoriteDocId);
       const currentlyFavorite = favoritePostIds.has(post.id);
+      const shouldShowToast = options.showToast ?? true;
       let previousFavorites: FavoriteRecord[] = [];
 
       if (currentlyFavorite) {
@@ -133,7 +143,9 @@ export function useFavorites() {
           previousFavorites = current;
           return current.filter((item) => item.postId !== post.id);
         });
-        showToast("Removed from bookmarks");
+        if (shouldShowToast) {
+          showToast("Removed from bookmarks");
+        }
 
         try {
           await deleteDoc(favoriteRef);
@@ -152,7 +164,9 @@ export function useFavorites() {
           (left, right) => toSortTime(right) - toSortTime(left),
         );
       });
-      showToast("Added to bookmarks");
+      if (shouldShowToast) {
+        showToast("Added to bookmarks");
+      }
 
       try {
         await setDoc(

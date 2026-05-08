@@ -141,7 +141,7 @@ export default function ProfileEditScreen() {
   const shouldShowGenderError = touchedFields.gender || hasSubmitted;
   const shouldShowBioError = touchedFields.bio || hasSubmitted;
   const firstNameHasError = !normalizedFirstName;
-  const lastNameHasError = false;
+  const lastNameHasError = !normalizedLastName;
   const usernameFormatHasError = !normalizedUsername || !isValidUsername(normalizedUsername);
   const usernameTakenHasError =
     !usernameFormatHasError &&
@@ -178,6 +178,7 @@ export default function ProfileEditScreen() {
     usernameAvailability === "available";
   const blockingValidationError =
     firstNameHasError ||
+    lastNameHasError ||
     usernameFormatHasError ||
     usernameTakenHasError ||
     genderHasError ||

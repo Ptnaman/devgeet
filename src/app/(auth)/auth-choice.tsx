@@ -10,9 +10,7 @@ import {
 } from "react-native";
 import Svg, {
   Defs,
-  Ellipse,
   LinearGradient as SvgLinearGradient,
-  RadialGradient,
   Stop,
   Text as SvgText,
 } from "react-native-svg";
@@ -21,7 +19,6 @@ import { GoogleAuthButton } from "@/components/google-auth-button";
 import { APP_LINKS } from "@/constants/app-links";
 import {
   AUTH_CHOICE_SCREEN_THEMES,
-  LIGHT_COLORS,
   MARKETING_HEADLINE_GRADIENT_STOPS,
   SPACING,
   type AuthChoiceScreenTheme,
@@ -29,16 +26,15 @@ import {
 import { resolveProductFontFamily } from "@/lib/typography";
 import { useAppTheme } from "@/providers/theme-provider";
 
-const HERO_TITLE = "Stay in sync";
-const HERO_GRADIENT_TITLE = "Continue with Google";
+const HERO_GRADIENT_TITLE = "Login with Google";
 
 export default function AuthChoiceScreen() {
   const { resolvedTheme } = useAppTheme();
+  const isDark = resolvedTheme === "dark";
   const { width } = useWindowDimensions();
   const [error, setError] = useState("");
   const screenColors = AUTH_CHOICE_SCREEN_THEMES[resolvedTheme];
-  const styles = createAuthChoiceScreenStyles(screenColors, Platform.OS === "ios");
-  const titleFontSize = width < 360 ? 36 : width < 420 ? 42 : 48;
+  const styles = createAuthChoiceScreenStyles(screenColors, Platform.OS === "ios", isDark);
   const gradientFontSize = width < 360 ? 27 : width < 420 ? 32 : 38;
   const gradientWidth = Math.min(width - 28, 348);
   const gradientHeight = gradientFontSize + 16;
@@ -49,25 +45,12 @@ export default function AuthChoiceScreen() {
   return (
     <View style={styles.screen}>
       <StatusBar
-        style={resolvedTheme === "dark" ? "light" : "dark"}
+        style={isDark ? "light" : "dark"}
         backgroundColor={screenColors.background}
       />
-      <AmbientBackground colors={screenColors} />
 
       <View style={styles.container}>
         <View style={styles.hero}>
-          <Text
-            adjustsFontSizeToFit
-            minimumFontScale={0.9}
-            numberOfLines={1}
-            style={[
-              styles.heroTitle,
-              { fontSize: titleFontSize, lineHeight: titleFontSize + 2 },
-            ]}
-          >
-            {HERO_TITLE}
-          </Text>
-
           <View style={styles.heroGradientWrap}>
             <GradientHeadline
               text={HERO_GRADIENT_TITLE}
@@ -85,11 +68,6 @@ export default function AuthChoiceScreen() {
 
         <View style={styles.sheetStack}>
           <View style={styles.sheet}>
-            <Text style={styles.sectionSubtitle}>
-              Sign in to keep your profile, bookmarks, and reading history in
-              sync.
-            </Text>
-
             <GoogleAuthButton
               label="Continue with Google"
               onError={setError}
@@ -175,49 +153,16 @@ function GradientHeadline({
   );
 }
 
-function AmbientBackground({ colors }: { colors: AuthChoiceScreenTheme }) {
-  return (
-    <Svg
-      pointerEvents="none"
-      style={StyleSheet.absoluteFill}
-      width="100%"
-      height="100%"
-      viewBox="0 0 100 100"
-      preserveAspectRatio="none"
-    >
-      <Defs>
-        <RadialGradient id="authChoiceTopGlow" cx="24" cy="12" r="32" gradientUnits="userSpaceOnUse">
-          <Stop offset="0" stopColor={colors.topGlowInner} stopOpacity="0.9" />
-          <Stop offset="0.62" stopColor={colors.topGlowOuter} stopOpacity="0.34" />
-          <Stop offset="1" stopColor="#FFFFFF" stopOpacity="0" />
-        </RadialGradient>
-        <RadialGradient id="authChoiceWarmGlow" cx="30" cy="102" r="40" gradientUnits="userSpaceOnUse">
-          <Stop offset="0" stopColor={colors.warmGlowInner} stopOpacity="0.9" />
-          <Stop offset="0.55" stopColor={colors.warmGlowOuter} stopOpacity="0.45" />
-          <Stop offset="1" stopColor="#FFFFFF" stopOpacity="0" />
-        </RadialGradient>
-        <RadialGradient id="authChoiceBlueGlow" cx="82" cy="103" r="48" gradientUnits="userSpaceOnUse">
-          <Stop offset="0" stopColor={colors.blueGlowInner} stopOpacity="0.96" />
-          <Stop offset="0.52" stopColor={colors.blueGlowOuter} stopOpacity="0.5" />
-          <Stop offset="1" stopColor="#FFFFFF" stopOpacity="0" />
-        </RadialGradient>
-      </Defs>
-
-      <Ellipse cx="22" cy="12" rx="34" ry="22" fill="url(#authChoiceTopGlow)" />
-      <Ellipse cx="30" cy="104" rx="44" ry="18" fill="url(#authChoiceWarmGlow)" />
-      <Ellipse cx="82" cy="104" rx="62" ry="28" fill="url(#authChoiceBlueGlow)" />
-    </Svg>
-  );
-}
-
 const createAuthChoiceScreenStyles = (
   colors: AuthChoiceScreenTheme,
   isIos: boolean,
+  isDark: boolean,
 ) =>
   StyleSheet.create({
     screen: {
       flex: 1,
       backgroundColor: colors.background,
+      overflow: "hidden",
     },
     container: {
       flex: 1,
@@ -277,11 +222,11 @@ const createAuthChoiceScreenStyles = (
       marginBottom: SPACING.xs,
     },
     googleButton: {
-      backgroundColor: colors.googleButtonBackground,
-      borderColor: colors.googleButtonBorder,
+      backgroundColor: isDark ? colors.googleButtonBackground : "#111111",
+      borderColor: isDark ? colors.googleButtonBorder : "#111111",
     },
     googleButtonText: {
-      color: LIGHT_COLORS.text,
+      color: isDark ? "#111111" : "#FFFFFF",
       fontFamily: resolveProductFontFamily("medium"),
       fontSize: 15,
       letterSpacing: -0.1,

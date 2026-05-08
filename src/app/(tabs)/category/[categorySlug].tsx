@@ -1,4 +1,5 @@
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
+import { Image } from "expo-image";
 import {
   collection,
   onSnapshot,
@@ -6,18 +7,24 @@ import {
   where,
   type DocumentData,
 } from "firebase/firestore";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
-  Image,
+  FlatList,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   View,
 } from "react-native";
 
 import { CategoryTabIcon } from "@/components/icons/category-tab-icon";
+import {
+  DEFAULT_LIST_INITIAL_NUM_TO_RENDER,
+  DEFAULT_LIST_MAX_TO_RENDER_PER_BATCH,
+  DEFAULT_LIST_REMOVE_CLIPPED_SUBVIEWS,
+  DEFAULT_LIST_UPDATE_BATCHING_PERIOD,
+  DEFAULT_LIST_WINDOW_SIZE,
+} from "@/constants/list-performance";
 import { FONT_SIZE, RADIUS, SHADOWS, SPACING, type ThemeColors } from "@/constants/theme";
 import {
   createSlug,
@@ -30,6 +37,7 @@ import {
 } from "@/lib/content";
 import { firestore } from "@/lib/firebase";
 import { DEFAULT_OFFLINE_MESSAGE, getRequestErrorMessage } from "@/lib/network";
+import { useMainTabData } from "@/providers/main-tab-data-provider";
 import { useNetworkStatus } from "@/providers/network-provider";
 import { useAppTheme } from "@/providers/theme-provider";
 
@@ -51,13 +59,26 @@ const formatCategoryLabel = (value: string) => {
 export default function CategoryPostsScreen() {
   const { colors } = useAppTheme();
   const { isConnected } = useNetworkStatus();
+  const isConnectedRef = useRef(isConnected);
   const router = useRouter();
   const styles = createStyles(colors);
   const { categorySlug: categorySlugParam } = useLocalSearchParams<{ categorySlug?: string }>();
+  const { publishedPosts } = useMainTabData();
   const categorySlug = resolveCategorySlug(categorySlugParam);
   const [posts, setPosts] = useState<PostRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
+  const cachedCategoryPosts = useMemo(
+    () =>
+      sortPostsByRecency(
+        publishedPosts.filter((item) => createSlug(item.category) === categorySlug),
+      ),
+    [categorySlug, publishedPosts],
+  );
+
+  useEffect(() => {
+    isConnectedRef.current = isConnected;
+  }, [isConnected]);
 
   useEffect(() => {
     setIsLoading(true);
@@ -88,20 +109,25 @@ export default function CategoryPostsScreen() {
         setIsLoading(false);
       },
       (snapshotError) => {
-        setPosts([]);
-        setError(
-          getRequestErrorMessage({
-            error: snapshotError,
-            isConnected,
-            onlineMessage: "Unable to load category posts.",
-          }),
-        );
+        if (cachedCategoryPosts.length) {
+          setPosts(cachedCategoryPosts);
+          setError("");
+        } else {
+          setPosts([]);
+          setError(
+            getRequestErrorMessage({
+              error: snapshotError,
+              isConnected: isConnectedRef.current,
+              onlineMessage: "Unable to load category posts.",
+            }),
+          );
+        }
         setIsLoading(false);
       },
     );
 
     return unsubscribe;
-  }, [categorySlug, isConnected]);
+  }, [cachedCategoryPosts, categorySlug]);
 
   const categoryLabel = useMemo(() => formatCategoryLabel(categorySlug), [categorySlug]);
   const isOfflineState = !isConnected || error === DEFAULT_OFFLINE_MESSAGE;
@@ -131,83 +157,96 @@ export default function CategoryPostsScreen() {
   return (
     <View style={styles.screen}>
       <Stack.Screen options={{ title: categoryLabel }} />
-      <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
-        <View style={styles.heroCard}>
-          <View style={styles.heroTopRow}>
-            <View style={styles.heroIconWrap}>
-              <CategoryTabIcon color={colors.accent} size={20} />
-            </View>
-            <View style={styles.heroTextWrap}>
-              <Text style={styles.eyebrow}>Category feed</Text>
-              <Text style={styles.subtitle}>{subtitle}</Text>
-            </View>
-          </View>
-          <View style={styles.summaryChip}>
-            <Text style={styles.summaryChipText}>{summaryLabel}</Text>
-          </View>
-        </View>
+      <FlatList
+        data={isLoading ? [] : posts}
+        initialNumToRender={DEFAULT_LIST_INITIAL_NUM_TO_RENDER}
+        keyExtractor={(item) => item.id}
+        maxToRenderPerBatch={DEFAULT_LIST_MAX_TO_RENDER_PER_BATCH}
+        removeClippedSubviews={DEFAULT_LIST_REMOVE_CLIPPED_SUBVIEWS}
+        renderItem={({ item: post }) => {
+          const thumbnailUrl = getPostCardThumbnailUrl(post);
+          const authorName =
+            post.authorDisplayName.trim() ||
+            post.authorUsername.trim() ||
+            "Unknown Author";
 
-        {showInlineError ? <Text style={styles.error}>{error}</Text> : null}
+          return (
+            <Pressable
+              style={({ pressed }) => [
+                styles.postCard,
+                pressed && styles.postCardPressed,
+              ]}
+              onPress={() => openPost(post.id)}
+            >
+              {thumbnailUrl ? (
+                <Image
+                  cachePolicy="memory-disk"
+                  contentFit="cover"
+                  source={{ uri: thumbnailUrl }}
+                  style={styles.thumbnail}
+                  transition={120}
+                />
+              ) : (
+                <View style={styles.thumbnailPlaceholder} />
+              )}
 
-        {isLoading ? (
-          <View style={styles.loadingWrap}>
-            <ActivityIndicator size="large" color={colors.primary} />
-          </View>
-        ) : null}
-
-        {!isLoading && !error && !posts.length ? (
-          <View style={styles.emptyWrap}>
-            <Text style={styles.emptyText}>No published posts in this category yet.</Text>
-          </View>
-        ) : null}
-
-        {!isLoading
-          ? posts.map((post) => {
-              const thumbnailUrl = getPostCardThumbnailUrl(post);
-              const authorName =
-                post.authorDisplayName.trim() ||
-                post.authorUsername.trim() ||
-                "Unknown Author";
-
-              return (
-                <Pressable
-                  key={post.id}
-                  style={({ pressed }) => [
-                    styles.postCard,
-                    pressed && styles.postCardPressed,
-                  ]}
-                  onPress={() => openPost(post.id)}
+              <View style={styles.postContent}>
+                <Text style={styles.postTitle} numberOfLines={2} ellipsizeMode="tail">
+                  {post.title}
+                </Text>
+                <Text
+                  style={styles.postPreview}
+                  numberOfLines={3}
+                  ellipsizeMode="tail"
                 >
-                  {thumbnailUrl ? (
-                    <Image
-                      source={{ uri: thumbnailUrl }}
-                      style={styles.thumbnail}
-                      resizeMode="cover"
-                    />
-                  ) : (
-                    <View style={styles.thumbnailPlaceholder} />
-                  )}
+                  {post.content.trim() || "-"}
+                </Text>
+                <Text style={styles.postAuthor} numberOfLines={1}>
+                  {`By ${authorName}`}
+                </Text>
+              </View>
+            </Pressable>
+          );
+        }}
+        ItemSeparatorComponent={() => <View style={styles.listSeparator} />}
+        ListHeaderComponent={
+          <View style={styles.headerContent}>
+            <View style={styles.heroCard}>
+              <View style={styles.heroTopRow}>
+                <View style={styles.heroIconWrap}>
+                  <CategoryTabIcon color={colors.accent} size={20} />
+                </View>
+                <View style={styles.heroTextWrap}>
+                  <Text style={styles.eyebrow}>Category feed</Text>
+                  <Text style={styles.subtitle}>{subtitle}</Text>
+                </View>
+              </View>
+              <View style={styles.summaryChip}>
+                <Text style={styles.summaryChipText}>{summaryLabel}</Text>
+              </View>
+            </View>
 
-                  <View style={styles.postContent}>
-                    <Text style={styles.postTitle} numberOfLines={2} ellipsizeMode="tail">
-                      {post.title}
-                    </Text>
-                    <Text
-                      style={styles.postPreview}
-                      numberOfLines={3}
-                      ellipsizeMode="tail"
-                    >
-                      {post.content.trim() || "-"}
-                    </Text>
-                    <Text style={styles.postAuthor} numberOfLines={1}>
-                      {`By ${authorName}`}
-                    </Text>
-                  </View>
-                </Pressable>
-              );
-            })
-          : null}
-      </ScrollView>
+            {showInlineError ? <Text style={styles.error}>{error}</Text> : null}
+
+            {isLoading ? (
+              <View style={styles.loadingWrap}>
+                <ActivityIndicator size="large" color={colors.primary} />
+              </View>
+            ) : null}
+          </View>
+        }
+        ListEmptyComponent={
+          !isLoading && !error ? (
+            <View style={styles.emptyWrap}>
+              <Text style={styles.emptyText}>No published posts in this category yet.</Text>
+            </View>
+          ) : null
+        }
+        contentContainerStyle={styles.container}
+        showsVerticalScrollIndicator={false}
+        updateCellsBatchingPeriod={DEFAULT_LIST_UPDATE_BATCHING_PERIOD}
+        windowSize={DEFAULT_LIST_WINDOW_SIZE}
+      />
     </View>
   );
 }
@@ -218,9 +257,16 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     backgroundColor: colors.background,
   },
   container: {
+    flexGrow: 1,
     padding: SPACING.xl,
     paddingBottom: SPACING.xxl * 2,
+  },
+  headerContent: {
+    marginBottom: SPACING.md,
     gap: SPACING.md,
+  },
+  listSeparator: {
+    height: SPACING.md,
   },
   heroCard: {
     borderRadius: RADIUS.md,

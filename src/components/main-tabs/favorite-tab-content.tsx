@@ -1,9 +1,9 @@
 import { useMemo } from "react";
+import { Image } from "expo-image";
 import { useRouter } from "expo-router";
 import {
   ActivityIndicator,
   Alert,
-  Image,
   Pressable,
   StyleSheet,
   Text,
@@ -11,7 +11,7 @@ import {
 } from "react-native";
 
 import { FavoriteTabIcon } from "@/components/icons/favorite-tab-icon";
-import { MainTabScrollView } from "@/components/main-tabs/main-tab-scroll-view";
+import { MainTabFlatList } from "@/components/main-tabs/main-tab-flat-list";
 import { TrashActionIcon } from "@/components/icons/trash-action-icon";
 import {
   FONT_SIZE,
@@ -142,55 +142,11 @@ export function FavoriteTabContent() {
 
   return (
     <View style={styles.screen}>
-      <MainTabScrollView tabName="favorite" contentContainerStyle={styles.container}>
-        <View style={styles.headerCard}>
-          <View style={styles.headerRow}>
-            <View style={styles.headerTextWrap}>
-              <Text style={styles.title}>Bookmarks</Text>
-              <Text style={styles.subtitle}>{subtitle}</Text>
-            </View>
-            <View style={styles.headerActions}>
-              {!isLoading && favoritePosts.length ? (
-                <Pressable
-                  style={({ pressed }) => [
-                    styles.clearAllButton,
-                    pressed && styles.clearAllButtonPressed,
-                  ]}
-                  onPress={handleConfirmClearAllFavorites}
-                  accessibilityRole="button"
-                  accessibilityLabel="Clear all bookmarks"
-                >
-                  <Text style={styles.clearAllButtonText}>Clear all</Text>
-                </Pressable>
-              ) : null}
-              <View style={styles.countPill}>
-                <Text style={styles.countPillText}>{favoritePosts.length}</Text>
-              </View>
-            </View>
-          </View>
-        </View>
-
-        {isLoading ? (
-          <ActivityIndicator size="large" color={colors.primary} style={styles.loader} />
-        ) : null}
-
-        {!isLoading && showInlineError ? (
-          <Text style={styles.errorText}>{combinedError}</Text>
-        ) : null}
-
-        {!isLoading && !combinedError && !favoritePosts.length ? (
-          <View style={styles.emptyWrap}>
-            <View style={styles.emptyIconCard}>
-              <FavoriteTabIcon size={30} color={colors.mutedText} />
-            </View>
-            <Text style={styles.emptyTitle}>No bookmarks yet</Text>
-            <Text style={styles.emptyText}>
-              Bookmark any post and it will show here for quick access.
-            </Text>
-          </View>
-        ) : null}
-
-        {favoritePosts.map((post) => {
+      <MainTabFlatList
+        tabName="favorite"
+        data={isLoading ? [] : favoritePosts}
+        keyExtractor={(item) => item.id}
+        renderItem={({ item: post }) => {
           const thumbnailUrl = getPostCardThumbnailUrl(post);
           const authorName =
             post.authorDisplayName.trim() ||
@@ -198,7 +154,7 @@ export function FavoriteTabContent() {
             "Unknown Author";
 
           return (
-            <View key={post.id} style={styles.card}>
+            <View style={styles.card}>
               <Pressable
                 style={({ pressed }) => [
                   styles.cardBody,
@@ -208,9 +164,11 @@ export function FavoriteTabContent() {
               >
                 {thumbnailUrl ? (
                   <Image
+                    cachePolicy="memory-disk"
+                    contentFit="cover"
                     source={{ uri: thumbnailUrl }}
                     style={styles.thumbnail}
-                    resizeMode="cover"
+                    transition={120}
                   />
                 ) : (
                   <View style={styles.thumbnailFallback}>
@@ -246,8 +204,62 @@ export function FavoriteTabContent() {
               </Pressable>
             </View>
           );
-        })}
-      </MainTabScrollView>
+        }}
+        ItemSeparatorComponent={() => <View style={styles.listSeparator} />}
+        ListHeaderComponent={
+          <View style={styles.headerContent}>
+            <View style={styles.headerCard}>
+              <View style={styles.headerRow}>
+                <View style={styles.headerTextWrap}>
+                  <Text style={styles.title}>Bookmarks</Text>
+                  <Text style={styles.subtitle}>{subtitle}</Text>
+                </View>
+                <View style={styles.headerActions}>
+                  {!isLoading && favoritePosts.length ? (
+                    <Pressable
+                      style={({ pressed }) => [
+                        styles.clearAllButton,
+                        pressed && styles.clearAllButtonPressed,
+                      ]}
+                      onPress={handleConfirmClearAllFavorites}
+                      accessibilityRole="button"
+                      accessibilityLabel="Clear all bookmarks"
+                    >
+                      <Text style={styles.clearAllButtonText}>Clear all</Text>
+                    </Pressable>
+                  ) : null}
+                  <View style={styles.countPill}>
+                    <Text style={styles.countPillText}>{favoritePosts.length}</Text>
+                  </View>
+                </View>
+              </View>
+            </View>
+
+            {isLoading ? (
+              <ActivityIndicator size="large" color={colors.primary} style={styles.loader} />
+            ) : null}
+
+            {!isLoading && showInlineError ? (
+              <Text style={styles.errorText}>{combinedError}</Text>
+            ) : null}
+          </View>
+        }
+        ListEmptyComponent={
+          !isLoading && !combinedError ? (
+            <View style={styles.emptyWrap}>
+              <View style={styles.emptyIconCard}>
+                <FavoriteTabIcon size={30} color={colors.mutedText} />
+              </View>
+              <Text style={styles.emptyTitle}>No bookmarks yet</Text>
+              <Text style={styles.emptyText}>
+                Bookmark any post and it will show here for quick access.
+              </Text>
+            </View>
+          ) : null
+        }
+        contentContainerStyle={styles.container}
+        showsVerticalScrollIndicator={false}
+      />
     </View>
   );
 }
@@ -259,9 +271,15 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   container: {
     flexGrow: 1,
     padding: SPACING.xl,
-    gap: SPACING.md,
     backgroundColor: colors.background,
     paddingBottom: SPACING.xxl * 2,
+  },
+  headerContent: {
+    marginBottom: SPACING.md,
+    gap: SPACING.md,
+  },
+  listSeparator: {
+    height: SPACING.md,
   },
   headerCard: {
     backgroundColor: colors.surface,

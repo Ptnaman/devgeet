@@ -56,11 +56,37 @@ export type PostRecord = {
   deletedByEmail: string;
 };
 
-const normalizeSearchValue = (value: string) =>
+export const normalizeSearchKeyword = (value: string) =>
   value
     .toLowerCase()
     .replace(/\s+/g, " ")
     .trim();
+
+export const buildPostSearchIndex = (
+  post: Pick<
+    PostRecord,
+    | "title"
+    | "content"
+    | "slug"
+    | "category"
+    | "authorDisplayName"
+    | "authorUsername"
+    | "createdByEmail"
+  >,
+) =>
+  normalizeSearchKeyword(
+    [
+      post.title,
+      post.content,
+      post.slug,
+      post.category,
+      post.authorDisplayName,
+      post.authorUsername,
+      post.createdByEmail,
+    ]
+      .filter(Boolean)
+      .join(" "),
+  );
 
 export const matchesPostSearch = (
   post: Pick<
@@ -75,36 +101,24 @@ export const matchesPostSearch = (
   >,
   searchTerm: string,
 ) => {
-  const keyword = normalizeSearchValue(searchTerm);
+  const keyword = normalizeSearchKeyword(searchTerm);
   if (!keyword) {
     return true;
   }
 
-  return normalizeSearchValue(
-    [
-      post.title,
-      post.content,
-      post.slug,
-      post.category,
-      post.authorDisplayName,
-      post.authorUsername,
-      post.createdByEmail,
-    ]
-      .filter(Boolean)
-      .join(" "),
-  ).includes(keyword);
+  return buildPostSearchIndex(post).includes(keyword);
 };
 
 export const matchesCategorySearch = (
   category: Pick<CategoryRecord, "name" | "slug">,
   searchTerm: string,
 ) => {
-  const keyword = normalizeSearchValue(searchTerm);
+  const keyword = normalizeSearchKeyword(searchTerm);
   if (!keyword) {
     return true;
   }
 
-  return normalizeSearchValue([category.name, category.slug].filter(Boolean).join(" ")).includes(
+  return normalizeSearchKeyword([category.name, category.slug].filter(Boolean).join(" ")).includes(
     keyword,
   );
 };

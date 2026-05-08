@@ -11,17 +11,12 @@ import {
   View,
 } from "react-native";
 
-import { RADIUS, SPACING } from "@/constants/theme";
+import { RADIUS, SPACING, type ThemeColors } from "@/constants/theme";
 import { useAppUpdates } from "@/providers/app-updates-provider";
-
-const SCREEN_BACKGROUND = "#FFFFFF";
-const PRIMARY_TEXT = "#0F0F10";
-const SECONDARY_TEXT = "#7A7A7A";
-const CARD_BACKGROUND = "#F7F7F7";
-const CARD_BORDER = "#EFEFEF";
-const TOGGLE_ACTIVE = "#22C55E";
+import { useAppTheme } from "@/providers/theme-provider";
 
 export default function AppUpdatesScreen() {
+  const { colors, resolvedTheme } = useAppTheme();
   const {
     appVersion,
     isOtaAvailable,
@@ -34,7 +29,7 @@ export default function AppUpdatesScreen() {
     applyUpdateAsync,
     setAutoUpdateEnabled,
   } = useAppUpdates();
-  const styles = createStyles();
+  const styles = createStyles(colors);
 
   const showUpdateControls = isUpdatePending;
   const statusTitle = isApplyingUpdate
@@ -57,7 +52,10 @@ export default function AppUpdatesScreen() {
 
   return (
     <View style={styles.screen}>
-      <StatusBar style="dark" backgroundColor={SCREEN_BACKGROUND} />
+      <StatusBar
+        style={resolvedTheme === "dark" ? "light" : "dark"}
+        backgroundColor={colors.background}
+      />
       <ScrollView
         contentContainerStyle={styles.container}
         showsVerticalScrollIndicator={false}
@@ -98,7 +96,7 @@ export default function AppUpdatesScreen() {
                     disabled={isUpdateButtonDisabled}
                   >
                     {isApplyingUpdate ? (
-                      <ActivityIndicator size="small" color={SCREEN_BACKGROUND} />
+                      <ActivityIndicator size="small" color={colors.surface} />
                     ) : (
                       <Text style={styles.updateButtonText}>
                         {autoUpdateEnabled
@@ -123,11 +121,11 @@ export default function AppUpdatesScreen() {
                       }}
                       disabled={!isOtaAvailable || isApplyingUpdate}
                       trackColor={{
-                        false: "#DADADA",
-                        true: TOGGLE_ACTIVE,
+                        false: colors.inputBorderHover,
+                        true: colors.success,
                       }}
-                      thumbColor={SCREEN_BACKGROUND}
-                      ios_backgroundColor="#DADADA"
+                      thumbColor={colors.surface}
+                      ios_backgroundColor={colors.inputBorderHover}
                     />
                   </View>
                 </View>
@@ -140,15 +138,15 @@ export default function AppUpdatesScreen() {
   );
 }
 
-const createStyles = () =>
+const createStyles = (colors: ThemeColors) =>
   StyleSheet.create({
     screen: {
       flex: 1,
-      backgroundColor: SCREEN_BACKGROUND,
+      backgroundColor: colors.background,
     },
     container: {
       flexGrow: 1,
-      backgroundColor: SCREEN_BACKGROUND,
+      backgroundColor: colors.background,
       paddingHorizontal: SPACING.xl,
       paddingTop: SPACING.md,
       paddingBottom: SPACING.xxl,
@@ -179,20 +177,20 @@ const createStyles = () =>
       marginBottom: SPACING.md,
     },
     statusTitle: {
-      color: PRIMARY_TEXT,
+      color: colors.text,
       fontSize: 24,
       lineHeight: 31,
       fontWeight: "600",
       textAlign: "center",
     },
     appVersion: {
-      color: SECONDARY_TEXT,
+      color: colors.mutedText,
       fontSize: 15,
       lineHeight: 22,
       textAlign: "center",
     },
     statusText: {
-      color: SECONDARY_TEXT,
+      color: colors.mutedText,
       fontSize: 12,
       lineHeight: 18,
       textAlign: "center",
@@ -205,8 +203,8 @@ const createStyles = () =>
     card: {
       borderRadius: 28,
       borderWidth: 1,
-      borderColor: CARD_BORDER,
-      backgroundColor: CARD_BACKGROUND,
+      borderColor: colors.border,
+      backgroundColor: colors.surfaceMuted,
       paddingHorizontal: SPACING.lg,
       paddingVertical: SPACING.lg,
       gap: SPACING.sm,
@@ -215,12 +213,12 @@ const createStyles = () =>
       gap: 6,
     },
     cardTitle: {
-      color: PRIMARY_TEXT,
+      color: colors.text,
       fontSize: 16,
       fontWeight: "700",
     },
     cardSubtitle: {
-      color: SECONDARY_TEXT,
+      color: colors.mutedText,
       fontSize: 13,
       lineHeight: 19,
     },
@@ -229,11 +227,11 @@ const createStyles = () =>
       borderRadius: RADIUS.pill,
       alignItems: "center",
       justifyContent: "center",
-      backgroundColor: PRIMARY_TEXT,
+      backgroundColor: colors.primary,
       paddingHorizontal: SPACING.lg,
     },
     updateButtonText: {
-      color: SCREEN_BACKGROUND,
+      color: colors.primaryText,
       fontSize: 14,
       fontWeight: "700",
     },

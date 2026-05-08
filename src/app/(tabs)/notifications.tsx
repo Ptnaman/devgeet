@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { Image } from "expo-image";
 import { Stack, useRouter } from "expo-router";
 import {
   ActivityIndicator,
   Alert,
-  Image,
+  FlatList,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -13,6 +13,13 @@ import {
 
 import { NotificationBellIcon } from "@/components/icons/notification-bell-icon";
 import { TrashActionIcon } from "@/components/icons/trash-action-icon";
+import {
+  DEFAULT_LIST_INITIAL_NUM_TO_RENDER,
+  DEFAULT_LIST_MAX_TO_RENDER_PER_BATCH,
+  DEFAULT_LIST_REMOVE_CLIPPED_SUBVIEWS,
+  DEFAULT_LIST_UPDATE_BATCHING_PERIOD,
+  DEFAULT_LIST_WINDOW_SIZE,
+} from "@/constants/list-performance";
 import { RADIUS, SHADOWS, SPACING, type ThemeColors } from "@/constants/theme";
 import { useUserNotifications } from "@/hooks/use-user-notifications";
 import {
@@ -194,94 +201,108 @@ export default function NotificationsScreen() {
         }}
       />
 
-      <ScrollView
+      <FlatList
+        data={isLoading ? [] : notifications}
+        initialNumToRender={DEFAULT_LIST_INITIAL_NUM_TO_RENDER}
+        keyExtractor={(item) => item.id}
+        maxToRenderPerBatch={DEFAULT_LIST_MAX_TO_RENDER_PER_BATCH}
+        removeClippedSubviews={DEFAULT_LIST_REMOVE_CLIPPED_SUBVIEWS}
+        renderItem={({ item: notification }) => {
+          const timeLabel = getTimeLabel(notification.createdAt);
+          const isSelected = selectedIdSet.has(notification.id);
+
+          return (
+            <Pressable
+              style={({ pressed }) => [
+                styles.card,
+                !notification.isRead && styles.cardUnread,
+                isSelected && styles.cardSelected,
+                pressed && styles.cardPressed,
+              ]}
+              onPress={() => {
+                handlePressNotification(notification);
+              }}
+              onLongPress={() => {
+                handleLongPressNotification(notification.id);
+              }}
+              delayLongPress={220}
+            >
+              {notification.imageUrl ? (
+                <Image
+                  cachePolicy="memory-disk"
+                  contentFit="cover"
+                  source={{ uri: notification.imageUrl }}
+                  style={styles.cardImage}
+                  transition={100}
+                />
+              ) : (
+                <View style={styles.cardImageFallback}>
+                  <NotificationBellIcon
+                    size={20}
+                    color={notification.isRead ? colors.subtleText : colors.primary}
+                  />
+                </View>
+              )}
+
+              <View style={styles.cardBody}>
+                <View style={styles.cardTopRow}>
+                  <Text style={styles.cardTitle} numberOfLines={1}>
+                    {notification.title}
+                  </Text>
+                  <View style={styles.cardMetaWrap}>
+                    {isSelected ? (
+                      <View style={styles.selectedPill}>
+                        <Text style={styles.selectedPillText}>Selected</Text>
+                      </View>
+                    ) : null}
+                    {timeLabel ? (
+                      <Text style={styles.cardTime} numberOfLines={1}>
+                        {timeLabel}
+                      </Text>
+                    ) : null}
+                    {!notification.isRead ? <View style={styles.unreadDot} /> : null}
+                  </View>
+                </View>
+                <Text style={styles.cardText} numberOfLines={2}>
+                  {notification.body || "-"}
+                </Text>
+              </View>
+            </Pressable>
+          );
+        }}
+        ItemSeparatorComponent={() => <View style={styles.listSeparator} />}
+        ListHeaderComponent={
+          <View style={styles.headerContent}>
+            <View style={styles.headerCard}>
+              <Text style={styles.headerTitle}>Notifications</Text>
+              <Text style={styles.headerSubtitle}>{subtitle}</Text>
+            </View>
+
+            {isLoading ? (
+              <View style={styles.loadingWrap}>
+                <ActivityIndicator size="small" color={colors.primary} />
+              </View>
+            ) : null}
+          </View>
+        }
+        ListEmptyComponent={
+          !isLoading ? (
+            <View style={styles.emptyCard}>
+              <View style={styles.emptyIconWrap}>
+                <NotificationBellIcon size={22} color={colors.mutedText} />
+              </View>
+              <Text style={styles.emptyTitle}>No notifications yet</Text>
+              <Text style={styles.emptyText}>
+                New updates and approvals will appear here.
+              </Text>
+            </View>
+          ) : null
+        }
         contentContainerStyle={styles.container}
         showsVerticalScrollIndicator={false}
-      >
-        <View style={styles.headerCard}>
-          <Text style={styles.headerTitle}>Notifications</Text>
-          <Text style={styles.headerSubtitle}>{subtitle}</Text>
-        </View>
-
-        {isLoading ? (
-          <View style={styles.loadingWrap}>
-            <ActivityIndicator size="small" color={colors.primary} />
-          </View>
-        ) : null}
-
-        {!isLoading && !notifications.length ? (
-          <View style={styles.emptyCard}>
-            <View style={styles.emptyIconWrap}>
-              <NotificationBellIcon size={22} color={colors.mutedText} />
-            </View>
-            <Text style={styles.emptyTitle}>No notifications yet</Text>
-            <Text style={styles.emptyText}>
-              New updates and approvals will appear here.
-            </Text>
-          </View>
-        ) : null}
-
-        {!isLoading
-          ? notifications.map((notification) => {
-              const timeLabel = getTimeLabel(notification.createdAt);
-              const isSelected = selectedIdSet.has(notification.id);
-
-              return (
-                <Pressable
-                  key={notification.id}
-                  style={({ pressed }) => [
-                    styles.card,
-                    !notification.isRead && styles.cardUnread,
-                    isSelected && styles.cardSelected,
-                    pressed && styles.cardPressed,
-                  ]}
-                  onPress={() => {
-                    handlePressNotification(notification);
-                  }}
-                  onLongPress={() => {
-                    handleLongPressNotification(notification.id);
-                  }}
-                  delayLongPress={220}
-                >
-                  {notification.imageUrl ? (
-                    <Image source={{ uri: notification.imageUrl }} style={styles.cardImage} />
-                  ) : (
-                    <View style={styles.cardImageFallback}>
-                      <NotificationBellIcon
-                        size={20}
-                        color={notification.isRead ? colors.subtleText : colors.primary}
-                      />
-                    </View>
-                  )}
-
-                  <View style={styles.cardBody}>
-                    <View style={styles.cardTopRow}>
-                      <Text style={styles.cardTitle} numberOfLines={1}>
-                        {notification.title}
-                      </Text>
-                      <View style={styles.cardMetaWrap}>
-                        {isSelected ? (
-                          <View style={styles.selectedPill}>
-                            <Text style={styles.selectedPillText}>Selected</Text>
-                          </View>
-                        ) : null}
-                        {timeLabel ? (
-                          <Text style={styles.cardTime} numberOfLines={1}>
-                            {timeLabel}
-                          </Text>
-                        ) : null}
-                        {!notification.isRead ? <View style={styles.unreadDot} /> : null}
-                      </View>
-                    </View>
-                    <Text style={styles.cardText} numberOfLines={2}>
-                      {notification.body || "-"}
-                    </Text>
-                  </View>
-                </Pressable>
-              );
-            })
-          : null}
-      </ScrollView>
+        updateCellsBatchingPeriod={DEFAULT_LIST_UPDATE_BATCHING_PERIOD}
+        windowSize={DEFAULT_LIST_WINDOW_SIZE}
+      />
     </>
   );
 }
@@ -289,10 +310,17 @@ export default function NotificationsScreen() {
 const createStyles = (colors: ThemeColors) =>
   StyleSheet.create({
     container: {
+      flexGrow: 1,
       padding: SPACING.xl,
       paddingBottom: SPACING.xxl * 2,
-      gap: SPACING.md,
       backgroundColor: colors.background,
+    },
+    headerContent: {
+      marginBottom: SPACING.md,
+      gap: SPACING.md,
+    },
+    listSeparator: {
+      height: SPACING.md,
     },
     headerCard: {
       borderRadius: RADIUS.md,
@@ -368,7 +396,7 @@ const createStyles = (colors: ThemeColors) =>
       backgroundColor: colors.activeSurface,
     },
     cardSelected: {
-      borderColor: colors.accent,
+      borderColor: "transparent",
       backgroundColor: colors.accentSoft,
     },
     cardPressed: {

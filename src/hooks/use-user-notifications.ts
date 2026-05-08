@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import {
   enforceUserNotificationRetentionAsync,
-  getUserNotificationsQuery,
+  getRecentUserNotificationsQuery,
   isCreatorUserNotification,
   mapUserNotificationRecord,
   type UserNotificationCategory,
@@ -20,6 +20,113 @@ const getNotificationSortTime = (value: string) => {
   return Number.isFinite(timestamp) ? timestamp : 0;
 };
 
+type SharedNotificationsState = {
+  notifications: UserNotificationRecord[];
+  isLoading: boolean;
+};
+
+type SharedNotificationsSubscriber = (state: SharedNotificationsState) => void;
+
+type SharedNotificationsEntry = SharedNotificationsState & {
+  subscribers: Set<SharedNotificationsSubscriber>;
+  unsubscribe: (() => void) | null;
+};
+
+const sharedNotificationsByUid = new Map<string, SharedNotificationsEntry>();
+const SHARED_NOTIFICATIONS_SNAPSHOT_LIMIT = 300;
+
+const broadcastSharedNotifications = (uid: string) => {
+  const entry = sharedNotificationsByUid.get(uid);
+  if (!entry) {
+    return;
+  }
+
+  const payload: SharedNotificationsState = {
+    notifications: entry.notifications,
+    isLoading: entry.isLoading,
+  };
+
+  entry.subscribers.forEach((subscriber) => {
+    subscriber(payload);
+  });
+};
+
+const ensureSharedNotificationsEntry = (uid: string) => {
+  const normalizedUid = uid.trim();
+  if (!normalizedUid) {
+    return null;
+  }
+
+  const existingEntry = sharedNotificationsByUid.get(normalizedUid);
+  if (existingEntry) {
+    return existingEntry;
+  }
+
+  const nextEntry: SharedNotificationsEntry = {
+    notifications: [],
+    isLoading: true,
+    subscribers: new Set<SharedNotificationsSubscriber>(),
+    unsubscribe: null,
+  };
+
+  nextEntry.unsubscribe = onSnapshot(
+    getRecentUserNotificationsQuery(normalizedUid, SHARED_NOTIFICATIONS_SNAPSHOT_LIMIT),
+    (snapshot) => {
+      const mappedNotifications = snapshot.docs.map((item) =>
+        mapUserNotificationRecord(
+          item.id,
+          normalizedUid,
+          item.data() as DocumentData,
+        ),
+      );
+      const sortedNotifications = [...mappedNotifications].sort(
+        (left, right) =>
+          getNotificationSortTime(right.createdAt) -
+          getNotificationSortTime(left.createdAt),
+      );
+
+      nextEntry.notifications = sortedNotifications;
+      nextEntry.isLoading = false;
+      void enforceUserNotificationRetentionAsync({
+        uid: normalizedUid,
+        notifications: sortedNotifications,
+      }).catch(() => {
+        // Ignore lifecycle cleanup failures while rendering notifications.
+      });
+      broadcastSharedNotifications(normalizedUid);
+    },
+    () => {
+      nextEntry.notifications = [];
+      nextEntry.isLoading = false;
+      broadcastSharedNotifications(normalizedUid);
+    },
+  );
+
+  sharedNotificationsByUid.set(normalizedUid, nextEntry);
+  return nextEntry;
+};
+
+const releaseSharedNotificationsEntry = (uid: string, subscriber: SharedNotificationsSubscriber) => {
+  const normalizedUid = uid.trim();
+  if (!normalizedUid) {
+    return;
+  }
+
+  const entry = sharedNotificationsByUid.get(normalizedUid);
+  if (!entry) {
+    return;
+  }
+
+  entry.subscribers.delete(subscriber);
+
+  if (entry.subscribers.size > 0) {
+    return;
+  }
+
+  entry.unsubscribe?.();
+  sharedNotificationsByUid.delete(normalizedUid);
+};
+
 export function useUserNotifications({
   category = "all",
 }: UseUserNotificationsOptions = {}) {
@@ -33,43 +140,26 @@ export function useUserNotifications({
       setIsLoading(false);
       return;
     }
+    const entry = ensureSharedNotificationsEntry(user.uid);
+    if (!entry) {
+      setAllNotifications([]);
+      setIsLoading(false);
+      return;
+    }
 
-    setIsLoading(true);
+    setAllNotifications(entry.notifications);
+    setIsLoading(entry.isLoading);
 
-    const unsubscribe = onSnapshot(
-      getUserNotificationsQuery(user.uid),
-      (snapshot) => {
-        const mappedNotifications = snapshot.docs.map((item) =>
-          mapUserNotificationRecord(
-            item.id,
-            user.uid,
-            item.data() as DocumentData,
-          ),
-        );
-        const sortedNotifications = [...mappedNotifications].sort(
-          (left, right) =>
-            getNotificationSortTime(right.createdAt) -
-            getNotificationSortTime(left.createdAt),
-        );
+    const subscriber: SharedNotificationsSubscriber = (state) => {
+      setAllNotifications(state.notifications);
+      setIsLoading(state.isLoading);
+    };
 
-        setAllNotifications(
-          sortedNotifications,
-        );
-        void enforceUserNotificationRetentionAsync({
-          uid: user.uid,
-          notifications: sortedNotifications,
-        }).catch(() => {
-          // Ignore lifecycle sync issues while reading notifications.
-        });
-        setIsLoading(false);
-      },
-      () => {
-        setAllNotifications([]);
-        setIsLoading(false);
-      },
-    );
+    entry.subscribers.add(subscriber);
 
-    return unsubscribe;
+    return () => {
+      releaseSharedNotificationsEntry(user.uid, subscriber);
+    };
   }, [user?.uid]);
 
   const notifications = useMemo(() => {

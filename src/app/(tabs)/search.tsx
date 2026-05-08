@@ -1,11 +1,12 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useFocusEffect } from "@react-navigation/native";
 import { useCallback, useDeferredValue, useEffect, useMemo, useState } from "react";
+import { Image } from "expo-image";
 import { Stack, useNavigation, useRouter } from "expo-router";
 import {
   Alert,
   BackHandler,
-  Image,
+  FlatList,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -19,6 +20,13 @@ import { FavoriteActionIcon } from "@/components/icons/favorite-action-icon";
 import { SearchInput } from "@/components/search-input";
 import { SkeletonBlock } from "@/components/skeleton-block";
 import {
+  DEFAULT_LIST_INITIAL_NUM_TO_RENDER,
+  DEFAULT_LIST_MAX_TO_RENDER_PER_BATCH,
+  DEFAULT_LIST_REMOVE_CLIPPED_SUBVIEWS,
+  DEFAULT_LIST_UPDATE_BATCHING_PERIOD,
+  DEFAULT_LIST_WINDOW_SIZE,
+} from "@/constants/list-performance";
+import {
   FONT_SIZE,
   RADIUS,
   SHADOWS,
@@ -28,10 +36,11 @@ import {
 } from "@/constants/theme";
 import { useFavorites } from "@/hooks/use-favorites";
 import {
+  buildPostSearchIndex,
   formatDate,
   getContentPreviewLines,
   getPostCardThumbnailUrl,
-  matchesPostSearch,
+  normalizeSearchKeyword,
   type PostRecord,
 } from "@/lib/content";
 import {
@@ -46,6 +55,9 @@ const SEARCH_SKELETON_ITEMS = Array.from({ length: 3 }, (_, index) => index);
 const MAX_RECENT_SEARCHES = 6;
 const RECENT_SEARCHES_STORAGE_KEY = "app:recent_search_terms";
 const HEADER_SHADOW_SCROLL_THRESHOLD = 6;
+type SearchResultItem =
+  | { kind: "skeleton"; id: number }
+  | { kind: "post"; post: PostRecord };
 
 export default function SearchScreen() {
   const insets = useSafeAreaInsets();
@@ -63,13 +75,39 @@ export default function SearchScreen() {
   const [hasScrolled, setHasScrolled] = useState(false);
   const [dismissedSuggestedSearches, setDismissedSuggestedSearches] = useState<string[]>([]);
   const deferredSearchTerm = useDeferredValue(searchTerm);
+  const normalizedDeferredSearchTerm = useMemo(
+    () => normalizeSearchKeyword(deferredSearchTerm),
+    [deferredSearchTerm],
+  );
   const normalizedSearchTerm = searchTerm.trim();
   const hasActiveSearch = Boolean(normalizedSearchTerm);
   const isOfflineState = !isConnected || postsError === DEFAULT_OFFLINE_MESSAGE;
   const showInlineError = Boolean(postsError) && !isOfflineState;
+  const searchablePosts = useMemo(
+    () =>
+      publishedPosts.map((post) => ({
+        post,
+        searchIndex: buildPostSearchIndex(post),
+      })),
+    [publishedPosts],
+  );
   const filteredPosts = useMemo(
-    () => publishedPosts.filter((post) => matchesPostSearch(post, deferredSearchTerm)),
-    [deferredSearchTerm, publishedPosts],
+    () =>
+      searchablePosts
+        .filter((item) =>
+          !normalizedDeferredSearchTerm || item.searchIndex.includes(normalizedDeferredSearchTerm),
+        )
+        .map((item) => item.post),
+    [normalizedDeferredSearchTerm, searchablePosts],
+  );
+  const searchResultItems = useMemo<SearchResultItem[]>(
+    () =>
+      isLoadingPosts
+        ? SEARCH_SKELETON_ITEMS.map((item) => ({ kind: "skeleton" as const, id: item }))
+        : showInlineError
+          ? []
+          : filteredPosts.map((post) => ({ kind: "post" as const, post })),
+    [filteredPosts, isLoadingPosts, showInlineError],
   );
   const suggestedSearchTerms = useMemo(() => {
     const uniqueTitles: string[] = [];
@@ -210,7 +248,13 @@ export default function SearchScreen() {
   const closeSearchPage = useCallback(() => {
     persistCurrentSearch();
     setSearchTerm("");
-    router.back();
+
+    if (router.canGoBack()) {
+      router.back();
+      return;
+    }
+
+    router.replace("/home");
   }, [persistCurrentSearch, router]);
 
   useFocusEffect(
@@ -292,7 +336,7 @@ export default function SearchScreen() {
                 hasScrolled ? styles.headerSearchContainerScrolled : null,
                 {
                   paddingTop: Math.max(insets.top, SPACING.sm),
-                  backgroundColor: "#FFFFFF",
+                  backgroundColor: colors.background,
                 },
               ]}
             >
@@ -313,136 +357,39 @@ export default function SearchScreen() {
       />
 
       <View style={styles.screen}>
-        <ScrollView
-          contentContainerStyle={[styles.container, { paddingTop: SPACING.lg }]}
-          showsVerticalScrollIndicator={false}
-          onScroll={(event) => handleScroll(event.nativeEvent.contentOffset.y)}
-          scrollEventThrottle={16}
-        >
-          {!hasActiveSearch && hasHydratedRecentSearches ? (
-            <View style={styles.recentSearchWrap}>
-              <Text style={styles.recentSearchLabel}>{searchSectionTitle}</Text>
-              {hasRecentSearches ? (
-                <View style={styles.recentSearchList}>
-                  {recentSearches.map((item, index) => (
-                    <View
-                      key={item}
-                      style={[
-                        styles.recentSearchRow,
-                        index < recentSearches.length - 1
-                          ? styles.recentSearchRowWithSeparator
-                          : null,
-                      ]}
-                    >
-                      <Pressable
-                        accessibilityRole="button"
-                        accessibilityLabel={`Search ${item}`}
-                        style={({ pressed }) => [
-                          styles.recentSearchRowMain,
-                          pressed ? styles.recentSearchRowMainPressed : null,
-                        ]}
-                        onPress={() => setSearchTerm(item)}
-                      >
-                        <Text style={styles.recentSearchRowText}>{item}</Text>
-                      </Pressable>
-                      <Pressable
-                        accessibilityRole="button"
-                        accessibilityLabel={`Remove ${item} from recent search`}
-                        hitSlop={6}
-                        style={({ pressed }) => [
-                          styles.recentSearchRowCloseButton,
-                          pressed ? styles.recentSearchRowCloseButtonPressed : null,
-                        ]}
-                        onPress={() => removeRecentSearch(item)}
-                      >
-                        <CancelInputIcon color={colors.mutedText} size={14} />
-                      </Pressable>
+        {hasActiveSearch ? (
+          <FlatList<SearchResultItem>
+            data={searchResultItems}
+            initialNumToRender={DEFAULT_LIST_INITIAL_NUM_TO_RENDER}
+            keyExtractor={(item) => {
+              if (item.kind === "skeleton") {
+                return `skeleton-${item.id}`;
+              }
+
+              return item.post.id;
+            }}
+            maxToRenderPerBatch={DEFAULT_LIST_MAX_TO_RENDER_PER_BATCH}
+            removeClippedSubviews={DEFAULT_LIST_REMOVE_CLIPPED_SUBVIEWS}
+            renderItem={({ item }) => {
+              if (item.kind === "skeleton") {
+                return (
+                  <View style={styles.card}>
+                    <View style={styles.cardBody}>
+                      <SkeletonBlock height={156} borderRadius={RADIUS.md} />
+                      <SkeletonBlock width="82%" height={24} />
+                      <SkeletonBlock width="68%" height={24} />
+                      <SkeletonBlock width="100%" height={16} borderRadius={RADIUS.sm} />
+                      <SkeletonBlock width="76%" height={16} borderRadius={RADIUS.sm} />
                     </View>
-                  ))}
-                </View>
-              ) : (
-                <View style={styles.recentSearchEmptyWrap}>
-                  {hasSuggestedSearches ? (
-                    <View style={styles.recentSearchChipsWrap}>
-                      {visibleSuggestedSearchTerms.map((item) => (
-                        <View
-                          key={item}
-                          style={styles.searchChip}
-                        >
-                          <Pressable
-                            accessibilityRole="button"
-                            accessibilityLabel={`Search ${item}`}
-                            style={({ pressed }) => [
-                              styles.searchChipMain,
-                              pressed ? styles.searchChipPressed : null,
-                            ]}
-                            onPress={() => setSearchTerm(item)}
-                          >
-                            <Text style={styles.searchChipText}>{item}</Text>
-                          </Pressable>
-                          <View style={styles.searchChipDivider} />
-                          <Pressable
-                            accessibilityRole="button"
-                            accessibilityLabel={`Remove ${item} from recommended search`}
-                            hitSlop={6}
-                            style={({ pressed }) => [
-                              styles.searchChipCloseButton,
-                              pressed ? styles.searchChipCloseButtonPressed : null,
-                            ]}
-                            onPress={() => dismissSuggestedSearch(item)}
-                          >
-                            <CancelInputIcon color={colors.mutedText} size={14} />
-                          </Pressable>
-                        </View>
-                      ))}
+
+                    <View style={styles.cardFooter}>
+                      <SkeletonBlock width={92} height={16} borderRadius={RADIUS.sm} />
                     </View>
-                  ) : (
-                    <>
-                      <Text style={styles.recentSearchEmptyText}>No recent search</Text>
-                      <Text style={styles.recentSearchHintText}>Start typing to search.</Text>
-                    </>
-                  )}
-                </View>
-              )}
-            </View>
-          ) : null}
+                  </View>
+                );
+              }
 
-          {isLoadingPosts
-            ? SEARCH_SKELETON_ITEMS.map((item) => (
-              <View key={item} style={styles.card}>
-                <View style={styles.cardBody}>
-                  <SkeletonBlock height={156} borderRadius={RADIUS.md} />
-                  <SkeletonBlock width="82%" height={24} />
-                  <SkeletonBlock width="68%" height={24} />
-                  <SkeletonBlock width="100%" height={16} borderRadius={RADIUS.sm} />
-                  <SkeletonBlock width="76%" height={16} borderRadius={RADIUS.sm} />
-                </View>
-
-                <View style={styles.cardFooter}>
-                  <SkeletonBlock width={92} height={16} borderRadius={RADIUS.sm} />
-                </View>
-              </View>
-            ))
-            : null}
-
-          {!isLoadingPosts && showInlineError ? (
-            <Text style={styles.errorText}>{postsError}</Text>
-          ) : null}
-
-          {hasActiveSearch && !isLoadingPosts && !showInlineError ? (
-            <Text style={styles.resultText}>
-              {`Showing ${filteredPosts.length} of ${publishedPosts.length} posts`}
-            </Text>
-          ) : null}
-
-          {hasActiveSearch && !isLoadingPosts && !showInlineError && !filteredPosts.length ? (
-            <View style={styles.emptyWrap}>
-              <Text style={styles.emptyText}>No posts match the current search.</Text>
-            </View>
-          ) : null}
-
-          {hasActiveSearch && !isLoadingPosts && !showInlineError
-            ? filteredPosts.map((post) => {
+              const post = item.post;
               const thumbnailUrl = getPostCardThumbnailUrl(post);
               const favorite = isFavorite(post.id);
               const updatedLabel = formatDate(post.uploadDate || post.createDate);
@@ -453,7 +400,7 @@ export default function SearchScreen() {
                 "Unknown Author";
 
               return (
-                <View key={post.id} style={styles.card}>
+                <View style={styles.card}>
                   <Pressable
                     style={({ pressed }) => [
                       styles.cardBody,
@@ -464,9 +411,11 @@ export default function SearchScreen() {
                     <View style={styles.mediaWrap}>
                       {thumbnailUrl ? (
                         <Image
+                          cachePolicy="memory-disk"
+                          contentFit="cover"
                           source={{ uri: thumbnailUrl }}
                           style={styles.thumbnail}
-                          resizeMode="cover"
+                          transition={120}
                         />
                       ) : (
                         <View style={styles.thumbnailFallback} />
@@ -517,9 +466,153 @@ export default function SearchScreen() {
                   </View>
                 </View>
               );
-            })
-            : null}
-        </ScrollView>
+            }}
+            ItemSeparatorComponent={() => <View style={styles.resultSeparator} />}
+            ListHeaderComponent={
+              <View style={styles.resultsHeader}>
+                {!isLoadingPosts && showInlineError ? (
+                  <Text style={styles.errorText}>{postsError}</Text>
+                ) : null}
+
+                {!isLoadingPosts && !showInlineError ? (
+                  <Text style={styles.resultText}>
+                    {`Showing ${filteredPosts.length} of ${publishedPosts.length} posts`}
+                  </Text>
+                ) : null}
+              </View>
+            }
+            ListEmptyComponent={
+              !isLoadingPosts && !showInlineError ? (
+                <View style={styles.emptyWrap}>
+                  <Text style={styles.emptyText}>No posts match the current search.</Text>
+                </View>
+              ) : null
+            }
+            contentContainerStyle={[styles.resultsContainer, { paddingTop: SPACING.lg }]}
+            showsVerticalScrollIndicator={false}
+            onScroll={(event) => handleScroll(event.nativeEvent.contentOffset.y)}
+            scrollEventThrottle={16}
+            updateCellsBatchingPeriod={DEFAULT_LIST_UPDATE_BATCHING_PERIOD}
+            windowSize={DEFAULT_LIST_WINDOW_SIZE}
+          />
+        ) : (
+          <ScrollView
+            contentContainerStyle={[styles.container, { paddingTop: SPACING.lg }]}
+            showsVerticalScrollIndicator={false}
+            onScroll={(event) => handleScroll(event.nativeEvent.contentOffset.y)}
+            scrollEventThrottle={16}
+          >
+            {hasHydratedRecentSearches ? (
+              <View style={styles.recentSearchWrap}>
+                <Text style={styles.recentSearchLabel}>{searchSectionTitle}</Text>
+                {hasRecentSearches ? (
+                  <View style={styles.recentSearchList}>
+                    {recentSearches.map((item, index) => (
+                      <View
+                        key={item}
+                        style={[
+                          styles.recentSearchRow,
+                          index < recentSearches.length - 1
+                            ? styles.recentSearchRowWithSeparator
+                            : null,
+                        ]}
+                      >
+                        <Pressable
+                          accessibilityRole="button"
+                          accessibilityLabel={`Search ${item}`}
+                          style={({ pressed }) => [
+                            styles.recentSearchRowMain,
+                            pressed ? styles.recentSearchRowMainPressed : null,
+                          ]}
+                          onPress={() => setSearchTerm(item)}
+                        >
+                          <Text style={styles.recentSearchRowText}>{item}</Text>
+                        </Pressable>
+                        <Pressable
+                          accessibilityRole="button"
+                          accessibilityLabel={`Remove ${item} from recent search`}
+                          hitSlop={6}
+                          style={({ pressed }) => [
+                            styles.recentSearchRowCloseButton,
+                            pressed ? styles.recentSearchRowCloseButtonPressed : null,
+                          ]}
+                          onPress={() => removeRecentSearch(item)}
+                        >
+                          <CancelInputIcon color={colors.mutedText} size={14} />
+                        </Pressable>
+                      </View>
+                    ))}
+                  </View>
+                ) : (
+                  <View style={styles.recentSearchEmptyWrap}>
+                    {hasSuggestedSearches ? (
+                      <View style={styles.recentSearchChipsWrap}>
+                        {visibleSuggestedSearchTerms.map((item) => (
+                          <View
+                            key={item}
+                            style={styles.searchChip}
+                          >
+                            <Pressable
+                              accessibilityRole="button"
+                              accessibilityLabel={`Search ${item}`}
+                              style={({ pressed }) => [
+                                styles.searchChipMain,
+                                pressed ? styles.searchChipPressed : null,
+                              ]}
+                              onPress={() => setSearchTerm(item)}
+                            >
+                              <Text style={styles.searchChipText}>{item}</Text>
+                            </Pressable>
+                            <View style={styles.searchChipDivider} />
+                            <Pressable
+                              accessibilityRole="button"
+                              accessibilityLabel={`Remove ${item} from recommended search`}
+                              hitSlop={6}
+                              style={({ pressed }) => [
+                                styles.searchChipCloseButton,
+                                pressed ? styles.searchChipCloseButtonPressed : null,
+                              ]}
+                              onPress={() => dismissSuggestedSearch(item)}
+                            >
+                              <CancelInputIcon color={colors.mutedText} size={14} />
+                            </Pressable>
+                          </View>
+                        ))}
+                      </View>
+                    ) : (
+                      <>
+                        <Text style={styles.recentSearchEmptyText}>No recent search</Text>
+                        <Text style={styles.recentSearchHintText}>Start typing to search.</Text>
+                      </>
+                    )}
+                  </View>
+                )}
+              </View>
+            ) : null}
+
+            {isLoadingPosts
+              ? SEARCH_SKELETON_ITEMS.map((item) => (
+                <View key={item} style={styles.card}>
+                  <View style={styles.cardBody}>
+                    <SkeletonBlock height={156} borderRadius={RADIUS.md} />
+                    <SkeletonBlock width="82%" height={24} />
+                    <SkeletonBlock width="68%" height={24} />
+                    <SkeletonBlock width="100%" height={16} borderRadius={RADIUS.sm} />
+                    <SkeletonBlock width="76%" height={16} borderRadius={RADIUS.sm} />
+                  </View>
+
+                  <View style={styles.cardFooter}>
+                    <SkeletonBlock width={92} height={16} borderRadius={RADIUS.sm} />
+                  </View>
+                </View>
+              ))
+              : null}
+
+            {!isLoadingPosts && showInlineError ? (
+              <Text style={styles.errorText}>{postsError}</Text>
+            ) : null}
+          </ScrollView>
+        )}
       </View>
     </>
   );
@@ -536,6 +629,19 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     paddingBottom: SPACING.xxl,
     gap: SPACING.xl,
     backgroundColor: colors.background,
+  },
+  resultsContainer: {
+    flexGrow: 1,
+    paddingHorizontal: SPACING.xxl,
+    paddingBottom: SPACING.xxl,
+    backgroundColor: colors.background,
+  },
+  resultsHeader: {
+    marginBottom: SPACING.xl,
+    gap: SPACING.xl,
+  },
+  resultSeparator: {
+    height: SPACING.xl,
   },
   headerSearchContainer: {
     paddingHorizontal: SPACING.xxl,

@@ -2,7 +2,7 @@
   "expo": {
     "name": "DevGeet",
     "slug": "devgeet",
-    "version": "1.1.27",
+    "version": "1.1.29",
     "runtimeVersion": {
       "policy": "appVersion"
     },
@@ -76,7 +76,7 @@
             "backgroundColor": "#15171C",
             "image": "./assets/images/splash-icon.png"
           },
-          "imageWidth": 220,
+          "imageWidth": 240,
           "resizeMode": "contain"
         }
       ],

@@ -1,7 +1,9 @@
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
+  useMemo,
   useState,
   type ReactNode,
 } from "react";
@@ -666,14 +668,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     void signOut(auth);
   }, [profile, user]);
 
-  const setRememberSessionPersistence = async (remember: boolean) => {
+  const setRememberSessionPersistence = useCallback(async (remember: boolean) => {
     await setPersistence(auth, getAuthPersistenceForRememberMe(remember));
-  };
+  }, []);
 
-  const isUsernameAvailable = async (username: string, excludeUid?: string) =>
-    isUsernameAvailableRecord(username, excludeUid);
+  const isUsernameAvailable = useCallback(
+    async (username: string, excludeUid?: string) =>
+      isUsernameAvailableRecord(username, excludeUid),
+    [],
+  );
 
-  const updateCurrentUserProfile = async (payload: {
+  const updateCurrentUserProfile = useCallback(async (payload: {
     firstName: string;
     lastName: string;
     username: string;
@@ -774,9 +779,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       photoURL: nextProfile.photoURL || null,
     });
     setProfile(nextProfile);
-  };
+  }, [profile]);
 
-  const switchCurrentUserToAuthor = async () => {
+  const switchCurrentUserToAuthor = useCallback(async () => {
     const currentUser = auth.currentUser;
 
     if (!currentUser) {
@@ -827,9 +832,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       role: "author",
       accountStatus: "active",
     });
-  };
+  }, [profile]);
 
-  const loginWithGoogleIdToken = async (idToken: string) => {
+  const loginWithGoogleIdToken = useCallback(async (idToken: string) => {
     const credential = GoogleAuthProvider.credential(idToken);
     const result = await signInWithCredential(auth, credential);
     await persistFederatedUserProfile({
@@ -839,9 +844,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       displayName: result.user.displayName,
       photoURL: result.user.photoURL,
     });
-  };
+  }, []);
 
-  const loginWithAppleCredential = async (payload: {
+  const loginWithAppleCredential = useCallback(async (payload: {
     idToken: string;
     rawNonce: string;
     email?: string | null;
@@ -863,9 +868,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       displayName: `${payload.firstName ?? ""} ${payload.lastName ?? ""}`.trim(),
       photoURL: result.user.photoURL,
     });
-  };
+  }, []);
 
-  const deleteCurrentUserAccount = async () => {
+  const deleteCurrentUserAccount = useCallback(async () => {
     const currentUser = auth.currentUser;
 
     if (!currentUser) {
@@ -975,9 +980,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch (error) {
       throw mapAccountDeletionError(error);
     }
-  };
+  }, [profile]);
 
-  const logout = async () => {
+  const logout = useCallback(async () => {
     const currentUser = auth.currentUser;
     if (currentUser) {
       const cachedPushToken = await getCachedPushTokenAsync().catch(() => "");
@@ -996,27 +1001,48 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (auth.currentUser) {
       await signOut(auth);
     }
-  };
+  }, []);
 
-  const value: AuthContextType = {
-    user,
-    profile,
-    hasProfileDocument,
-    role,
-    isAdmin,
-    canManagePosts,
-    canModeratePosts,
-    canManageUsers,
-    isBootstrapping,
-    setRememberSessionPersistence,
-    isUsernameAvailable,
-    updateCurrentUserProfile,
-    switchCurrentUserToAuthor,
-    loginWithGoogleIdToken,
-    loginWithAppleCredential,
-    deleteCurrentUserAccount,
-    logout,
-  };
+  const value = useMemo<AuthContextType>(
+    () => ({
+      user,
+      profile,
+      hasProfileDocument,
+      role,
+      isAdmin,
+      canManagePosts,
+      canModeratePosts,
+      canManageUsers,
+      isBootstrapping,
+      setRememberSessionPersistence,
+      isUsernameAvailable,
+      updateCurrentUserProfile,
+      switchCurrentUserToAuthor,
+      loginWithGoogleIdToken,
+      loginWithAppleCredential,
+      deleteCurrentUserAccount,
+      logout,
+    }),
+    [
+      canManagePosts,
+      canManageUsers,
+      canModeratePosts,
+      deleteCurrentUserAccount,
+      hasProfileDocument,
+      isAdmin,
+      isBootstrapping,
+      isUsernameAvailable,
+      loginWithAppleCredential,
+      loginWithGoogleIdToken,
+      logout,
+      profile,
+      role,
+      setRememberSessionPersistence,
+      switchCurrentUserToAuthor,
+      updateCurrentUserProfile,
+      user,
+    ],
+  );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Image } from "expo-image";
 import {
   ActivityIndicator,
   Alert,
-  Image,
+  FlatList,
   Modal,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -25,6 +25,13 @@ import {
   type DocumentData,
 } from "firebase/firestore";
 
+import {
+  DEFAULT_LIST_INITIAL_NUM_TO_RENDER,
+  DEFAULT_LIST_MAX_TO_RENDER_PER_BATCH,
+  DEFAULT_LIST_REMOVE_CLIPPED_SUBVIEWS,
+  DEFAULT_LIST_UPDATE_BATCHING_PERIOD,
+  DEFAULT_LIST_WINDOW_SIZE,
+} from "@/constants/list-performance";
 import {
   RADIUS,
   SHADOWS,
@@ -83,6 +90,7 @@ const POST_ACTION_MENU_OFFSET = 8;
 export default function AdminPostsListScreen() {
   const { colors, resolvedTheme } = useAppTheme();
   const { isConnected, showToast } = useNetworkStatus();
+  const isConnectedRef = useRef(isConnected);
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const router = useRouter();
   const { canManagePosts, canModeratePosts, role, user } = useAuth();
@@ -99,6 +107,10 @@ export default function AdminPostsListScreen() {
   const [isSearchFilterMenuOpen, setIsSearchFilterMenuOpen] = useState(false);
   const [isStatusMenuOpen, setIsStatusMenuOpen] = useState(false);
   const [activeActionMenu, setActiveActionMenu] = useState<PostActionMenuState | null>(null);
+
+  useEffect(() => {
+    isConnectedRef.current = isConnected;
+  }, [isConnected]);
 
   useEffect(() => {
     setIsLoadingPosts(true);
@@ -134,7 +146,7 @@ export default function AdminPostsListScreen() {
         setError(
           getRequestErrorMessage({
             error: snapshotError,
-            isConnected,
+            isConnected: isConnectedRef.current,
             onlineMessage: "Unable to load posts.",
           }),
         );
@@ -144,7 +156,7 @@ export default function AdminPostsListScreen() {
     return () => {
       unsubscribePosts();
     };
-  }, [canModeratePosts, isConnected, user?.uid]);
+  }, [canModeratePosts, user?.uid]);
 
   const scopedPosts = useMemo(() => {
     if (canModeratePosts) {
@@ -754,94 +766,100 @@ export default function AdminPostsListScreen() {
         </Text>
       ) : null}
 
-      <ScrollView
+      <FlatList
         style={styles.listContainer}
         contentContainerStyle={styles.listContent}
-        showsVerticalScrollIndicator={false}
-        onScrollBeginDrag={() => {
-          closeAllMenus();
-        }}
-      >
-        {!isLoadingPosts && !filteredPosts.length ? (
-          <View style={styles.emptyState}>
-            <Text style={styles.emptyText}>
-              No posts found in this tab.
-            </Text>
-          </View>
-        ) : (
-          <View style={styles.cardsWrap}>
-            {filteredPosts.map((post) => {
-              const isTrashed = isPostTrashed(post);
-              const updatedLabel = formatDate(
-                post.publishedAt || post.uploadDate || post.createDate,
-              );
-              const thumbnailUrl = getPostCardThumbnailUrl(post);
-              const postTitle = post.title.trim() || "Untitled Post";
-              const postPreview = getContentPreviewLines(post.content, 1) || "-";
-              const statusLabel = isTrashed
-                ? "Trashed"
-                : post.status === "published"
-                  ? "Published"
-                  : post.status === "pending"
-                    ? "Pending Review"
-                    : "Draft";
+        data={isLoadingPosts ? [] : filteredPosts}
+        initialNumToRender={DEFAULT_LIST_INITIAL_NUM_TO_RENDER}
+        keyExtractor={(item) => item.id}
+        maxToRenderPerBatch={DEFAULT_LIST_MAX_TO_RENDER_PER_BATCH}
+        removeClippedSubviews={DEFAULT_LIST_REMOVE_CLIPPED_SUBVIEWS}
+        renderItem={({ item: post }) => {
+          const isTrashed = isPostTrashed(post);
+          const updatedLabel = formatDate(
+            post.publishedAt || post.uploadDate || post.createDate,
+          );
+          const thumbnailUrl = getPostCardThumbnailUrl(post);
+          const postTitle = post.title.trim() || "Untitled Post";
+          const postPreview = getContentPreviewLines(post.content, 1) || "-";
+          const statusLabel = isTrashed
+            ? "Trashed"
+            : post.status === "published"
+              ? "Published"
+              : post.status === "pending"
+                ? "Pending Review"
+                : "Draft";
 
-              return (
-                <View key={post.id} style={styles.postCard}>
-                  <Pressable
-                    style={({ pressed }) => [styles.postCardBody, pressed && styles.postCardBodyPressed]}
-                    onPress={
-                      isTrashed
-                        ? undefined
-                        : () => router.push(`/admin/posts/edit?postId=${post.id}`)
-                    }
-                    disabled={isTrashed}
-                  >
-                    <View style={styles.postMediaWrap}>
-                      {thumbnailUrl ? (
-                        <Image
-                          source={{ uri: thumbnailUrl }}
-                          style={styles.postImage}
-                          resizeMode="cover"
-                        />
-                      ) : (
-                        <View style={styles.postImageFallback} />
-                      )}
-                    </View>
-
-                    <View style={styles.postMetaWrap}>
-                      <Text style={styles.postTitle} numberOfLines={2}>
-                        {postTitle}
-                      </Text>
-                      <Text style={styles.postPreview} numberOfLines={1}>
-                        {postPreview}
-                      </Text>
-                      <Text style={styles.postDate}>{`${statusLabel} | ${updatedLabel}`}</Text>
-                    </View>
-                  </Pressable>
-                  <View style={styles.rowMenuWrap}>
-                    <Pressable
-                      style={({ pressed }) => [styles.rowMenuButton, pressed && styles.rowMenuButtonPressed]}
-                      onPress={(event) => {
-                        const { pageX, pageY } = event.nativeEvent;
-                        setIsSearchFilterMenuOpen(false);
-                        setIsStatusMenuOpen(false);
-                        setActiveActionMenu({
-                          post,
-                          anchorX: pageX,
-                          anchorY: pageY,
-                        });
-                      }}
-                    >
-                      <MoreVerticalIcon color={colors.subtleText} size={20} />
-                    </Pressable>
-                  </View>
+          return (
+            <View style={styles.postCard}>
+              <Pressable
+                style={({ pressed }) => [styles.postCardBody, pressed && styles.postCardBodyPressed]}
+                onPress={
+                  isTrashed
+                    ? undefined
+                    : () => router.push(`/admin/posts/edit?postId=${post.id}`)
+                }
+                disabled={isTrashed}
+              >
+                <View style={styles.postMediaWrap}>
+                  {thumbnailUrl ? (
+                    <Image
+                      cachePolicy="memory-disk"
+                      contentFit="cover"
+                      source={{ uri: thumbnailUrl }}
+                      style={styles.postImage}
+                      transition={100}
+                    />
+                  ) : (
+                    <View style={styles.postImageFallback} />
+                  )}
                 </View>
-              );
-            })}
-          </View>
-        )}
-      </ScrollView>
+
+                <View style={styles.postMetaWrap}>
+                  <Text style={styles.postTitle} numberOfLines={2}>
+                    {postTitle}
+                  </Text>
+                  <Text style={styles.postPreview} numberOfLines={1}>
+                    {postPreview}
+                  </Text>
+                  <Text style={styles.postDate}>{`${statusLabel} | ${updatedLabel}`}</Text>
+                </View>
+              </Pressable>
+              <View style={styles.rowMenuWrap}>
+                <Pressable
+                  style={({ pressed }) => [styles.rowMenuButton, pressed && styles.rowMenuButtonPressed]}
+                  onPress={(event) => {
+                    const { pageX, pageY } = event.nativeEvent;
+                    setIsSearchFilterMenuOpen(false);
+                    setIsStatusMenuOpen(false);
+                    setActiveActionMenu({
+                      post,
+                      anchorX: pageX,
+                      anchorY: pageY,
+                    });
+                  }}
+                >
+                  <MoreVerticalIcon color={colors.subtleText} size={20} />
+                </Pressable>
+              </View>
+            </View>
+          );
+        }}
+        ItemSeparatorComponent={() => <View style={styles.listSeparator} />}
+        ListEmptyComponent={
+          !isLoadingPosts ? (
+            <View style={styles.emptyState}>
+              <Text style={styles.emptyText}>
+                No posts found in this tab.
+              </Text>
+            </View>
+          ) : null
+        }
+        onScrollBeginDrag={closeAllMenus}
+        showsVerticalScrollIndicator={false}
+        updateCellsBatchingPeriod={DEFAULT_LIST_UPDATE_BATCHING_PERIOD}
+        windowSize={DEFAULT_LIST_WINDOW_SIZE}
+      />
 
       {isAnyMenuOpen ? (
         <Pressable
@@ -1130,7 +1148,9 @@ const createStyles = (colors: ThemeColors, resolvedTheme: "light" | "dark") => {
       paddingHorizontal: SPACING.lg,
       paddingTop: SPACING.xs,
       paddingBottom: SPACING.xxl * 3,
-      gap: SPACING.lg,
+    },
+    listSeparator: {
+      height: SPACING.lg,
     },
     emptyState: {
       borderRadius: RADIUS.card,
@@ -1144,9 +1164,6 @@ const createStyles = (colors: ThemeColors, resolvedTheme: "light" | "dark") => {
       color: colors.mutedText,
       fontSize: 14,
       lineHeight: 20,
-    },
-    cardsWrap: {
-      gap: SPACING.lg,
     },
     postCard: {
       position: "relative",

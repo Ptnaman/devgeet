@@ -105,15 +105,19 @@ type SettingItem = {
   showChevron?: boolean;
 };
 
+type SettingsStyles = ReturnType<typeof createStyles>;
+
 function SettingRow({
+  chevronColor,
   item,
   isLast = false,
+  styles,
 }: {
+  chevronColor: string;
   item: SettingItem;
   isLast?: boolean;
+  styles: SettingsStyles;
 }) {
-  const { colors } = useAppTheme();
-  const styles = createStyles(colors);
   const isInteractive = Boolean(item.onPress) && !item.disabled;
 
   return (
@@ -158,7 +162,7 @@ function SettingRow({
             </Text>
           ) : null}
           {item.showChevron !== false ? (
-            <ArrowRightIcon size={20} color={colors.subtleText} />
+            <ArrowRightIcon size={20} color={chevronColor} />
           ) : null}
         </View>
       </View>
@@ -167,21 +171,22 @@ function SettingRow({
 }
 
 function SettingToggleRow({
+  colors,
   isLast = false,
   onValueChange,
   subtitle,
+  styles,
   title,
   value,
 }: {
+  colors: ThemeColors;
   isLast?: boolean;
   onValueChange: (value: boolean) => void;
   subtitle?: string;
+  styles: SettingsStyles;
   title: string;
   value: boolean;
 }) {
-  const { colors } = useAppTheme();
-  const styles = createStyles(colors);
-
   return (
     <View style={[styles.row, !isLast && styles.rowDivider]}>
       <View style={styles.rowContent}>
@@ -381,6 +386,7 @@ export function SettingsTabContent() {
           <Text style={styles.sectionLabel}>Creator</Text>
           <View style={styles.groupCard}>
             <SettingRow
+              chevronColor={colors.subtleText}
               item={{
                 key: "creator-studio",
                 title: isAdmin ? "Admin Panel" : "My Posts",
@@ -391,6 +397,7 @@ export function SettingsTabContent() {
                 onPress: () => router.push(isAdmin ? "/admin" : "/admin/posts"),
               }}
               isLast
+              styles={styles}
             />
           </View>
         </>
@@ -438,6 +445,8 @@ export function SettingsTabContent() {
       <Text style={styles.sectionLabel}>Reading</Text>
       <View style={styles.groupCard}>
         <SettingToggleRow
+          colors={colors}
+          styles={styles}
           title="Keep screen awake"
           subtitle="Turn it on for reading expirence."
           value={keepLyricsScreenAwakeEnabled}
@@ -452,9 +461,11 @@ export function SettingsTabContent() {
       <View style={styles.groupCard}>
         {legalItems.map((item, index) => (
           <SettingRow
+            chevronColor={colors.subtleText}
             key={item.key}
             item={item}
             isLast={index === legalItems.length - 1}
+            styles={styles}
           />
         ))}
       </View>
@@ -463,9 +474,11 @@ export function SettingsTabContent() {
       <View style={styles.groupCard}>
         {supportItems.map((item, index) => (
           <SettingRow
+            chevronColor={colors.subtleText}
             key={item.key}
             item={item}
             isLast={index === supportItems.length - 1}
+            styles={styles}
           />
         ))}
       </View>
@@ -473,6 +486,7 @@ export function SettingsTabContent() {
       <Text style={styles.sectionLabel}>About</Text>
       <View style={styles.groupCard}>
         <SettingRow
+          chevronColor={colors.subtleText}
           item={{
             key: "share-app",
             title: "Share App",
@@ -482,10 +496,12 @@ export function SettingsTabContent() {
             showChevron: false,
           }}
           isLast
+          styles={styles}
         />
       </View>
       <View style={styles.groupCard}>
         <SettingRow
+          chevronColor={colors.subtleText}
           item={{
             key: "about",
             title: "App Updates",
@@ -494,12 +510,14 @@ export function SettingsTabContent() {
             onPress: () => router.push("/app-updates"),
           }}
           isLast
+          styles={styles}
         />
       </View>
 
       <Text style={styles.sectionLabel}>Help</Text>
       <View style={styles.groupCard}>
         <SettingRow
+          chevronColor={colors.subtleText}
           item={{
             key: "help",
             title: "Help",
@@ -508,6 +526,7 @@ export function SettingsTabContent() {
             onPress: () => router.push("/help"),
           }}
           isLast
+          styles={styles}
         />
       </View>
 

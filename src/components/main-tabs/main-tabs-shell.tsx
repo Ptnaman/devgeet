@@ -1,7 +1,17 @@
 import Constants from "expo-constants";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useFocusEffect } from "@react-navigation/native";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { Pressable, StyleSheet, Text, View, useWindowDimensions } from "react-native";
+import {
+  BackHandler,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  ToastAndroid,
+  View,
+  useWindowDimensions,
+} from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, {
   cancelAnimation,
@@ -34,6 +44,8 @@ const EDGE_RESISTANCE = 0.24;
 const RELEASE_DURATION = 220;
 const HEADER_ROW_HEIGHT = 56;
 const HEADER_SHADOW_SCROLL_THRESHOLD = 4;
+const BACK_EXIT_CONFIRMATION_WINDOW_MS = 2000;
+const BACK_EXIT_CONFIRMATION_MESSAGE = "Tap again to exit";
 
 function clamp(value: number, min: number, max: number) {
   "worklet";
@@ -72,6 +84,12 @@ export function MainTabsShell() {
   });
   const { colors, resolvedTheme } = useAppTheme();
   const [activeTab, setActiveTab] = useState<MainTabName>(initialTabRef.current);
+  const [mountedTabs, setMountedTabs] = useState<Record<MainTabName, boolean>>(() => ({
+    home: initialTabRef.current === "home",
+    categories: initialTabRef.current === "categories",
+    favorite: initialTabRef.current === "favorite",
+    settings: initialTabRef.current === "settings",
+  }));
   const [isHeaderElevated, setIsHeaderElevated] = useState(false);
   const [isHeaderHidden, setIsHeaderHidden] = useState(false);
   const [isTabBarHidden, setIsTabBarHidden] = useState(false);
@@ -85,6 +103,7 @@ export function MainTabsShell() {
   const tabBarBottomPadding = Math.max(insets.bottom, 12);
   const tabBarHeight = 58 + tabBarBottomPadding;
   const appName = Constants.expoConfig?.name ?? "DevGeet";
+  const backExitPromptTimestampRef = useRef(0);
   const activeTabItem = MAIN_TAB_DEFINITIONS.find((item) => item.name === activeTab);
   const activeTabLabel = activeTabItem ? activeTabItem.label : appName;
   const headerTitleText = activeTab === "home" ? appName : activeTabLabel;
@@ -232,6 +251,12 @@ export function MainTabsShell() {
   }, [syncHeaderHiddenForTab, syncHeaderStateForTab, syncTabBarHiddenForTab]);
 
   useEffect(() => {
+    setMountedTabs((currentTabs) =>
+      currentTabs[activeTab] ? currentTabs : { ...currentTabs, [activeTab]: true },
+    );
+  }, [activeTab]);
+
+  useEffect(() => {
     const nextTabParam = normalizeMainTabParam(tab);
 
     if (!nextTabParam || nextTabParam === lastHandledTabRef.current) {
@@ -241,6 +266,41 @@ export function MainTabsShell() {
     lastHandledTabRef.current = nextTabParam;
     snapToIndex(getMainTabIndex(resolveMainTabName(nextTabParam)));
   }, [snapToIndex, tab]);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (Platform.OS !== "android") {
+        return undefined;
+      }
+
+      const backHandler = BackHandler.addEventListener("hardwareBackPress", () => {
+        if (router.canGoBack()) {
+          return false;
+        }
+
+        if (activeTabRef.current !== "home") {
+          snapToIndex(getMainTabIndex("home"), true);
+          return true;
+        }
+
+        const now = Date.now();
+        const elapsedSinceLastPrompt = now - backExitPromptTimestampRef.current;
+
+        if (elapsedSinceLastPrompt <= BACK_EXIT_CONFIRMATION_WINDOW_MS) {
+          BackHandler.exitApp();
+          return true;
+        }
+
+        backExitPromptTimestampRef.current = now;
+        ToastAndroid.show(BACK_EXIT_CONFIRMATION_MESSAGE, ToastAndroid.SHORT);
+        return true;
+      });
+
+      return () => {
+        backHandler.remove();
+      };
+    }, [router, snapToIndex]),
+  );
 
   const openProfilePage = useCallback(() => {
     router.push("/profile");
@@ -312,8 +372,17 @@ export function MainTabsShell() {
     [snapToIndex],
   );
 
+  const mainTabsHeaderContextValue = useMemo(
+    () => ({
+      reportScrollOffset,
+      setHeaderHidden,
+      setTabBarHidden,
+    }),
+    [reportScrollOffset, setHeaderHidden, setTabBarHidden],
+  );
+
   return (
-    <MainTabsHeaderContext.Provider value={{ reportScrollOffset, setHeaderHidden, setTabBarHidden }}>
+    <MainTabsHeaderContext.Provider value={mainTabsHeaderContextValue}>
       <View style={[styles.screen, { backgroundColor: colors.background }]}>
         <View
           style={[
@@ -393,7 +462,7 @@ export function MainTabsShell() {
             >
               {MAIN_TAB_DEFINITIONS.map(({ name, Content }) => (
                 <View key={name} style={[styles.page, { width }]}>
-                  <Content />
+                  {mountedTabs[name] ? <Content /> : null}
                 </View>
               ))}
             </Animated.View>

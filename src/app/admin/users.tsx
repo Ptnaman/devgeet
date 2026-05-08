@@ -1,5 +1,5 @@
 import { Redirect } from "expo-router";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -91,6 +91,7 @@ const mapManagedUser = (uid: string, data: DocumentData): ManagedUser => {
 export default function AdminUsersScreen() {
   const { colors, resolvedTheme } = useAppTheme();
   const { isConnected } = useNetworkStatus();
+  const isConnectedRef = useRef(isConnected);
   const { isAdmin, profile } = useAuth();
   const styles = createStyles(colors, resolvedTheme);
   const [users, setUsers] = useState<ManagedUser[]>([]);
@@ -103,8 +104,16 @@ export default function AdminUsersScreen() {
   const [busyUserId, setBusyUserId] = useState("");
 
   useEffect(() => {
-    const usersQuery = query(collection(firestore, USERS_COLLECTION));
-    const postsQuery = query(collection(firestore, POSTS_COLLECTION));
+    isConnectedRef.current = isConnected;
+  }, [isConnected]);
+
+  useEffect(() => {
+    const usersQuery = query(
+      collection(firestore, USERS_COLLECTION),
+    );
+    const postsQuery = query(
+      collection(firestore, POSTS_COLLECTION),
+    );
 
     const unsubscribeUsers = onSnapshot(
       usersQuery,
@@ -122,7 +131,7 @@ export default function AdminUsersScreen() {
         setError(
           getRequestErrorMessage({
             error: snapshotError,
-            isConnected,
+            isConnected: isConnectedRef.current,
             onlineMessage: "Unable to load creators.",
           })
         );
@@ -159,7 +168,7 @@ export default function AdminUsersScreen() {
         setError(
           getRequestErrorMessage({
             error: snapshotError,
-            isConnected,
+            isConnected: isConnectedRef.current,
             onlineMessage: "Unable to load creators.",
           })
         );
@@ -170,7 +179,7 @@ export default function AdminUsersScreen() {
       unsubscribeUsers();
       unsubscribePosts();
     };
-  }, [isConnected]);
+  }, []);
 
   const creatorUsers = useMemo(() => {
     const creatorUserIdsSet = new Set(creatorUserIds);

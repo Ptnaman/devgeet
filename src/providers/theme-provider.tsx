@@ -2,8 +2,10 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as SystemUI from "expo-system-ui";
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
+  useMemo,
   useState,
   type ReactNode,
 } from "react";
@@ -78,7 +80,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     });
   }, [colors, resolvedTheme]);
 
-  const setThemePreference = async (preference: ThemePreference) => {
+  const setThemePreference = useCallback(async (preference: ThemePreference) => {
     setThemePreferenceState(preference);
 
     try {
@@ -86,14 +88,17 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     } catch {
       // Keep in-memory preference even if persistence fails.
     }
-  };
+  }, []);
 
-  const value: ThemeContextType = {
-    colors,
-    resolvedTheme,
-    themePreference,
-    setThemePreference,
-  };
+  const value = useMemo<ThemeContextType>(
+    () => ({
+      colors,
+      resolvedTheme,
+      themePreference,
+      setThemePreference,
+    }),
+    [colors, resolvedTheme, setThemePreference, themePreference],
+  );
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
 }
