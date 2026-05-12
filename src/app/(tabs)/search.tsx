@@ -1,11 +1,9 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { useFocusEffect } from "@react-navigation/native";
 import { useCallback, useDeferredValue, useEffect, useMemo, useState } from "react";
 import { Image } from "expo-image";
 import { Stack, useNavigation, useRouter } from "expo-router";
 import {
   Alert,
-  BackHandler,
   FlatList,
   Pressable,
   ScrollView,
@@ -249,26 +247,13 @@ export default function SearchScreen() {
     persistCurrentSearch();
     setSearchTerm("");
 
-    if (router.canGoBack()) {
-      router.back();
+    if (navigation.canGoBack()) {
+      navigation.goBack();
       return;
     }
 
     router.replace("/home");
-  }, [persistCurrentSearch, router]);
-
-  useFocusEffect(
-    useCallback(() => {
-      const backHandler = BackHandler.addEventListener("hardwareBackPress", () => {
-        closeSearchPage();
-        return true;
-      });
-
-      return () => {
-        backHandler.remove();
-      };
-    }, [closeSearchPage]),
-  );
+  }, [navigation, persistCurrentSearch, router]);
 
   useEffect(() => {
     const unsubscribe = navigation.addListener("beforeRemove", () => {

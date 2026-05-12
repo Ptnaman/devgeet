@@ -8,7 +8,6 @@ import {
   Pressable,
   StyleSheet,
   Text,
-  ToastAndroid,
   View,
   useWindowDimensions,
 } from "react-native";
@@ -44,8 +43,6 @@ const EDGE_RESISTANCE = 0.24;
 const RELEASE_DURATION = 220;
 const HEADER_ROW_HEIGHT = 56;
 const HEADER_SHADOW_SCROLL_THRESHOLD = 4;
-const BACK_EXIT_CONFIRMATION_WINDOW_MS = 2000;
-const BACK_EXIT_CONFIRMATION_MESSAGE = "Tap again to exit";
 
 function clamp(value: number, min: number, max: number) {
   "worklet";
@@ -103,7 +100,6 @@ export function MainTabsShell() {
   const tabBarBottomPadding = Math.max(insets.bottom, 12);
   const tabBarHeight = 58 + tabBarBottomPadding;
   const appName = Constants.expoConfig?.name ?? "DevGeet";
-  const backExitPromptTimestampRef = useRef(0);
   const activeTabItem = MAIN_TAB_DEFINITIONS.find((item) => item.name === activeTab);
   const activeTabLabel = activeTabItem ? activeTabItem.label : appName;
   const headerTitleText = activeTab === "home" ? appName : activeTabLabel;
@@ -274,32 +270,18 @@ export function MainTabsShell() {
       }
 
       const backHandler = BackHandler.addEventListener("hardwareBackPress", () => {
-        if (router.canGoBack()) {
-          return false;
-        }
-
         if (activeTabRef.current !== "home") {
           snapToIndex(getMainTabIndex("home"), true);
           return true;
         }
 
-        const now = Date.now();
-        const elapsedSinceLastPrompt = now - backExitPromptTimestampRef.current;
-
-        if (elapsedSinceLastPrompt <= BACK_EXIT_CONFIRMATION_WINDOW_MS) {
-          BackHandler.exitApp();
-          return true;
-        }
-
-        backExitPromptTimestampRef.current = now;
-        ToastAndroid.show(BACK_EXIT_CONFIRMATION_MESSAGE, ToastAndroid.SHORT);
-        return true;
+        return false;
       });
 
       return () => {
         backHandler.remove();
       };
-    }, [router, snapToIndex]),
+    }, [snapToIndex]),
   );
 
   const openProfilePage = useCallback(() => {

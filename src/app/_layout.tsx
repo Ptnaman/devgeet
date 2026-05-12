@@ -1,10 +1,10 @@
 import Constants from "expo-constants";
 import { useFonts } from "expo-font";
-import { Stack, usePathname, useRouter } from "expo-router";
+import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
-import { useEffect, useRef } from "react";
-import { BackHandler, Platform, StyleSheet, ToastAndroid, View } from "react-native";
+import { useEffect } from "react";
+import { Platform, StyleSheet, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import "@/lib/firebase";
@@ -15,7 +15,7 @@ import {
 } from "@/lib/typography";
 import { hasNotificationsNativeSupport } from "@/lib/notifications";
 import { AppUpdatesProvider } from "@/providers/app-updates-provider";
-import { AuthProvider, useAuth } from "@/providers/auth-provider";
+import { AuthProvider } from "@/providers/auth-provider";
 import { LyricsReaderPreferencesProvider } from "@/providers/lyrics-reader-preferences-provider";
 import { NetworkProvider } from "@/providers/network-provider";
 import { NotificationsProvider } from "@/providers/notifications-provider";
@@ -24,48 +24,9 @@ import { ThemeProvider, useAppTheme } from "@/providers/theme-provider";
 void SplashScreen.preventAutoHideAsync();
 installGlobalTypography();
 
-const BACK_EXIT_CONFIRMATION_WINDOW_MS = 2000;
-const BACK_EXIT_CONFIRMATION_MESSAGE = "Tap again to exit";
-
 function AppShell() {
   const { colors, resolvedTheme } = useAppTheme();
-  const { user } = useAuth();
-  const router = useRouter();
-  const pathname = usePathname();
   const styles = createStyles(colors.background);
-  const backExitPromptTimestampRef = useRef(0);
-
-  useEffect(() => {
-    if (Platform.OS !== "android") {
-      return undefined;
-    }
-
-    const subscription = BackHandler.addEventListener("hardwareBackPress", () => {
-      if (router.canGoBack()) {
-        return false;
-      }
-
-      if (user && pathname !== "/home") {
-        router.replace("/home");
-        return true;
-      }
-
-      const now = Date.now();
-      const elapsedSinceLastPrompt = now - backExitPromptTimestampRef.current;
-      if (elapsedSinceLastPrompt <= BACK_EXIT_CONFIRMATION_WINDOW_MS) {
-        BackHandler.exitApp();
-        return true;
-      }
-
-      backExitPromptTimestampRef.current = now;
-      ToastAndroid.show(BACK_EXIT_CONFIRMATION_MESSAGE, ToastAndroid.SHORT);
-      return true;
-    });
-
-    return () => {
-      subscription.remove();
-    };
-  }, [pathname, router, user]);
 
   return (
     <View style={styles.container}>

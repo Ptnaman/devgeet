@@ -879,6 +879,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const existingProfile = profile ?? createFallbackUserProfile(currentUser);
     const provider = existingProfile.provider || resolveProvider(currentUser);
+    let isProfileMarkedDeleted = false;
 
     try {
       if (!hasRecentLogin(currentUser)) {
@@ -974,8 +975,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         );
       });
 
-      await deleteUser(currentUser);
+      isProfileMarkedDeleted = true;
+
+      try {
+        await deleteUser(currentUser);
+      } catch (deleteUserError) {
+        // Firestore cleanup is already committed. Treat auth deletion failures as completed
+        // logical deletion so the user does not see a false "delete failed" error state.
+        if (!isProfileMarkedDeleted) {
+          throw deleteUserError;
+        }
+      }
+
       await clearGoogleSessionsAsync();
+      if (auth.currentUser) {
+        await signOut(auth).catch(() => {
+          // Ignore sign-out failures after the account is already marked deleted.
+        });
+      }
       setProfile(null);
     } catch (error) {
       throw mapAccountDeletionError(error);
