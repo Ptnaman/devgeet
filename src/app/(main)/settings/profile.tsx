@@ -160,7 +160,7 @@ export default function ProfileScreen() {
     }
 
     if (!hasCompleteAuthorProfile) {
-      router.push("/profile-edit");
+      router.push("/settings/profile-edit");
       return;
     }
 
@@ -253,7 +253,7 @@ export default function ProfileScreen() {
       title: "Edit Profile",
       subtitle: "Update your name, username, gender, and bio",
       icon: <UserAvatarIcon color={colors.accent} size={18} />,
-      onPress: () => router.push("/profile-edit"),
+      onPress: () => router.push("/settings/profile-edit"),
     },
     {
       key: "email",

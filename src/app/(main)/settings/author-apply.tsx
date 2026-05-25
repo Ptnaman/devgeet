@@ -41,7 +41,7 @@ export default function AuthorApplyScreen() {
   }
 
   if (role !== "user") {
-    return <Redirect href="/profile" />;
+    return <Redirect href="/settings/profile" />;
   }
 
   const hasCompleteProfile = Boolean(
@@ -124,7 +124,7 @@ export default function AuthorApplyScreen() {
             styles.secondaryButton,
             pressed && styles.buttonPressed,
           ]}
-          onPress={() => router.push("/profile-edit")}
+          onPress={() => router.push("/settings/profile-edit")}
         >
           <Text style={styles.secondaryButtonText}>Complete Profile</Text>
         </Pressable>

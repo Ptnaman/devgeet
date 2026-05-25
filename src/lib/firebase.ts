@@ -11,7 +11,11 @@ import {
   type Persistence,
 } from "firebase/auth";
 import type { Analytics } from "firebase/analytics";
-import { getFirestore } from "firebase/firestore";
+import {
+  getFirestore,
+  initializeFirestore,
+  persistentLocalCache,
+} from "firebase/firestore";
 import { getFunctions } from "firebase/functions";
 import { Platform } from "react-native";
 
@@ -74,7 +78,22 @@ const createAuthInstance = (): Auth => {
 };
 
 export const auth = createAuthInstance();
-export const firestore = getFirestore(firebaseApp);
+
+const createFirestoreInstance = () => {
+  if (Platform.OS !== "web") {
+    return getFirestore(firebaseApp);
+  }
+
+  try {
+    return initializeFirestore(firebaseApp, {
+      localCache: persistentLocalCache(),
+    });
+  } catch {
+    return getFirestore(firebaseApp);
+  }
+};
+
+export const firestore = createFirestoreInstance();
 export const functions = getFunctions(firebaseApp, "us-central1");
 
 let analytics: Analytics | null = null;

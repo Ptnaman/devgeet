@@ -342,14 +342,14 @@ const createStyles = (colors: ThemeColors, buttonBackgroundColor?: string) =>
       flex: 1,
     },
     backdrop: {
-      ...StyleSheet.absoluteFillObject,
+      ...StyleSheet.absoluteFill,
     },
     backdropGlass: {
-      ...StyleSheet.absoluteFillObject,
+      ...StyleSheet.absoluteFill,
       backgroundColor: colors.backdropOverlay,
     },
     backdropPressable: {
-      ...StyleSheet.absoluteFillObject,
+      ...StyleSheet.absoluteFill,
     },
     menuCard: {
       position: "absolute",
@@ -471,14 +471,14 @@ const createStyles = (colors: ThemeColors, buttonBackgroundColor?: string) =>
       backgroundColor: colors.primary,
     },
     detailsOverlay: {
-      ...StyleSheet.absoluteFillObject,
+      ...StyleSheet.absoluteFill,
       alignItems: "center",
       justifyContent: "center",
       paddingHorizontal: SPACING.lg,
       zIndex: 2,
     },
     detailsBackdrop: {
-      ...StyleSheet.absoluteFillObject,
+      ...StyleSheet.absoluteFill,
       backgroundColor: colors.overlay,
     },
     detailsCard: {

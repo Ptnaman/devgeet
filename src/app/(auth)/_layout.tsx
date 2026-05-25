@@ -13,7 +13,7 @@ export default function AuthLayout() {
   }
 
   if (user) {
-    return <Redirect href="/home" />;
+    return <Redirect href="/(main)/(tabs)" />;
   }
 
   return (
@@ -30,3 +30,4 @@ export default function AuthLayout() {
     </Stack>
   );
 }
+

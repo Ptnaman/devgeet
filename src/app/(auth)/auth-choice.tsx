@@ -251,3 +251,4 @@ const createAuthChoiceScreenStyles = (
       paddingHorizontal: SPACING.sm,
     },
   });
+

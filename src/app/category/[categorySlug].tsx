@@ -389,3 +389,4 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     lineHeight: 17,
   },
 });
+

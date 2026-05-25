@@ -1246,11 +1246,11 @@ const createStyles = (colors: ThemeColors, resolvedTheme: "light" | "dark") => {
       zIndex: 20,
     },
     actionMenuOverlay: {
-      ...StyleSheet.absoluteFillObject,
+      ...StyleSheet.absoluteFill,
       zIndex: 260,
     },
     actionMenuBackdrop: {
-      ...StyleSheet.absoluteFillObject,
+      ...StyleSheet.absoluteFill,
       backgroundColor: "transparent",
     },
     actionMenuDropdown: {
@@ -1295,9 +1295,10 @@ const createStyles = (colors: ThemeColors, resolvedTheme: "light" | "dark") => {
       color: colors.danger,
     },
     menuBackdrop: {
-      ...StyleSheet.absoluteFillObject,
+      ...StyleSheet.absoluteFill,
       zIndex: 140,
       backgroundColor: "transparent",
     },
   });
 };
+

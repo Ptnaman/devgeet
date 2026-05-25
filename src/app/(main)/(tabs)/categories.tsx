@@ -20,7 +20,7 @@ const CATEGORY_SKELETON_ITEMS = Array.from({ length: 4 }, (_, index) => index);
 
 const normalizeCategoryKey = (value: string) => value.trim().toLowerCase();
 
-export function CategoriesTabContent() {
+export default function CategoriesTabScreen() {
   const { colors } = useAppTheme();
   const {
     categories,

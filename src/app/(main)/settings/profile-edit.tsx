@@ -356,7 +356,7 @@ export default function ProfileEditScreen() {
       });
 
       showToast("Profile updated.");
-      router.replace("/profile");
+      router.replace("/settings/profile");
     } catch (profileActionError) {
       const message = getActionErrorMessage({
         error: profileActionError,
@@ -667,7 +667,7 @@ export default function ProfileEditScreen() {
               pressed && styles.buttonPressed,
               isSaving && styles.buttonDisabled,
             ]}
-            onPress={() => router.replace("/profile")}
+            onPress={() => router.replace("/settings/profile")}
             disabled={isSaving}
           >
             <Text style={styles.secondaryButtonText}>Cancel</Text>
@@ -942,7 +942,7 @@ const createStyles = (colors: ThemeColors) =>
       justifyContent: "flex-end",
     },
     selectorBackdrop: {
-      ...StyleSheet.absoluteFillObject,
+      ...StyleSheet.absoluteFill,
       backgroundColor: colors.overlay,
     },
     selectorSheet: {

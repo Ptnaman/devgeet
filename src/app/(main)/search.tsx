@@ -65,8 +65,11 @@ export default function SearchScreen() {
   const router = useRouter();
   const { isFavorite, toggleFavorite } = useFavorites();
   const { isConnected, showOfflineToast } = useNetworkStatus();
-  const favoritePalette = getFavoriteActionPalette(resolvedTheme);
-  const styles = createStyles(colors);
+  const favoritePalette = useMemo(
+    () => getFavoriteActionPalette(resolvedTheme),
+    [resolvedTheme],
+  );
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const [searchTerm, setSearchTerm] = useState("");
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
   const [hasHydratedRecentSearches, setHasHydratedRecentSearches] = useState(false);
@@ -252,7 +255,7 @@ export default function SearchScreen() {
       return;
     }
 
-    router.replace("/home");
+    router.replace("/(main)/(tabs)");
   }, [navigation, persistCurrentSearch, router]);
 
   useEffect(() => {
@@ -263,11 +266,11 @@ export default function SearchScreen() {
     return unsubscribe;
   }, [navigation, persistCurrentSearch]);
 
-  const openPost = (postId: string) => {
+  const openPost = useCallback((postId: string) => {
     router.push({ pathname: "/post/[postId]", params: { postId } });
-  };
+  }, [router]);
 
-  const handleToggleFavorite = async (post: PostRecord) => {
+  const handleToggleFavorite = useCallback(async (post: PostRecord) => {
     try {
       await toggleFavorite(post);
     } catch (toggleError) {
@@ -284,7 +287,7 @@ export default function SearchScreen() {
 
       Alert.alert("Unable to update bookmarks", message);
     }
-  };
+  }, [isConnected, showOfflineToast, toggleFavorite]);
 
   const handleScroll = useCallback((offsetY: number) => {
     const nextHasScrolled = offsetY > HEADER_SHADOW_SCROLL_THRESHOLD;
@@ -307,6 +310,160 @@ export default function SearchScreen() {
       return [...currentItems, value];
     });
   }, []);
+
+  const keyExtractor = useCallback((item: SearchResultItem) => {
+    if (item.kind === "skeleton") {
+      return `skeleton-${item.id}`;
+    }
+
+    return item.post.id;
+  }, []);
+
+  const renderSearchResultItem = useCallback(
+    ({ item }: { item: SearchResultItem }) => {
+      if (item.kind === "skeleton") {
+        return (
+          <View style={styles.card}>
+            <View style={styles.cardBody}>
+              <SkeletonBlock height={156} borderRadius={RADIUS.md} />
+              <SkeletonBlock width="82%" height={24} />
+              <SkeletonBlock width="68%" height={24} />
+              <SkeletonBlock width="100%" height={16} borderRadius={RADIUS.sm} />
+              <SkeletonBlock width="76%" height={16} borderRadius={RADIUS.sm} />
+            </View>
+
+            <View style={styles.cardFooter}>
+              <SkeletonBlock width={92} height={16} borderRadius={RADIUS.sm} />
+            </View>
+          </View>
+        );
+      }
+
+      const post = item.post;
+      const thumbnailUrl = getPostCardThumbnailUrl(post);
+      const favorite = isFavorite(post.id);
+      const updatedLabel = formatDate(post.uploadDate || post.createDate);
+      const previewText = getContentPreviewLines(post.content);
+      const authorName =
+        post.authorDisplayName.trim() ||
+        post.authorUsername.trim() ||
+        "Unknown Author";
+
+      return (
+        <View style={styles.card}>
+          <Pressable
+            style={({ pressed }) => [
+              styles.cardBody,
+              pressed && styles.cardBodyPressed,
+            ]}
+            onPress={() => openPost(post.id)}
+          >
+            <View style={styles.mediaWrap}>
+              {thumbnailUrl ? (
+                <Image
+                  cachePolicy="memory-disk"
+                  contentFit="cover"
+                  source={{ uri: thumbnailUrl }}
+                  style={styles.thumbnail}
+                  transition={120}
+                />
+              ) : (
+                <View style={styles.thumbnailFallback} />
+              )}
+              <Pressable
+                style={({ pressed }) => [
+                  styles.favoriteButton,
+                  pressed && styles.favoriteButtonPressed,
+                ]}
+                onPress={(event) => {
+                  event.stopPropagation();
+                  void handleToggleFavorite(post);
+                }}
+                accessibilityRole="button"
+                accessibilityLabel={
+                  favorite
+                    ? `Remove ${post.title} from bookmarks`
+                    : `Add ${post.title} to bookmarks`
+                }
+              >
+                <FavoriteActionIcon
+                  size={16}
+                  color={favoritePalette.color}
+                  filled={favorite}
+                  fillColor={favoritePalette.fillColor}
+                  accentColor={favoritePalette.accentColor}
+                  accentUnderlayColor={favoritePalette.accentUnderlayColor}
+                />
+              </Pressable>
+            </View>
+            <Text style={styles.cardTitle} numberOfLines={3} ellipsizeMode="tail">
+              {post.title}
+            </Text>
+            <Text
+              style={styles.cardPreview}
+              numberOfLines={2}
+              ellipsizeMode="tail"
+            >
+              {previewText}
+            </Text>
+            <Text style={styles.cardAuthor} numberOfLines={1}>
+              {`By ${authorName}`}
+            </Text>
+          </Pressable>
+
+          <View style={styles.cardFooter}>
+            <Text style={styles.meta}>{`Updated ${updatedLabel}`}</Text>
+          </View>
+        </View>
+      );
+    },
+    [
+      favoritePalette,
+      handleToggleFavorite,
+      isFavorite,
+      openPost,
+      styles,
+    ],
+  );
+
+  const renderSearchResultSeparator = useCallback(
+    () => <View style={styles.resultSeparator} />,
+    [styles],
+  );
+
+  const searchResultsHeader = useMemo(
+    () => (
+      <View style={styles.resultsHeader}>
+        {!isLoadingPosts && showInlineError ? (
+          <Text style={styles.errorText}>{postsError}</Text>
+        ) : null}
+
+        {!isLoadingPosts && !showInlineError ? (
+          <Text style={styles.resultText}>
+            {`Showing ${filteredPosts.length} of ${publishedPosts.length} posts`}
+          </Text>
+        ) : null}
+      </View>
+    ),
+    [
+      filteredPosts.length,
+      isLoadingPosts,
+      postsError,
+      publishedPosts.length,
+      showInlineError,
+      styles,
+    ],
+  );
+
+  const searchResultsEmpty = useMemo(
+    () =>
+      !isLoadingPosts && !showInlineError ? (
+        <View style={styles.emptyWrap}>
+          <Text style={styles.emptyText}>No posts match the current search.</Text>
+        </View>
+      ) : null,
+    [isLoadingPosts, showInlineError, styles],
+  );
 
   return (
     <>
@@ -346,133 +503,13 @@ export default function SearchScreen() {
           <FlatList<SearchResultItem>
             data={searchResultItems}
             initialNumToRender={DEFAULT_LIST_INITIAL_NUM_TO_RENDER}
-            keyExtractor={(item) => {
-              if (item.kind === "skeleton") {
-                return `skeleton-${item.id}`;
-              }
-
-              return item.post.id;
-            }}
+            keyExtractor={keyExtractor}
             maxToRenderPerBatch={DEFAULT_LIST_MAX_TO_RENDER_PER_BATCH}
             removeClippedSubviews={DEFAULT_LIST_REMOVE_CLIPPED_SUBVIEWS}
-            renderItem={({ item }) => {
-              if (item.kind === "skeleton") {
-                return (
-                  <View style={styles.card}>
-                    <View style={styles.cardBody}>
-                      <SkeletonBlock height={156} borderRadius={RADIUS.md} />
-                      <SkeletonBlock width="82%" height={24} />
-                      <SkeletonBlock width="68%" height={24} />
-                      <SkeletonBlock width="100%" height={16} borderRadius={RADIUS.sm} />
-                      <SkeletonBlock width="76%" height={16} borderRadius={RADIUS.sm} />
-                    </View>
-
-                    <View style={styles.cardFooter}>
-                      <SkeletonBlock width={92} height={16} borderRadius={RADIUS.sm} />
-                    </View>
-                  </View>
-                );
-              }
-
-              const post = item.post;
-              const thumbnailUrl = getPostCardThumbnailUrl(post);
-              const favorite = isFavorite(post.id);
-              const updatedLabel = formatDate(post.uploadDate || post.createDate);
-              const previewText = getContentPreviewLines(post.content);
-              const authorName =
-                post.authorDisplayName.trim() ||
-                post.authorUsername.trim() ||
-                "Unknown Author";
-
-              return (
-                <View style={styles.card}>
-                  <Pressable
-                    style={({ pressed }) => [
-                      styles.cardBody,
-                      pressed && styles.cardBodyPressed,
-                    ]}
-                    onPress={() => openPost(post.id)}
-                  >
-                    <View style={styles.mediaWrap}>
-                      {thumbnailUrl ? (
-                        <Image
-                          cachePolicy="memory-disk"
-                          contentFit="cover"
-                          source={{ uri: thumbnailUrl }}
-                          style={styles.thumbnail}
-                          transition={120}
-                        />
-                      ) : (
-                        <View style={styles.thumbnailFallback} />
-                      )}
-                      <Pressable
-                        style={({ pressed }) => [
-                          styles.favoriteButton,
-                          pressed && styles.favoriteButtonPressed,
-                        ]}
-                        onPress={(event) => {
-                          event.stopPropagation();
-                          void handleToggleFavorite(post);
-                        }}
-                        accessibilityRole="button"
-                        accessibilityLabel={
-                          favorite
-                            ? `Remove ${post.title} from bookmarks`
-                            : `Add ${post.title} to bookmarks`
-                        }
-                      >
-                        <FavoriteActionIcon
-                          size={16}
-                          color={favoritePalette.color}
-                          filled={favorite}
-                          fillColor={favoritePalette.fillColor}
-                          accentColor={favoritePalette.accentColor}
-                          accentUnderlayColor={favoritePalette.accentUnderlayColor}
-                        />
-                      </Pressable>
-                    </View>
-                    <Text style={styles.cardTitle} numberOfLines={3} ellipsizeMode="tail">
-                      {post.title}
-                    </Text>
-                    <Text
-                      style={styles.cardPreview}
-                      numberOfLines={2}
-                      ellipsizeMode="tail"
-                    >
-                      {previewText}
-                    </Text>
-                    <Text style={styles.cardAuthor} numberOfLines={1}>
-                      {`By ${authorName}`}
-                    </Text>
-                  </Pressable>
-
-                  <View style={styles.cardFooter}>
-                    <Text style={styles.meta}>{`Updated ${updatedLabel}`}</Text>
-                  </View>
-                </View>
-              );
-            }}
-            ItemSeparatorComponent={() => <View style={styles.resultSeparator} />}
-            ListHeaderComponent={
-              <View style={styles.resultsHeader}>
-                {!isLoadingPosts && showInlineError ? (
-                  <Text style={styles.errorText}>{postsError}</Text>
-                ) : null}
-
-                {!isLoadingPosts && !showInlineError ? (
-                  <Text style={styles.resultText}>
-                    {`Showing ${filteredPosts.length} of ${publishedPosts.length} posts`}
-                  </Text>
-                ) : null}
-              </View>
-            }
-            ListEmptyComponent={
-              !isLoadingPosts && !showInlineError ? (
-                <View style={styles.emptyWrap}>
-                  <Text style={styles.emptyText}>No posts match the current search.</Text>
-                </View>
-              ) : null
-            }
+            renderItem={renderSearchResultItem}
+            ItemSeparatorComponent={renderSearchResultSeparator}
+            ListHeaderComponent={searchResultsHeader}
+            ListEmptyComponent={searchResultsEmpty}
             contentContainerStyle={[styles.resultsContainer, { paddingTop: SPACING.lg }]}
             showsVerticalScrollIndicator={false}
             onScroll={(event) => handleScroll(event.nativeEvent.contentOffset.y)}
@@ -836,3 +873,4 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     color: colors.mutedText,
   },
 });
+

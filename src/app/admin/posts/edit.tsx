@@ -1427,7 +1427,7 @@ const createStyles = (colors: ThemeColors, resolvedTheme: "light" | "dark") => {
       justifyContent: "flex-end",
     },
     selectorBackdrop: {
-      ...StyleSheet.absoluteFillObject,
+      ...StyleSheet.absoluteFill,
       backgroundColor: colors.overlay,
     },
     selectorSheet: {
@@ -1565,3 +1565,4 @@ const createStyles = (colors: ThemeColors, resolvedTheme: "light" | "dark") => {
     },
   });
 };
+

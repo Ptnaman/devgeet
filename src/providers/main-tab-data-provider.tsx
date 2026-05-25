@@ -1,6 +1,7 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import LegacyAsyncStorage from "@react-native-async-storage/async-storage";
 import {
   collection,
+  getDocs,
   onSnapshot,
   orderBy,
   query,
@@ -12,6 +13,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useCallback,
   useRef,
   useState,
   type ReactNode,
@@ -31,13 +33,40 @@ import { firestore } from "@/lib/firebase";
 import { getRequestErrorMessage } from "@/lib/network";
 import { useNetworkStatus } from "@/providers/network-provider";
 
+type StorageLike = Pick<
+  typeof LegacyAsyncStorage,
+  "getItem" | "setItem" | "removeItem" | "multiGet" | "multiSet" | "multiRemove"
+>;
+
+const resolveStorage = (): StorageLike => {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const sqliteStorageModule = require("expo-sqlite/kv-store") as {
+      default?: StorageLike;
+    };
+
+    if (sqliteStorageModule.default) {
+      return sqliteStorageModule.default;
+    }
+  } catch {
+    // Fallback for runtimes where ExpoSQLite native module is unavailable.
+  }
+
+  return LegacyAsyncStorage;
+};
+
+const AsyncStorage = resolveStorage();
+const isUsingSqliteKvStore = AsyncStorage !== LegacyAsyncStorage;
+
 type MainTabDataContextType = {
   categories: CategoryRecord[];
   publishedPosts: PostRecord[];
   isLoadingCategories: boolean;
   isLoadingPosts: boolean;
+  isRefreshing: boolean;
   categoriesError: string;
   postsError: string;
+  refreshMainTabDataAsync: () => Promise<void>;
 };
 
 const MainTabDataContext = createContext<MainTabDataContextType | undefined>(
@@ -105,6 +134,7 @@ export function MainTabDataProvider({ children }: { children: ReactNode }) {
   const [publishedPosts, setPublishedPosts] = useState<PostRecord[]>([]);
   const [isLoadingCategories, setIsLoadingCategories] = useState(true);
   const [isLoadingPosts, setIsLoadingPosts] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [categoriesError, setCategoriesError] = useState("");
   const [postsError, setPostsError] = useState("");
 
@@ -113,10 +143,35 @@ export function MainTabDataProvider({ children }: { children: ReactNode }) {
 
     const hydrateCachedMainTabData = async () => {
       try {
-        const [rawCategories, rawPublishedPosts] = await Promise.all([
+        const [cachedCategoriesFromSqlite, cachedPublishedPostsFromSqlite] = await Promise.all([
           AsyncStorage.getItem(MAIN_TAB_CATEGORIES_CACHE_KEY),
           AsyncStorage.getItem(MAIN_TAB_PUBLISHED_POSTS_CACHE_KEY),
         ]);
+        let rawCategories = cachedCategoriesFromSqlite;
+        let rawPublishedPosts = cachedPublishedPostsFromSqlite;
+
+        if (isUsingSqliteKvStore && (!rawCategories || !rawPublishedPosts)) {
+          const [legacyCategories, legacyPublishedPosts] = await Promise.all([
+            LegacyAsyncStorage.getItem(MAIN_TAB_CATEGORIES_CACHE_KEY),
+            LegacyAsyncStorage.getItem(MAIN_TAB_PUBLISHED_POSTS_CACHE_KEY),
+          ]);
+
+          if (!rawCategories && legacyCategories) {
+            rawCategories = legacyCategories;
+            void AsyncStorage.setItem(
+              MAIN_TAB_CATEGORIES_CACHE_KEY,
+              legacyCategories,
+            ).catch(() => {});
+          }
+
+          if (!rawPublishedPosts && legacyPublishedPosts) {
+            rawPublishedPosts = legacyPublishedPosts;
+            void AsyncStorage.setItem(
+              MAIN_TAB_PUBLISHED_POSTS_CACHE_KEY,
+              legacyPublishedPosts,
+            ).catch(() => {});
+          }
+        }
 
         if (!isActive) {
           return;
@@ -225,22 +280,96 @@ export function MainTabDataProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  const refreshMainTabDataAsync = useCallback(async () => {
+    setIsRefreshing(true);
+
+    const categoriesQuery = query(
+      collection(firestore, CATEGORIES_COLLECTION),
+      orderBy("name", "asc"),
+    );
+    const postsQuery = query(
+      collection(firestore, POSTS_COLLECTION),
+      where("status", "==", "published"),
+    );
+
+    const [categoriesResult, postsResult] = await Promise.allSettled([
+      getDocs(categoriesQuery),
+      getDocs(postsQuery),
+    ]);
+
+    if (categoriesResult.status === "fulfilled") {
+      hasReceivedCategoriesSnapshotRef.current = true;
+      const nextCategories = categoriesResult.value.docs.map((item) =>
+        mapCategoryRecord(item.id, item.data() as DocumentData),
+      );
+
+      setCategories(nextCategories);
+      setCategoriesError("");
+      setIsLoadingCategories(false);
+      void AsyncStorage.setItem(
+        MAIN_TAB_CATEGORIES_CACHE_KEY,
+        JSON.stringify(nextCategories),
+      ).catch(() => {});
+    } else {
+      setCategoriesError(
+        getRequestErrorMessage({
+          error: categoriesResult.reason,
+          isConnected: isConnectedRef.current,
+          onlineMessage: "Unable to refresh categories.",
+        }),
+      );
+      setIsLoadingCategories(false);
+    }
+
+    if (postsResult.status === "fulfilled") {
+      hasReceivedPostsSnapshotRef.current = true;
+      const nextPosts = sortPostsByRecency(
+        postsResult.value.docs
+          .map((item) => mapPostRecord(item.id, item.data() as DocumentData))
+          .filter((post) => post.status === "published" && !isPostTrashed(post)),
+      );
+
+      setPublishedPosts(nextPosts);
+      setPostsError("");
+      setIsLoadingPosts(false);
+      void AsyncStorage.setItem(
+        MAIN_TAB_PUBLISHED_POSTS_CACHE_KEY,
+        JSON.stringify(nextPosts),
+      ).catch(() => {});
+    } else {
+      setPostsError(
+        getRequestErrorMessage({
+          error: postsResult.reason,
+          isConnected: isConnectedRef.current,
+          onlineMessage: "Unable to refresh posts right now.",
+        }),
+      );
+      setIsLoadingPosts(false);
+    }
+
+    setIsRefreshing(false);
+  }, []);
+
   const value = useMemo<MainTabDataContextType>(
     () => ({
       categories,
       publishedPosts,
       isLoadingCategories,
       isLoadingPosts,
+      isRefreshing,
       categoriesError,
       postsError,
+      refreshMainTabDataAsync,
     }),
     [
       categories,
       publishedPosts,
       isLoadingCategories,
       isLoadingPosts,
+      isRefreshing,
       categoriesError,
       postsError,
+      refreshMainTabDataAsync,
     ],
   );
 

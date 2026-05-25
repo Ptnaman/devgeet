@@ -2,7 +2,7 @@
   "expo": {
     "name": "DevGeet",
     "slug": "devgeet",
-    "version": "1.1.29",
+    "version": "1.1.30",
     "runtimeVersion": {
       "policy": "appVersion"
     },
@@ -21,7 +21,9 @@
       "bundleIdentifier": "com.panditnaman.devgeet",
       "usesAppleSignIn": true,
       "icon": "./assets/images/icon.png",
-      "associatedDomains": ["applinks:dev-geet.firebaseapp.com"]
+      "associatedDomains": [
+        "applinks:dev-geet.firebaseapp.com"
+      ]
     },
     "android": {
       "adaptiveIcon": {
@@ -43,7 +45,10 @@
         {
           "action": "VIEW",
           "autoVerify": true,
-          "category": ["BROWSABLE", "DEFAULT"],
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ],
           "data": [
             {
               "scheme": "https",
@@ -82,7 +87,8 @@
       ],
       "expo-image",
       "expo-notifications",
-      "expo-updates"
+      "expo-updates",
+      "expo-sqlite"
     ],
     "experiments": {
       "typedRoutes": true,

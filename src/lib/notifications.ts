@@ -1,7 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import Constants from "expo-constants";
 import * as Device from "expo-device";
-import { requireOptionalNativeModule } from "expo-modules-core";
+import { requireOptionalNativeModule } from "expo";
 import {
   collection,
   deleteDoc,
@@ -202,12 +202,6 @@ export const hasNotificationsNativeSupport = () => {
       requireOptionalNativeModule("ExpoNotificationsHandlerModule") &&
       requireOptionalNativeModule("ExpoNotificationsEmitter"),
   );
-
-  if (!cachedNativeNotificationsSupport) {
-    warnNotificationsUnavailable(
-      new Error("Required expo-notifications native modules are not installed in this build."),
-    );
-  }
 
   return cachedNativeNotificationsSupport;
 };

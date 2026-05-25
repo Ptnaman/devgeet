@@ -31,7 +31,7 @@ import { useNetworkStatus } from "@/providers/network-provider";
 import { useMainTabData } from "@/providers/main-tab-data-provider";
 import { useAppTheme } from "@/providers/theme-provider";
 
-export function FavoriteTabContent() {
+export default function FavoriteTabScreen() {
   const { colors } = useAppTheme();
   const { publishedPosts, isLoadingPosts, postsError } = useMainTabData();
   const { isConnected, showOfflineToast } = useNetworkStatus();
@@ -452,3 +452,4 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     opacity: 0.88,
   },
 });
+

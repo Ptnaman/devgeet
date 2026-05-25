@@ -212,7 +212,7 @@ function SettingToggleRow({
   );
 }
 
-export function SettingsTabContent() {
+export default function SettingsTabScreen() {
   const { colors, themePreference, setThemePreference } = useAppTheme();
   const { keepLyricsScreenAwakeEnabled, setKeepLyricsScreenAwakeEnabled } =
     useLyricsReaderPreferences();
@@ -356,7 +356,7 @@ export function SettingsTabContent() {
           styles.profileCard,
           pressed && styles.cardPressed,
         ]}
-        onPress={() => router.push("/profile")}
+        onPress={() => router.push("/settings/profile")}
       >
         <View style={styles.avatarWrap}>
           {avatarUri ? (
@@ -507,7 +507,7 @@ export function SettingsTabContent() {
             title: "App Updates",
             subtitle: "Tap to update app",
             value: `v${appVersion}`,
-            onPress: () => router.push("/app-updates"),
+            onPress: () => router.push("/settings/app-updates"),
           }}
           isLast
           styles={styles}
@@ -523,7 +523,7 @@ export function SettingsTabContent() {
             title: "Help",
             subtitle: "Learn how to use the app and its features",
             icon: <HelpQuestionIcon color={colors.accent} />,
-            onPress: () => router.push("/help"),
+            onPress: () => router.push("/settings/help"),
           }}
           isLast
           styles={styles}
@@ -726,3 +726,4 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     backgroundColor: colors.accent,
   },
 });
+

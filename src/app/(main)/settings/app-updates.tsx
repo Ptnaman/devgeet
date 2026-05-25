@@ -64,7 +64,7 @@ export default function AppUpdatesScreen() {
           <View style={styles.body}>
             <View style={styles.heroBlock}>
               <Image
-                source={require("../../../assets/images/icon.png")}
+                source={require("../../../../assets/images/icon.png")}
                 style={styles.appLogo}
               />
               <Text style={styles.statusTitle}>{statusTitle}</Text>

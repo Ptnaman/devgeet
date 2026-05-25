@@ -102,6 +102,13 @@ const BOOKMARK_PROMPT_HIDDEN_OFFSET = 46;
 const BOOKMARK_PROMPT_SHOW_DURATION_MS = 260;
 const BOOKMARK_PROMPT_HIDE_DURATION_MS = 220;
 const POST_DETAILS_HEADER_TITLE = "Lyrics";
+const ABSOLUTE_FILL_OBJECT = {
+  position: "absolute" as const,
+  top: 0,
+  right: 0,
+  bottom: 0,
+  left: 0,
+};
 const authorRoleCache = new Map<string, UserRole>();
 
 type SwipeDirection = "left" | "right";
@@ -700,7 +707,7 @@ export default function PostDetailsScreen() {
 
   const handleViewBookmark = useCallback(() => {
     closeBookmarkPrompt();
-    router.push({ pathname: "/home", params: { tab: "favorite" } });
+    router.push("/favorite");
   }, [closeBookmarkPrompt, router]);
 
   useEffect(() => {
@@ -1085,7 +1092,7 @@ export default function PostDetailsScreen() {
       return;
     }
 
-    router.replace("/home");
+    router.replace("/(main)/(tabs)");
   };
 
   const handleDecreaseLyricsFontSize = () => {
@@ -1680,7 +1687,7 @@ const createStyles = (colors: ThemeColors, isDarkTheme: boolean) => StyleSheet.c
     backgroundColor: colors.background,
   },
   page: {
-    ...StyleSheet.absoluteFillObject,
+    ...ABSOLUTE_FILL_OBJECT,
   },
   pageCard: {
     backgroundColor: colors.background,
@@ -1783,11 +1790,11 @@ const createStyles = (colors: ThemeColors, isDarkTheme: boolean) => StyleSheet.c
     minWidth: 0,
   },
   headerMenuOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...ABSOLUTE_FILL_OBJECT,
     zIndex: 60,
   },
   headerMenuBackdrop: {
-    ...StyleSheet.absoluteFillObject,
+    ...ABSOLUTE_FILL_OBJECT,
     backgroundColor: "transparent",
   },
   headerMenuDropdown: {
@@ -1916,12 +1923,12 @@ const createStyles = (colors: ThemeColors, isDarkTheme: boolean) => StyleSheet.c
     fontSize: 12,
   },
   bookmarkPromptOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...ABSOLUTE_FILL_OBJECT,
     zIndex: 56,
     justifyContent: "flex-end",
   },
   bookmarkPromptBackdrop: {
-    ...StyleSheet.absoluteFillObject,
+    ...ABSOLUTE_FILL_OBJECT,
     backgroundColor: colors.backdropOverlay,
   },
   bookmarkPromptSheet: {
@@ -2014,3 +2021,5 @@ const createStyles = (colors: ThemeColors, isDarkTheme: boolean) => StyleSheet.c
     fontWeight: "700",
   },
 });
+
+

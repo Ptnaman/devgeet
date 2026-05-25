@@ -32,7 +32,7 @@ export function NetworkStatusToast({
   const { colors } = useAppTheme();
   const segments = useSegments();
   const insets = useSafeAreaInsets();
-  const hasBottomTabs = segments[0] === "(tabs)" && segments[1] === "(main)";
+  const hasBottomTabs = segments[0] === "(main)" && segments[1] === "(tabs)";
   const styles = createStyles(colors, insets.bottom, hasBottomTabs);
   const translateY = useRef(new Animated.Value(HIDDEN_OFFSET)).current;
   const opacity = useRef(new Animated.Value(0)).current;
