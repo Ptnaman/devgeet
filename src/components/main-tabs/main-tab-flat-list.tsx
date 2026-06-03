@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { type Ref, useCallback } from "react";
 import {
   FlatList,
   type FlatListProps,
@@ -17,6 +17,7 @@ import {
 import { type MainTabName } from "@/constants/main-tabs";
 
 type MainTabFlatListProps<ItemT> = Omit<FlatListProps<ItemT>, "onScroll"> & {
+  listRef?: Ref<FlatList<ItemT>>;
   tabName: MainTabName;
   onScroll?: (event: NativeSyntheticEvent<NativeScrollEvent>) => void;
 };
@@ -25,6 +26,7 @@ const DEFAULT_SCROLL_EVENT_THROTTLE = 16;
 
 export function MainTabFlatList<ItemT>({
   initialNumToRender,
+  listRef,
   maxToRenderPerBatch,
   onScroll,
   removeClippedSubviews,
@@ -47,6 +49,7 @@ export function MainTabFlatList<ItemT>({
   return (
     <FlatList
       {...props}
+      ref={listRef}
       initialNumToRender={initialNumToRender ?? DEFAULT_LIST_INITIAL_NUM_TO_RENDER}
       maxToRenderPerBatch={maxToRenderPerBatch ?? DEFAULT_LIST_MAX_TO_RENDER_PER_BATCH}
       onScroll={handleScroll}

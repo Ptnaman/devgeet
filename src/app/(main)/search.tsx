@@ -1,11 +1,12 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { useCallback, useDeferredValue, useEffect, useMemo, useState } from "react";
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { Image } from "expo-image";
 import { Stack, useNavigation, useRouter } from "expo-router";
 import {
   Alert,
   FlatList,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -29,6 +30,7 @@ import {
   RADIUS,
   SHADOWS,
   SPACING,
+  TYPOGRAPHY,
   getFavoriteActionPalette,
   type ThemeColors,
 } from "@/constants/theme";
@@ -41,6 +43,7 @@ import {
   normalizeSearchKeyword,
   type PostRecord,
 } from "@/lib/content";
+import { primePostNavigationCache } from "@/lib/post-navigation-cache";
 import {
   DEFAULT_OFFLINE_MESSAGE,
   getActionErrorMessage,
@@ -51,20 +54,29 @@ import { useAppTheme } from "@/providers/theme-provider";
 
 const SEARCH_SKELETON_ITEMS = Array.from({ length: 3 }, (_, index) => index);
 const MAX_RECENT_SEARCHES = 6;
+const MAX_AUTO_LOAD_PAGES_PER_SEARCH = 5;
 const RECENT_SEARCHES_STORAGE_KEY = "app:recent_search_terms";
 const HEADER_SHADOW_SCROLL_THRESHOLD = 6;
 type SearchResultItem =
-  | { kind: "skeleton"; id: number }
-  | { kind: "post"; post: PostRecord };
+  | number
+  | PostRecord;
 
 export default function SearchScreen() {
   const insets = useSafeAreaInsets();
   const { colors, resolvedTheme } = useAppTheme();
-  const { publishedPosts, isLoadingPosts, postsError } = useMainTabData();
+  const {
+    publishedPosts,
+    isLoadingPosts,
+    isLoadingMorePosts,
+    hasMorePublishedPosts,
+    postsError,
+    loadMorePublishedPostsAsync,
+    refreshMainTabDataAsync,
+  } = useMainTabData();
   const navigation = useNavigation();
   const router = useRouter();
   const { isFavorite, toggleFavorite } = useFavorites();
-  const { isConnected, showOfflineToast } = useNetworkStatus();
+  const { isConnected, refreshConnection, showOfflineToast } = useNetworkStatus();
   const favoritePalette = useMemo(
     () => getFavoriteActionPalette(resolvedTheme),
     [resolvedTheme],
@@ -75,6 +87,8 @@ export default function SearchScreen() {
   const [hasHydratedRecentSearches, setHasHydratedRecentSearches] = useState(false);
   const [hasScrolled, setHasScrolled] = useState(false);
   const [dismissedSuggestedSearches, setDismissedSuggestedSearches] = useState<string[]>([]);
+  const [isRefreshingSearch, setIsRefreshingSearch] = useState(false);
+  const autoLoadAttemptsRef = useRef(0);
   const deferredSearchTerm = useDeferredValue(searchTerm);
   const normalizedDeferredSearchTerm = useMemo(
     () => normalizeSearchKeyword(deferredSearchTerm),
@@ -102,13 +116,29 @@ export default function SearchScreen() {
     [normalizedDeferredSearchTerm, searchablePosts],
   );
   const searchResultItems = useMemo<SearchResultItem[]>(
-    () =>
+    () => (
       isLoadingPosts
-        ? SEARCH_SKELETON_ITEMS.map((item) => ({ kind: "skeleton" as const, id: item }))
+        ? SEARCH_SKELETON_ITEMS
         : showInlineError
           ? []
-          : filteredPosts.map((post) => ({ kind: "post" as const, post })),
+          : filteredPosts
+    ),
     [filteredPosts, isLoadingPosts, showInlineError],
+  );
+  const shouldAutoLoadMoreForSearch = useMemo(
+    () =>
+      Boolean(normalizedDeferredSearchTerm) &&
+      !isLoadingPosts &&
+      !isLoadingMorePosts &&
+      hasMorePublishedPosts &&
+      filteredPosts.length < 12,
+    [
+      filteredPosts.length,
+      hasMorePublishedPosts,
+      isLoadingMorePosts,
+      isLoadingPosts,
+      normalizedDeferredSearchTerm,
+    ],
   );
   const suggestedSearchTerms = useMemo(() => {
     const uniqueTitles: string[] = [];
@@ -221,6 +251,23 @@ export default function SearchScreen() {
     });
   }, [hasHydratedRecentSearches, recentSearches]);
 
+  useEffect(() => {
+    autoLoadAttemptsRef.current = 0;
+  }, [normalizedDeferredSearchTerm]);
+
+  useEffect(() => {
+    if (!shouldAutoLoadMoreForSearch) {
+      return;
+    }
+
+    if (autoLoadAttemptsRef.current >= MAX_AUTO_LOAD_PAGES_PER_SEARCH) {
+      return;
+    }
+
+    autoLoadAttemptsRef.current += 1;
+    void loadMorePublishedPostsAsync();
+  }, [loadMorePublishedPostsAsync, shouldAutoLoadMoreForSearch]);
+
   const visibleSuggestedSearchTerms = useMemo(() => {
     if (!dismissedSuggestedSearches.length) {
       return suggestedSearchTerms;
@@ -266,8 +313,9 @@ export default function SearchScreen() {
     return unsubscribe;
   }, [navigation, persistCurrentSearch]);
 
-  const openPost = useCallback((postId: string) => {
-    router.push({ pathname: "/post/[postId]", params: { postId } });
+  const openPost = useCallback((post: PostRecord) => {
+    primePostNavigationCache(post);
+    router.push({ pathname: "/post/[postId]", params: { postId: post.id } });
   }, [router]);
 
   const handleToggleFavorite = useCallback(async (post: PostRecord) => {
@@ -311,17 +359,36 @@ export default function SearchScreen() {
     });
   }, []);
 
-  const keyExtractor = useCallback((item: SearchResultItem) => {
-    if (item.kind === "skeleton") {
-      return `skeleton-${item.id}`;
+  const refreshSearchDataAsync = useCallback(async () => {
+    if (isRefreshingSearch) {
+      return;
     }
 
-    return item.post.id;
+    setIsRefreshingSearch(true);
+    try {
+      await refreshConnection();
+    } catch {
+      // Continue to dataset refresh even if connectivity probe fails.
+    }
+
+    try {
+      await refreshMainTabDataAsync();
+    } finally {
+      setIsRefreshingSearch(false);
+    }
+  }, [isRefreshingSearch, refreshConnection, refreshMainTabDataAsync]);
+
+  const keyExtractor = useCallback((item: SearchResultItem) => {
+    if (typeof item === "number") {
+      return `skeleton-${item}`;
+    }
+
+    return item.id;
   }, []);
 
   const renderSearchResultItem = useCallback(
     ({ item }: { item: SearchResultItem }) => {
-      if (item.kind === "skeleton") {
+      if (typeof item === "number") {
         return (
           <View style={styles.card}>
             <View style={styles.cardBody}>
@@ -339,7 +406,7 @@ export default function SearchScreen() {
         );
       }
 
-      const post = item.post;
+      const post = item;
       const thumbnailUrl = getPostCardThumbnailUrl(post);
       const favorite = isFavorite(post.id);
       const updatedLabel = formatDate(post.uploadDate || post.createDate);
@@ -356,7 +423,7 @@ export default function SearchScreen() {
               styles.cardBody,
               pressed && styles.cardBodyPressed,
             ]}
-            onPress={() => openPost(post.id)}
+            onPress={() => openPost(post)}
           >
             <View style={styles.mediaWrap}>
               {thumbnailUrl ? (
@@ -516,6 +583,18 @@ export default function SearchScreen() {
             scrollEventThrottle={16}
             updateCellsBatchingPeriod={DEFAULT_LIST_UPDATE_BATCHING_PERIOD}
             windowSize={DEFAULT_LIST_WINDOW_SIZE}
+            refreshing={isRefreshingSearch}
+            onRefresh={() => {
+              void refreshSearchDataAsync();
+            }}
+            onEndReachedThreshold={0.35}
+            onEndReached={() => {
+              if (!hasMorePublishedPosts || isLoadingPosts || isLoadingMorePosts) {
+                return;
+              }
+
+              void loadMorePublishedPostsAsync();
+            }}
           />
         ) : (
           <ScrollView
@@ -523,6 +602,15 @@ export default function SearchScreen() {
             showsVerticalScrollIndicator={false}
             onScroll={(event) => handleScroll(event.nativeEvent.contentOffset.y)}
             scrollEventThrottle={16}
+            refreshControl={(
+              <RefreshControl
+                refreshing={isRefreshingSearch}
+                onRefresh={() => {
+                  void refreshSearchDataAsync();
+                }}
+                tintColor={colors.primary}
+              />
+            )}
           >
             {hasHydratedRecentSearches ? (
               <View style={styles.recentSearchWrap}>
@@ -810,10 +898,8 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     backgroundColor: colors.surfaceSoft,
   },
   cardTitle: {
-    fontSize: 17,
-    fontWeight: "700",
+    ...TYPOGRAPHY.h5,
     color: colors.text,
-    lineHeight: 23,
   },
   cardPreview: {
     fontSize: FONT_SIZE.body,

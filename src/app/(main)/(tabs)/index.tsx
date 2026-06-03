@@ -1,9 +1,18 @@
-import { useCallback, useMemo, useState } from "react";
+import { memo, type Ref, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Image } from "expo-image";
-import { useRouter } from "expo-router";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useNavigation, useRouter } from "expo-router";
+import {
+  ActivityIndicator,
+  FlatList,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 
-import { SearchInputIcon } from "@/components/icons/search-input-icon";
 import { MainTabFlatList } from "@/components/main-tabs/main-tab-flat-list";
 import { SkeletonBlock } from "@/components/skeleton-block";
 import {
@@ -11,21 +20,162 @@ import {
   RADIUS,
   SHADOWS,
   SPACING,
+  STATIC_COLORS,
   type ThemeColors,
 } from "@/constants/theme";
 import {
   getContentPreviewLines,
   getPostCardThumbnailUrl,
+  sortPostsByRecency,
   type PostRecord,
 } from "@/lib/content";
+import { primePostNavigationCache } from "@/lib/post-navigation-cache";
 import { useMainTabData } from "@/providers/main-tab-data-provider";
 import { useAppTheme } from "@/providers/theme-provider";
 
 const HOME_SKELETON_ITEMS = Array.from({ length: 3 }, (_, index) => index);
 const HOME_CATEGORY_SKELETON_ITEMS = Array.from({ length: 4 }, (_, index) => index);
+const ALL_CATEGORY_SLUG = "__all__";
+const ALL_CATEGORY_LABEL = "All";
+const HOME_CATEGORY_SLUG = "home";
+const HOME_CATEGORY_LABEL = "Home";
 type HomeListItem =
-  | { kind: "skeleton"; id: number }
-  | { kind: "post"; post: PostRecord };
+  | number
+  | PostRecord;
+type HomeListRef = FlatList<HomeListItem>;
+
+const HOME_FEED_MEMORY: {
+  scrollOffset: number;
+  selectedCategorySlug: string;
+} = {
+  scrollOffset: 0,
+  selectedCategorySlug: ALL_CATEGORY_SLUG,
+};
+
+const normalizeCategorySlug = (value: string) => value.trim().toLowerCase();
+const toCategoryLabel = (slug: string) =>
+  slug
+    .split(/[-_]+/)
+    .filter(Boolean)
+    .map((segment) =>
+      segment.charAt(0).toUpperCase() + segment.slice(1),
+    )
+    .join(" ");
+
+type HomeStyles = ReturnType<typeof createStyles>;
+
+const HomeControlChip = memo(function HomeControlChip({
+  accessibilityLabel,
+  label,
+  onPress,
+  selected,
+  styles,
+}: {
+  accessibilityLabel: string;
+  label: string;
+  onPress: () => void;
+  selected: boolean;
+  styles: HomeStyles;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
+      accessibilityState={{ selected }}
+      hitSlop={6}
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.controlChip,
+        selected ? styles.controlChipSelected : null,
+        pressed ? styles.controlChipPressed : null,
+      ]}
+    >
+      <Text
+        style={[
+          styles.controlChipText,
+          selected ? styles.controlChipTextSelected : null,
+        ]}
+        numberOfLines={1}
+      >
+        {label}
+      </Text>
+    </Pressable>
+  );
+});
+
+const HomeSkeletonCard = memo(function HomeSkeletonCard({ styles }: { styles: HomeStyles }) {
+  return (
+    <View style={styles.card}>
+      <View style={styles.cardBody}>
+        <SkeletonBlock height={156} borderRadius={RADIUS.md} />
+        <SkeletonBlock width="82%" height={24} />
+        <SkeletonBlock width="68%" height={24} />
+        <SkeletonBlock width="100%" height={16} borderRadius={RADIUS.sm} />
+        <SkeletonBlock width="76%" height={16} borderRadius={RADIUS.sm} />
+      </View>
+
+      <View style={styles.cardFooter}>
+        <SkeletonBlock width={92} height={16} borderRadius={RADIUS.sm} />
+      </View>
+    </View>
+  );
+});
+
+const HomePostCard = memo(function HomePostCard({
+  onPressPost,
+  post,
+  styles,
+}: {
+  onPressPost: (post: PostRecord) => void;
+  post: PostRecord;
+  styles: HomeStyles;
+}) {
+  const thumbnailUrl = getPostCardThumbnailUrl(post);
+  const previewText = getContentPreviewLines(post.content);
+  const authorName =
+    post.authorDisplayName.trim() ||
+    post.authorUsername.trim() ||
+    "Unknown Author";
+
+  return (
+    <View style={styles.card}>
+      <Pressable
+        style={({ pressed }) => [
+          styles.cardBody,
+          pressed && styles.cardBodyPressed,
+        ]}
+        onPress={() => onPressPost(post)}
+      >
+        <View style={styles.mediaWrap}>
+          {thumbnailUrl ? (
+            <Image
+              cachePolicy="memory-disk"
+              contentFit="cover"
+              source={{ uri: thumbnailUrl }}
+              style={styles.thumbnail}
+              transition={120}
+            />
+          ) : (
+            <View style={styles.thumbnailFallback} />
+          )}
+        </View>
+        <Text style={styles.cardTitle} numberOfLines={3} ellipsizeMode="tail">
+          {post.title}
+        </Text>
+        <Text
+          style={styles.cardPreview}
+          numberOfLines={2}
+          ellipsizeMode="tail"
+        >
+          {previewText}
+        </Text>
+        <Text style={styles.cardAuthor} numberOfLines={1}>
+          {`By ${authorName}`}
+        </Text>
+      </Pressable>
+    </View>
+  );
+});
 
 export default function MainIndexScreen() {
   const { colors, resolvedTheme } = useAppTheme();
@@ -34,129 +184,205 @@ export default function MainIndexScreen() {
     publishedPosts,
     isLoadingCategories,
     isLoadingPosts,
+    isLoadingMorePosts,
+    hasMorePublishedPosts,
     isRefreshing,
     postsError,
     refreshMainTabDataAsync,
+    loadMorePublishedPostsAsync,
   } = useMainTabData();
+  const navigation = useNavigation();
   const router = useRouter();
-  const [selectedCategorySlug, setSelectedCategorySlug] = useState<string | null>(null);
+  const listRef = useRef<HomeListRef | null>(null);
+  const hasRestoredInitialScrollRef = useRef(false);
+  const [selectedCategorySlug, setSelectedCategorySlug] = useState<string>(
+    HOME_FEED_MEMORY.selectedCategorySlug,
+  );
   const styles = useMemo(
     () => createStyles(colors, resolvedTheme),
     [colors, resolvedTheme],
   );
   const showInlineError = Boolean(postsError);
-  const filteredPosts = useMemo(() => {
-    if (!selectedCategorySlug) {
+
+  useEffect(() => {
+    HOME_FEED_MEMORY.selectedCategorySlug = selectedCategorySlug;
+  }, [selectedCategorySlug]);
+
+  const scrollHomeFeedToTop = useCallback((animated = true) => {
+    HOME_FEED_MEMORY.scrollOffset = 0;
+    listRef.current?.scrollToOffset({ offset: 0, animated });
+  }, []);
+
+  const categoryFilters = useMemo(() => {
+    const filtersBySlug = new Map<
+      string,
+      {
+        key: string;
+        slug: string;
+        label: string;
+        accessibilityLabel: string;
+      }
+    >();
+
+    const registerFilter = (slugValue: string, labelValue: string, key: string) => {
+      const slug = normalizeCategorySlug(slugValue);
+      if (!slug || slug === ALL_CATEGORY_SLUG || filtersBySlug.has(slug)) {
+        return;
+      }
+
+      const fallbackLabel = slug === HOME_CATEGORY_SLUG ? HOME_CATEGORY_LABEL : toCategoryLabel(slug);
+      const label = labelValue.trim() || fallbackLabel;
+
+      filtersBySlug.set(slug, {
+        key,
+        slug,
+        label,
+        accessibilityLabel: `Filter posts by ${label}`,
+      });
+    };
+
+    categories.forEach((item) => {
+      registerFilter(item.slug, item.name, item.id);
+    });
+
+    publishedPosts.forEach((post) => {
+      const normalizedSlug = normalizeCategorySlug(post.category);
+      registerFilter(post.category, "", `post-${normalizedSlug}`);
+    });
+
+    return [
+      {
+        key: ALL_CATEGORY_SLUG,
+        slug: ALL_CATEGORY_SLUG,
+        label: ALL_CATEGORY_LABEL,
+        accessibilityLabel: "Show all posts",
+      },
+      ...Array.from(filtersBySlug.values()),
+    ];
+  }, [categories, publishedPosts]);
+
+  const visiblePosts = useMemo(() => {
+    if (selectedCategorySlug === ALL_CATEGORY_SLUG) {
       return publishedPosts;
     }
 
-    return publishedPosts.filter(
-      (post) => post.category.trim().toLowerCase() === selectedCategorySlug,
+    return sortPostsByRecency(
+      publishedPosts.filter(
+        (post) => normalizeCategorySlug(post.category) === selectedCategorySlug,
+      ),
     );
   }, [publishedPosts, selectedCategorySlug]);
+
   const listItems = useMemo<HomeListItem[]>(
-    () =>
-      isLoadingPosts
-        ? HOME_SKELETON_ITEMS.map((item) => ({ kind: "skeleton" as const, id: item }))
-        : filteredPosts.map((post) => ({ kind: "post" as const, post })),
-    [filteredPosts, isLoadingPosts],
+    () => (isLoadingPosts ? HOME_SKELETON_ITEMS : visiblePosts),
+    [isLoadingPosts, visiblePosts],
   );
 
-  const openSearchScreen = useCallback(() => {
-    router.push("/search");
-  }, [router]);
-
-  const openPost = useCallback((postId: string) => {
-    router.push({ pathname: "/post/[postId]", params: { postId } });
+  const openPost = useCallback((post: PostRecord) => {
+    primePostNavigationCache(post);
+    router.push({ pathname: "/post/[postId]", params: { postId: post.id } });
   }, [router]);
 
   const selectCategory = useCallback((categorySlug: string) => {
-    const normalizedSlug = categorySlug.trim().toLowerCase();
+    const normalizedSlug = normalizeCategorySlug(categorySlug);
     if (!normalizedSlug) {
       return;
     }
 
-    setSelectedCategorySlug((currentSlug) =>
-      currentSlug === normalizedSlug ? null : normalizedSlug,
-    );
-  }, []);
+    setSelectedCategorySlug(normalizedSlug);
+    scrollHomeFeedToTop();
+  }, [scrollHomeFeedToTop]);
 
-  const refreshHomeFeed = useCallback(() => {
-    void refreshMainTabDataAsync();
+  const refreshHomeFeed = useCallback(async () => {
+    await refreshMainTabDataAsync();
   }, [refreshMainTabDataAsync]);
 
-  const keyExtractor = useCallback((item: HomeListItem) => {
-    if (item.kind === "skeleton") {
-      return `skeleton-${item.id}`;
+  const loadMoreHomeFeed = useCallback(async () => {
+    await loadMorePublishedPostsAsync();
+  }, [loadMorePublishedPostsAsync]);
+
+  const handleScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    HOME_FEED_MEMORY.scrollOffset = event.nativeEvent.contentOffset.y;
+  }, []);
+
+  useEffect(() => {
+    const subscribeToTabPress = (
+      navigation as typeof navigation & {
+        addListener: (eventName: string, callback: () => void) => () => void;
+      }
+    ).addListener;
+
+    const unsubscribe = subscribeToTabPress("tabPress", () => {
+      if (!navigation.isFocused()) {
+        return;
+      }
+
+      scrollHomeFeedToTop();
+    });
+
+    return unsubscribe;
+  }, [navigation, scrollHomeFeedToTop]);
+
+  useEffect(() => {
+    if (hasRestoredInitialScrollRef.current || isLoadingPosts) {
+      return;
     }
-    return item.post.id;
+
+    hasRestoredInitialScrollRef.current = true;
+
+    if (HOME_FEED_MEMORY.scrollOffset <= 0) {
+      return;
+    }
+
+    requestAnimationFrame(() => {
+      listRef.current?.scrollToOffset({
+        offset: HOME_FEED_MEMORY.scrollOffset,
+        animated: false,
+      });
+    });
+  }, [isLoadingPosts, listItems.length]);
+
+  useEffect(() => {
+    if (
+      isLoadingPosts ||
+      isLoadingMorePosts ||
+      !hasMorePublishedPosts ||
+      selectedCategorySlug === ALL_CATEGORY_SLUG ||
+      visiblePosts.length > 0
+    ) {
+      return;
+    }
+
+    void loadMorePublishedPostsAsync();
+  }, [
+    hasMorePublishedPosts,
+    isLoadingMorePosts,
+    isLoadingPosts,
+    loadMorePublishedPostsAsync,
+    selectedCategorySlug,
+    visiblePosts.length,
+  ]);
+
+  const keyExtractor = useCallback((item: HomeListItem) => {
+    if (typeof item === "number") {
+      return `skeleton-${item}`;
+    }
+
+    return item.id;
   }, []);
 
   const renderItem = useCallback(
     ({ item }: { item: HomeListItem }) => {
-      if (item.kind === "skeleton") {
-        return (
-          <View style={styles.card}>
-            <View style={styles.cardBody}>
-              <SkeletonBlock height={156} borderRadius={RADIUS.md} />
-              <SkeletonBlock width="82%" height={24} />
-              <SkeletonBlock width="68%" height={24} />
-              <SkeletonBlock width="100%" height={16} borderRadius={RADIUS.sm} />
-              <SkeletonBlock width="76%" height={16} borderRadius={RADIUS.sm} />
-            </View>
-
-            <View style={styles.cardFooter}>
-              <SkeletonBlock width={92} height={16} borderRadius={RADIUS.sm} />
-            </View>
-          </View>
-        );
+      if (typeof item === "number") {
+        return <HomeSkeletonCard styles={styles} />;
       }
 
-      const post = item.post;
-      const thumbnailUrl = getPostCardThumbnailUrl(post);
-      const previewText = getContentPreviewLines(post.content);
-      const authorName =
-        post.authorDisplayName.trim() ||
-        post.authorUsername.trim() ||
-        "Unknown Author";
-
       return (
-        <View style={styles.card}>
-          <Pressable
-            style={({ pressed }) => [
-              styles.cardBody,
-              pressed && styles.cardBodyPressed,
-            ]}
-            onPress={() => openPost(post.id)}
-          >
-            <View style={styles.mediaWrap}>
-              {thumbnailUrl ? (
-                <Image
-                  cachePolicy="memory-disk"
-                  contentFit="cover"
-                  source={{ uri: thumbnailUrl }}
-                  style={styles.thumbnail}
-                  transition={120}
-                />
-              ) : (
-                <View style={styles.thumbnailFallback} />
-              )}
-            </View>
-            <Text style={styles.cardTitle} numberOfLines={3} ellipsizeMode="tail">
-              {post.title}
-            </Text>
-            <Text
-              style={styles.cardPreview}
-              numberOfLines={2}
-              ellipsizeMode="tail"
-            >
-              {previewText}
-            </Text>
-            <Text style={styles.cardAuthor} numberOfLines={1}>
-              {`By ${authorName}`}
-            </Text>
-          </Pressable>
-        </View>
+        <HomePostCard
+          onPressPost={openPost}
+          post={item}
+          styles={styles}
+        />
       );
     },
     [openPost, styles],
@@ -167,98 +393,12 @@ export default function MainIndexScreen() {
     [styles],
   );
 
-  const listHeader = useMemo(
-    () => (
-      <View style={styles.headerContent}>
-        <Pressable
-          style={({ pressed }) => [
-            styles.searchLauncher,
-            pressed ? styles.searchLauncherPressed : null,
-          ]}
-          onPress={openSearchScreen}
-          accessibilityRole="button"
-          accessibilityLabel="Open search"
-        >
-          <SearchInputIcon color={colors.mutedText} size={18} />
-          <Text style={styles.searchLauncherText}>Search lyrics</Text>
-        </Pressable>
-
-        <View style={styles.categorySection}>
-          {isLoadingCategories ? (
-            <View style={styles.categorySkeletonRow}>
-              {HOME_CATEGORY_SKELETON_ITEMS.map((item) => (
-                <SkeletonBlock
-                  key={`category-skeleton-${item}`}
-                  width={112}
-                  height={36}
-                  borderRadius={RADIUS.lg}
-                />
-              ))}
-            </View>
-          ) : categories.length ? (
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.categoryScrollerContent}
-            >
-              {categories.map((item) => {
-                const categorySlug = item.slug.trim().toLowerCase();
-                const isSelected = selectedCategorySlug === categorySlug;
-
-                return (
-                  <Pressable
-                    key={item.id}
-                    style={({ pressed }) => [
-                      styles.categoryPill,
-                      isSelected && styles.categoryPillSelected,
-                      pressed && styles.categoryPillPressed,
-                    ]}
-                    onPress={() => selectCategory(item.slug)}
-                    accessibilityRole="button"
-                    accessibilityLabel={`Filter posts by ${item.name}`}
-                    accessibilityState={{ selected: isSelected }}
-                  >
-                    <Text
-                      style={[
-                        styles.categoryPillText,
-                        isSelected && styles.categoryPillTextSelected,
-                      ]}
-                      numberOfLines={1}
-                    >
-                      {item.name}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </ScrollView>
-          ) : null}
-        </View>
-
-        {!isLoadingPosts && showInlineError ? (
-          <Text style={styles.errorText}>{postsError}</Text>
-        ) : null}
-      </View>
-    ),
-    [
-      colors.mutedText,
-      categories,
-      isLoadingCategories,
-      isLoadingPosts,
-      openSearchScreen,
-      postsError,
-      selectCategory,
-      selectedCategorySlug,
-      showInlineError,
-      styles,
-    ],
-  );
-
   const listEmptyComponent = useMemo(
     () =>
       !isLoadingPosts && !showInlineError ? (
         <View style={styles.emptyWrap}>
           <Text style={styles.emptyText}>
-            {selectedCategorySlug
+            {selectedCategorySlug !== ALL_CATEGORY_SLUG
               ? "No posts are available in this category right now."
               : "No published posts are available right now."}
           </Text>
@@ -267,20 +407,93 @@ export default function MainIndexScreen() {
     [isLoadingPosts, selectedCategorySlug, showInlineError, styles],
   );
 
+  const listFooterComponent = useMemo(
+    () =>
+      !isLoadingPosts && isLoadingMorePosts ? (
+        <View style={styles.listFooter}>
+          <ActivityIndicator size="small" color={colors.primary} />
+        </View>
+      ) : null,
+    [colors.primary, isLoadingMorePosts, isLoadingPosts, styles.listFooter],
+  );
+
+  const listHeaderComponent = useMemo(
+    () => (
+      <View style={styles.controlsWrap}>
+        <View style={styles.controlsSection}>
+          {isLoadingCategories ? (
+            <View style={styles.categorySkeletonRow}>
+              {HOME_CATEGORY_SKELETON_ITEMS.map((item) => (
+                <SkeletonBlock
+                  key={`category-skeleton-${item}`}
+                  width={96}
+                  height={34}
+                  borderRadius={RADIUS.pill}
+                />
+              ))}
+            </View>
+          ) : (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.controlRowContent}
+            >
+              {categoryFilters.map((item) => (
+                <HomeControlChip
+                  key={item.key}
+                  accessibilityLabel={item.accessibilityLabel}
+                  label={item.label}
+                  onPress={() => selectCategory(item.slug)}
+                  selected={selectedCategorySlug === item.slug}
+                  styles={styles}
+                />
+              ))}
+            </ScrollView>
+          )}
+        </View>
+
+        {!isLoadingPosts && showInlineError ? (
+          <Text style={styles.errorText}>{postsError}</Text>
+        ) : null}
+      </View>
+    ),
+    [
+      categoryFilters,
+      isLoadingCategories,
+      isLoadingPosts,
+      postsError,
+      selectCategory,
+      selectedCategorySlug,
+      showInlineError,
+      styles,
+    ],
+  );
+
   return (
     <View style={styles.screen}>
       <MainTabFlatList<HomeListItem>
         tabName="home"
+        listRef={listRef as Ref<FlatList<HomeListItem>>}
         data={listItems}
         keyExtractor={keyExtractor}
         renderItem={renderItem}
+        ListHeaderComponent={listHeaderComponent}
         ItemSeparatorComponent={renderSeparator}
-        ListHeaderComponent={listHeader}
         ListEmptyComponent={listEmptyComponent}
-        contentContainerStyle={styles.container}
+        ListFooterComponent={listFooterComponent}
+        contentContainerStyle={styles.listContentContainer}
         showsVerticalScrollIndicator={false}
+        onScroll={handleScroll}
         refreshing={isRefreshing}
         onRefresh={refreshHomeFeed}
+        onEndReachedThreshold={0.35}
+        onEndReached={() => {
+          if (!hasMorePublishedPosts || isLoadingPosts || isLoadingMorePosts) {
+            return;
+          }
+
+          void loadMoreHomeFeed();
+        }}
       />
     </View>
   );
@@ -293,78 +506,68 @@ const createStyles = (
   const isDarkTheme = resolvedTheme === "dark";
   const launcherBorderColor = isDarkTheme ? colors.inputBorder : colors.border;
   const launcherBackgroundColor = colors.surface;
+  const chipActiveBackgroundColor = isDarkTheme ? colors.accent : colors.tabActive;
 
   return StyleSheet.create({
     screen: {
       flex: 1,
-    },
-    container: {
-      flexGrow: 1,
-      padding: SPACING.xxl,
       backgroundColor: colors.background,
     },
-    headerContent: {
-      marginBottom: SPACING.xl,
-      gap: SPACING.xl,
+    controlsWrap: {
+      gap: SPACING.md,
+      paddingTop: SPACING.lg,
+      paddingBottom: SPACING.md,
     },
-    categorySection: {
+    controlsSection: {
+      gap: SPACING.xs,
+    },
+    controlRowContent: {
       gap: SPACING.sm,
+      paddingRight: SPACING.md,
     },
     categorySkeletonRow: {
       flexDirection: "row",
       alignItems: "center",
       gap: SPACING.sm,
     },
-    categoryScrollerContent: {
-      paddingRight: SPACING.md,
-      gap: SPACING.sm,
-    },
-    categoryPill: {
-      minHeight: 36,
+    controlChip: {
+      minHeight: 34,
       paddingHorizontal: SPACING.md,
-      borderRadius: RADIUS.lg,
+      borderRadius: RADIUS.pill,
       borderWidth: 1,
       borderColor: launcherBorderColor,
       backgroundColor: launcherBackgroundColor,
       justifyContent: "center",
-      ...SHADOWS.sm,
+      alignItems: "center",
     },
-    categoryPillPressed: {
+    controlChipSelected: {
+      borderColor: chipActiveBackgroundColor,
+      backgroundColor: chipActiveBackgroundColor,
+    },
+    controlChipPressed: {
       opacity: 0.84,
     },
-    categoryPillSelected: {
-      borderColor: colors.accent,
-      backgroundColor: colors.accent,
-    },
-    categoryPillText: {
+    controlChipText: {
       color: colors.text,
       fontSize: 13,
       fontWeight: "600",
     },
-    categoryPillTextSelected: {
-      color: colors.onAccent,
+    controlChipTextSelected: {
+      color: STATIC_COLORS.white,
+    },
+    listContentContainer: {
+      flexGrow: 1,
+      paddingHorizontal: SPACING.xxl,
+      paddingBottom: SPACING.xxl * 2,
+      backgroundColor: colors.background,
     },
     listSeparator: {
       height: SPACING.xl,
     },
-    searchLauncher: {
-      minHeight: 56,
-      borderRadius: RADIUS.xl,
-      borderWidth: 1,
-      borderColor: launcherBorderColor,
-      backgroundColor: launcherBackgroundColor,
-      paddingHorizontal: SPACING.md,
-      flexDirection: "row",
+    listFooter: {
+      paddingVertical: SPACING.lg,
       alignItems: "center",
-      gap: SPACING.sm,
-      ...SHADOWS.sm,
-    },
-    searchLauncherPressed: {
-      opacity: 0.86,
-    },
-    searchLauncherText: {
-      color: colors.placeholderText,
-      fontSize: 15,
+      justifyContent: "center",
     },
     card: {
       borderRadius: 14,

@@ -1,8 +1,10 @@
+import { useRouter } from "expo-router";
 import { useState } from "react";
 import { StatusBar } from "expo-status-bar";
 import {
   Linking,
   Platform,
+  Pressable,
   StyleSheet,
   Text,
   View,
@@ -26,12 +28,13 @@ import {
 import { resolveProductFontFamily } from "@/lib/typography";
 import { useAppTheme } from "@/providers/theme-provider";
 
-const HERO_GRADIENT_TITLE = "Login with Google";
+const HERO_GRADIENT_TITLE = "Login to DevGeet";
 
 export default function AuthChoiceScreen() {
   const { resolvedTheme } = useAppTheme();
   const isDark = resolvedTheme === "dark";
   const { width } = useWindowDimensions();
+  const router = useRouter();
   const [error, setError] = useState("");
   const screenColors = AUTH_CHOICE_SCREEN_THEMES[resolvedTheme];
   const styles = createAuthChoiceScreenStyles(screenColors, Platform.OS === "ios", isDark);
@@ -46,7 +49,6 @@ export default function AuthChoiceScreen() {
     <View style={styles.screen}>
       <StatusBar
         style={isDark ? "light" : "dark"}
-        backgroundColor={screenColors.background}
       />
 
       <View style={styles.container}>
@@ -75,6 +77,15 @@ export default function AuthChoiceScreen() {
               textStyle={styles.googleButtonText}
               showTrailingIcon={false}
             />
+
+            <Pressable
+              style={({ pressed }) => [styles.emailButton, pressed ? styles.emailButtonPressed : null]}
+              onPress={() => {
+                router.push("./email-login");
+              }}
+            >
+              <Text style={styles.emailButtonText}>Continue with Email</Text>
+            </Pressable>
 
             <Text style={styles.consentText}>
               By continuing, you agree to our{" "}
@@ -227,6 +238,25 @@ const createAuthChoiceScreenStyles = (
     },
     googleButtonText: {
       color: isDark ? "#111111" : "#FFFFFF",
+      fontFamily: resolveProductFontFamily("medium"),
+      fontSize: 15,
+      letterSpacing: -0.1,
+    },
+    emailButton: {
+      minHeight: 52,
+      borderRadius: 17,
+      borderWidth: 1,
+      borderColor: isDark ? "rgba(255,255,255,0.24)" : colors.googleButtonBorder,
+      backgroundColor: isDark ? "rgba(255,255,255,0.08)" : "#FFFFFF",
+      alignItems: "center",
+      justifyContent: "center",
+      paddingHorizontal: SPACING.lg,
+    },
+    emailButtonPressed: {
+      opacity: 0.82,
+    },
+    emailButtonText: {
+      color: isDark ? "#F5F7FB" : "#111111",
       fontFamily: resolveProductFontFamily("medium"),
       fontSize: 15,
       letterSpacing: -0.1,

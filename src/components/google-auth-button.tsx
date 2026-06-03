@@ -38,7 +38,6 @@ type GoogleAuthButtonProps = {
   containerStyle?: StyleProp<ViewStyle>;
   textStyle?: StyleProp<TextStyle>;
   showTrailingIcon?: boolean;
-  rememberSession?: boolean;
 };
 
 type GoogleSignInResponse = {
@@ -146,7 +145,6 @@ export function GoogleAuthButton({
   containerStyle,
   textStyle,
   showTrailingIcon = true,
-  rememberSession = true,
 }: GoogleAuthButtonProps) {
   const { colors } = useAppTheme();
   const { isConnected, showOfflineToast } = useNetworkStatus();
@@ -275,7 +273,7 @@ export function GoogleAuthButton({
         return;
       }
 
-      await setRememberSessionPersistence(rememberSession);
+      await setRememberSessionPersistence(true);
 
       if (mode === "explicit") {
         await clearNativeGoogleSessionAsync(googleSignInModule);
@@ -350,7 +348,6 @@ export function GoogleAuthButton({
     isGoogleConfigured,
     isWeb,
     loginWithGoogleIdToken,
-    rememberSession,
     onError,
     runOneTapFlow,
     setRememberSessionPersistence,

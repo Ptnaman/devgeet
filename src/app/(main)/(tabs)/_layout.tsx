@@ -17,7 +17,7 @@ export default function MainTabsLayout() {
   const { colors, resolvedTheme } = useAppTheme();
   const { unreadCount } = useUserNotifications();
   const router = useRouter();
-  const styles = useMemo(() => createStyles(colors.text), [colors.text]);
+  const styles = useMemo(() => createStyles(), []);
 
   const openSearch = useCallback(() => {
     router.push("/(main)/search");
@@ -40,7 +40,7 @@ export default function MainTabsLayout() {
             pressed ? styles.headerActionButtonPressed : null,
           ]}
         >
-          <SearchInputIcon color={colors.text} size={20} />
+          <SearchInputIcon color={colors.text} size={24} styleVariant="tab" />
         </Pressable>
         <Pressable
           accessibilityRole="button"
@@ -54,8 +54,9 @@ export default function MainTabsLayout() {
         >
           <NotificationBellIcon
             color={colors.text}
-            size={20}
+            size={24}
             showAlertDot={unreadCount > 0}
+            styleVariant="tab"
           />
         </Pressable>
       </View>
@@ -71,12 +72,46 @@ export default function MainTabsLayout() {
         headerShown: true,
         headerStyle: { backgroundColor: colors.surface },
         headerTintColor: colors.text,
+        headerTitleStyle: {
+          fontFamily: resolveAppFontFamily("medium"),
+        },
         headerShadowVisible: false,
         tabBarActiveTintColor: colors.tabActive,
         tabBarInactiveTintColor: colors.tabInactive,
         tabBarHideOnKeyboard: true,
-        tabBarPressColor: "transparent",
-        tabBarPressOpacity: 1,
+        tabBarButton: ({
+          accessibilityHint,
+          accessibilityLabel,
+          accessibilityRole,
+          accessibilityState,
+          accessibilityValue,
+          children,
+          disabled,
+          onLongPress,
+          onPress,
+          onPressIn,
+          onPressOut,
+          style,
+          testID,
+        }) => (
+          <Pressable
+            accessibilityHint={accessibilityHint}
+            accessibilityLabel={accessibilityLabel}
+            accessibilityRole={accessibilityRole}
+            accessibilityState={accessibilityState}
+            accessibilityValue={accessibilityValue}
+            android_ripple={{ color: "transparent", borderless: false }}
+            disabled={disabled}
+            onLongPress={onLongPress ?? undefined}
+            onPress={onPress}
+            onPressIn={onPressIn}
+            onPressOut={onPressOut}
+            style={style}
+            testID={testID}
+          >
+            {children}
+          </Pressable>
+        ),
         tabBarLabelStyle: {
           fontSize: 11,
           lineHeight: 14,
@@ -133,23 +168,21 @@ export default function MainTabsLayout() {
   );
 }
 
-const createStyles = (iconColor: string) =>
+const createStyles = () =>
   StyleSheet.create({
     headerActions: {
       flexDirection: "row",
       alignItems: "center",
-      marginRight: SPACING.sm,
-      gap: SPACING.xs,
+      marginRight: SPACING.md,
+      gap: SPACING.sm,
     },
     headerActionButton: {
-      width: 36,
-      height: 36,
+      width: 38,
+      height: 38,
       borderRadius: RADIUS.pill,
       alignItems: "center",
       justifyContent: "center",
       backgroundColor: "transparent",
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: `${iconColor}30`,
     },
     headerActionButtonPressed: {
       opacity: 0.72,

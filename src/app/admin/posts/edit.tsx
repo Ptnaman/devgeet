@@ -98,7 +98,13 @@ const extractPlainText = (value: string) =>
   value
     .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, " ")
     .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, " ")
+    .replace(/<\s*br\s*\/?\s*>/gi, "\n")
+    .replace(/<\s*\/\s*(p|div|h[1-6]|li|ul|ol|blockquote|section|article|tr)\s*>/gi, "\n")
+    .replace(/<\s*li[^>]*>/gi, "* ")
     .replace(/<[^>]+>/g, " ")
+    .replace(/\r\n?/g, "\n")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n[ \t]+/g, "\n")
     .replace(/&nbsp;/gi, " ")
     .replace(/&amp;/gi, "&")
     .replace(/&lt;/gi, "<")
@@ -106,7 +112,8 @@ const extractPlainText = (value: string) =>
     .replace(/&#39;/gi, "'")
     .replace(/&quot;/gi, '"')
     .replace(/\u200B/g, "")
-    .replace(/\s+/g, " ")
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
     .trim();
 
 export default function AdminPostEditScreen() {
@@ -134,6 +141,8 @@ export default function AdminPostEditScreen() {
   const [slugInput, setSlugInput] = useState("");
   const [isSlugManuallyEdited, setIsSlugManuallyEdited] = useState(false);
   const [contentPlainText, setContentPlainText] = useState("");
+  const [initialContentPlainText, setInitialContentPlainText] = useState("");
+  const [initialContentHtml, setInitialContentHtml] = useState("");
   const [featureImageUrl, setFeatureImageUrl] = useState("");
   const [youtubeVideoUrl, setYoutubeVideoUrl] = useState("");
   const [category, setCategory] = useState("");
@@ -259,6 +268,8 @@ export default function AdminPostEditScreen() {
   useEffect(() => {
     if (!isEditing) {
       setExistingPostRecord(null);
+      setInitialContentPlainText("");
+      setInitialContentHtml("");
       setFeatureImageUrl("");
       setYoutubeVideoUrl("");
       setIsLoadingPost(false);
@@ -320,8 +331,10 @@ export default function AdminPostEditScreen() {
             ? rawData.contentHtml
             : toHtmlContent(post.content);
         const hydratedPlainText =
-          post.content.trim() || extractPlainText(hydratedContentHtml);
+          extractPlainText(hydratedContentHtml) || post.content.trim();
         setContentPlainText(hydratedPlainText);
+        setInitialContentPlainText(hydratedPlainText);
+        setInitialContentHtml(hydratedContentHtml.trim());
         setFeatureImageUrl(post.featureImageUrl);
         setYoutubeVideoUrl(post.youtubeVideoUrl);
         setCategory(post.category);
@@ -523,7 +536,13 @@ export default function AdminPostEditScreen() {
   const handleSave = async (mode: "draft" | "submit" | "save") => {
     const trimmedTitle = title.trim();
     const plainContent = contentPlainText.trim();
-    const htmlContent = toHtmlContent(plainContent);
+    const normalizedInitialPlainText = initialContentPlainText.trim();
+    const normalizedInitialContentHtml = initialContentHtml.trim();
+    const hasContentChanged = !isEditing || plainContent !== normalizedInitialPlainText;
+    const htmlContent =
+      !hasContentChanged && normalizedInitialContentHtml
+        ? normalizedInitialContentHtml
+        : toHtmlContent(plainContent);
     const normalizedFeatureImageUrl = featureImageUrl.trim();
     const normalizedYoutubeVideoUrl = youtubeVideoUrl.trim();
     const persistedFeatureImageUrl = normalizedFeatureImageUrl;

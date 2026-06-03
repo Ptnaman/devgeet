@@ -27,7 +27,8 @@ export default function AuthLayout() {
       }}
     >
       <Stack.Screen name="auth-choice" options={{ headerShown: false }} />
+      <Stack.Screen name="email-login" options={{ headerShown: false }} />
+      <Stack.Screen name="email-signup" options={{ headerShown: false }} />
     </Stack>
   );
 }
-

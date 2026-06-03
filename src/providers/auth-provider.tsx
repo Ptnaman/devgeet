@@ -8,11 +8,14 @@ import {
   type ReactNode,
 } from "react";
 import {
+  createUserWithEmailAndPassword,
   deleteUser,
   GoogleAuthProvider,
   OAuthProvider,
   onAuthStateChanged,
+  sendPasswordResetEmail,
   setPersistence,
+  signInWithEmailAndPassword,
   signInWithCredential,
   signOut,
   updateProfile,
@@ -36,8 +39,12 @@ import {
 } from "firebase/firestore";
 
 import {
+  EMAIL_VALIDATION_MESSAGE,
   normalizeEmailAddress as normalizeEmail,
   normalizeUsernameValue as normalizeUsername,
+  PASSWORD_MIN_LENGTH,
+  PASSWORD_VALIDATION_MESSAGE,
+  isValidEmailAddress,
   sanitizeUsername,
   validateUsername,
 } from "@/lib/auth-validation";
@@ -65,7 +72,7 @@ const PUSH_TOKENS_COLLECTION = "pushTokens";
 const NOTIFICATIONS_COLLECTION = "notifications";
 const MAX_BATCH_DELETE_COUNT = 400;
 const RECENT_LOGIN_WINDOW_MS = 5 * 60 * 1000;
-type SupportedAuthProviderName = "google" | "apple";
+type SupportedAuthProviderName = "google" | "apple" | "email";
 const USER_GENDERS = ["male", "female", "other", "prefer_not_to_say"] as const;
 type UserGender = (typeof USER_GENDERS)[number] | "";
 
@@ -107,6 +114,15 @@ type AuthContextType = {
   }) => Promise<void>;
   switchCurrentUserToAuthor: () => Promise<void>;
   loginWithGoogleIdToken: (idToken: string) => Promise<void>;
+  loginWithEmailPassword: (payload: {
+    email: string;
+    password: string;
+  }) => Promise<void>;
+  signupWithEmailPassword: (payload: {
+    email: string;
+    password: string;
+  }) => Promise<void>;
+  sendPasswordResetForEmail: (email: string) => Promise<void>;
   loginWithAppleCredential: (payload: {
     idToken: string;
     rawNonce: string;
@@ -194,11 +210,27 @@ const getNameParts = (displayName: string | null) => {
   };
 };
 
+const hasGoogleProvider = (currentUser: User | null | undefined) =>
+  currentUser?.providerData.some((item) => item.providerId === "google.com") ?? false;
+
+const hasEmailPasswordProvider = (currentUser: User | null | undefined) =>
+  currentUser?.providerData.some((item) => item.providerId === "password") ?? false;
+
+const hasAppleProvider = (currentUser: User | null | undefined) =>
+  currentUser?.providerData.some((item) => item.providerId === "apple.com") ?? false;
+
+const hasAllowedAuthProvider = (currentUser: User | null | undefined) =>
+  hasGoogleProvider(currentUser) ||
+  hasEmailPasswordProvider(currentUser) ||
+  hasAppleProvider(currentUser);
+
 const resolveProvider = (currentUser: User | null | undefined) =>
-  currentUser?.providerData.some((item) => item.providerId === "apple.com")
-    ? "apple"
-    : currentUser?.providerData.some((item) => item.providerId === "google.com")
-      ? "google"
+  hasGoogleProvider(currentUser)
+    ? "google"
+  : hasEmailPasswordProvider(currentUser)
+      ? "email"
+    : hasAppleProvider(currentUser)
+      ? "apple"
       : "";
 
 const buildUserProfileRecord = (payload: {
@@ -293,14 +325,16 @@ const mapUserProfile = (uid: string, data: DocumentData): UserProfile => {
 const isUsernameTakenError = (error: unknown) =>
   error instanceof Error && error.message.toLowerCase().includes("already taken");
 
+const readAuthErrorCode = (error: unknown) =>
+  typeof error === "object" &&
+  error !== null &&
+  "code" in error &&
+  typeof (error as { code?: unknown }).code === "string"
+    ? (error as { code: string }).code
+    : "";
+
 const mapAccountDeletionError = (error: unknown) => {
-  const code =
-    typeof error === "object" &&
-    error !== null &&
-    "code" in error &&
-    typeof (error as { code?: unknown }).code === "string"
-      ? (error as { code: string }).code
-      : "";
+  const code = readAuthErrorCode(error);
 
   if (
     code === "auth/wrong-password" ||
@@ -323,6 +357,56 @@ const mapAccountDeletionError = (error: unknown) => {
   }
 
   return new Error("Unable to delete your account right now.");
+};
+
+const mapEmailAuthActionError = (
+  error: unknown,
+  action: "login" | "signup" | "reset",
+) => {
+  const code = readAuthErrorCode(error);
+
+  if (
+    code === "auth/wrong-password" ||
+    code === "auth/user-not-found" ||
+    code === "auth/invalid-credential" ||
+    code === "auth/invalid-login-credentials"
+  ) {
+    return new Error("Invalid email or password.");
+  }
+
+  if (code === "auth/invalid-email") {
+    return new Error(EMAIL_VALIDATION_MESSAGE);
+  }
+
+  if (code === "auth/weak-password") {
+    return new Error(PASSWORD_VALIDATION_MESSAGE);
+  }
+
+  if (code === "auth/email-already-in-use") {
+    return new Error("An account with this email already exists.");
+  }
+
+  if (code === "auth/too-many-requests") {
+    return new Error("Too many attempts. Try again after some time.");
+  }
+
+  if (action === "reset" && code === "auth/missing-email") {
+    return new Error(EMAIL_VALIDATION_MESSAGE);
+  }
+
+  if (error instanceof Error) {
+    return error;
+  }
+
+  if (action === "signup") {
+    return new Error("Unable to create your account right now.");
+  }
+
+  if (action === "reset") {
+    return new Error("Unable to send reset link right now.");
+  }
+
+  return new Error("Unable to login right now.");
 };
 
 const clearGoogleSessionsAsync = async () => {
@@ -499,14 +583,16 @@ const persistFederatedUserProfile = async (payload: {
   }
 
   const effectiveEmail = normalizeEmail(
-    pickFirstNonEmptyValue(payload.email, authUser.email, existingEmail)
+    pickFirstNonEmptyValue(payload.email, authUser.email, existingEmail),
   );
 
   if (!effectiveEmail) {
     throw new Error(
       provider === "apple"
         ? "Apple account did not return an email."
-        : "Google account did not return an email."
+      : provider === "google"
+        ? "Google account did not return an email."
+        : "Email account did not return an email."
     );
   }
 
@@ -611,6 +697,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [hasProfileDocument, setHasProfileDocument] = useState(false);
   const [authReady, setAuthReady] = useState(false);
+  const [isPersistenceReady, setIsPersistenceReady] = useState(false);
   const role = getEffectiveUserRole(profile?.role);
   const isAdmin = role === "admin";
   const hasActiveAccount = Boolean(user) && (!profile || profile.accountStatus !== "deleted");
@@ -621,7 +708,42 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const isBootstrapping = !authReady || isProfileBootstrapping;
 
   useEffect(() => {
+    let isActive = true;
+
+    const prepareAuthSession = async () => {
+      try {
+        await setPersistence(auth, getAuthPersistenceForRememberMe(true));
+      } catch {
+        // Keep current auth persistence if runtime does not support switching.
+      }
+
+      if (isActive) {
+        setIsPersistenceReady(true);
+      }
+    };
+
+    void prepareAuthSession();
+
+    return () => {
+      isActive = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isPersistenceReady) {
+      return;
+    }
+
     const unsubscribe = onAuthStateChanged(auth, (nextUser) => {
+      if (nextUser && !hasAllowedAuthProvider(nextUser)) {
+        setUser(null);
+        setProfile(null);
+        setHasProfileDocument(false);
+        setAuthReady(true);
+        void signOut(auth).catch(() => {});
+        return;
+      }
+
       setUser(nextUser);
       setProfile(null);
       setHasProfileDocument(false);
@@ -629,7 +751,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
 
     return unsubscribe;
-  }, []);
+  }, [isPersistenceReady]);
 
   useEffect(() => {
     if (!user) {
@@ -668,8 +790,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     void signOut(auth);
   }, [profile, user]);
 
-  const setRememberSessionPersistence = useCallback(async (remember: boolean) => {
-    await setPersistence(auth, getAuthPersistenceForRememberMe(remember));
+  const setRememberSessionPersistence = useCallback(async (_remember: boolean) => {
+    await setPersistence(auth, getAuthPersistenceForRememberMe(true));
   }, []);
 
   const isUsernameAvailable = useCallback(
@@ -833,6 +955,76 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       accountStatus: "active",
     });
   }, [profile]);
+
+  const loginWithEmailPassword = useCallback(async (payload: {
+    email: string;
+    password: string;
+  }) => {
+    const normalizedEmail = normalizeEmail(payload.email);
+
+    if (!isValidEmailAddress(normalizedEmail)) {
+      throw new Error(EMAIL_VALIDATION_MESSAGE);
+    }
+
+    if (!payload.password) {
+      throw new Error("Password is required.");
+    }
+
+    try {
+      const result = await signInWithEmailAndPassword(auth, normalizedEmail, payload.password);
+      await persistFederatedUserProfile({
+        authUser: result.user,
+        provider: "email",
+        email: normalizedEmail,
+        displayName: result.user.displayName,
+        photoURL: result.user.photoURL,
+      });
+    } catch (error) {
+      throw mapEmailAuthActionError(error, "login");
+    }
+  }, []);
+
+  const signupWithEmailPassword = useCallback(async (payload: {
+    email: string;
+    password: string;
+  }) => {
+    const normalizedEmail = normalizeEmail(payload.email);
+
+    if (!isValidEmailAddress(normalizedEmail)) {
+      throw new Error(EMAIL_VALIDATION_MESSAGE);
+    }
+
+    if (payload.password.length < PASSWORD_MIN_LENGTH) {
+      throw new Error(PASSWORD_VALIDATION_MESSAGE);
+    }
+
+    try {
+      const result = await createUserWithEmailAndPassword(auth, normalizedEmail, payload.password);
+      await persistFederatedUserProfile({
+        authUser: result.user,
+        provider: "email",
+        email: normalizedEmail,
+        displayName: result.user.displayName,
+        photoURL: result.user.photoURL,
+      });
+    } catch (error) {
+      throw mapEmailAuthActionError(error, "signup");
+    }
+  }, []);
+
+  const sendPasswordResetForEmail = useCallback(async (email: string) => {
+    const normalizedEmail = normalizeEmail(email);
+
+    if (!isValidEmailAddress(normalizedEmail)) {
+      throw new Error(EMAIL_VALIDATION_MESSAGE);
+    }
+
+    try {
+      await sendPasswordResetEmail(auth, normalizedEmail);
+    } catch (error) {
+      throw mapEmailAuthActionError(error, "reset");
+    }
+  }, []);
 
   const loginWithGoogleIdToken = useCallback(async (idToken: string) => {
     const credential = GoogleAuthProvider.credential(idToken);
@@ -1035,6 +1227,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isUsernameAvailable,
       updateCurrentUserProfile,
       switchCurrentUserToAuthor,
+      loginWithEmailPassword,
+      signupWithEmailPassword,
+      sendPasswordResetForEmail,
       loginWithGoogleIdToken,
       loginWithAppleCredential,
       deleteCurrentUserAccount,
@@ -1050,11 +1245,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isBootstrapping,
       isUsernameAvailable,
       loginWithAppleCredential,
+      loginWithEmailPassword,
       loginWithGoogleIdToken,
       logout,
       profile,
       role,
+      sendPasswordResetForEmail,
       setRememberSessionPersistence,
+      signupWithEmailPassword,
       switchCurrentUserToAuthor,
       updateCurrentUserProfile,
       user,

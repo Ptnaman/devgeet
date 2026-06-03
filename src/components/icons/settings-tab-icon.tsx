@@ -1,9 +1,10 @@
+import type { ColorValue } from "react-native";
 import Svg, { Path } from "react-native-svg";
 
 import { useAppTheme } from "@/providers/theme-provider";
 
 type SettingsTabIconProps = {
-  color: string;
+  color: ColorValue;
   filled?: boolean;
   size: number;
 };

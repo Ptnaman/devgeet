@@ -1,7 +1,8 @@
+import type { ColorValue } from "react-native";
 import Svg, { Path } from "react-native-svg";
 
 type HomeTabIconProps = {
-  color: string;
+  color: ColorValue;
   filled?: boolean;
   size: number;
 };

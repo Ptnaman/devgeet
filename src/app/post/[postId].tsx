@@ -6,6 +6,7 @@ import {
   Alert,
   Easing,
   Pressable,
+  Share,
   ScrollView,
   StyleSheet,
   Text,
@@ -51,6 +52,7 @@ import { MoreVerticalIcon } from "@/components/icons/more-vertical-icon";
 import { getEffectiveUserRole, type UserRole } from "@/lib/access";
 import {
   createSlug,
+  decodeHtmlEntities,
   formatDate,
   getPostCardThumbnailUrl,
   getYouTubeVideoId,
@@ -67,6 +69,10 @@ import {
   getActionErrorMessage,
   getRequestErrorMessage,
 } from "@/lib/network";
+import {
+  primePostNavigationCache,
+  readPostNavigationCache,
+} from "@/lib/post-navigation-cache";
 import { useAuth } from "@/providers/auth-provider";
 import { useLyricsReaderPreferences } from "@/providers/lyrics-reader-preferences-provider";
 import { useMainTabData } from "@/providers/main-tab-data-provider";
@@ -102,6 +108,9 @@ const BOOKMARK_PROMPT_HIDDEN_OFFSET = 46;
 const BOOKMARK_PROMPT_SHOW_DURATION_MS = 260;
 const BOOKMARK_PROMPT_HIDE_DURATION_MS = 220;
 const POST_DETAILS_HEADER_TITLE = "Lyrics";
+const POST_PERF_LOG_PREFIX = "[PostPerf]";
+const ENABLE_POST_PERF_LOGS = false;
+const CONTENT_HTML_TAG_PATTERN = /<\/?[a-z][^>]*>/i;
 const ABSOLUTE_FILL_OBJECT = {
   position: "absolute" as const,
   top: 0,
@@ -110,6 +119,11 @@ const ABSOLUTE_FILL_OBJECT = {
   left: 0,
 };
 const authorRoleCache = new Map<string, UserRole>();
+
+type LyricsContentChunk = {
+  bold: boolean;
+  text: string;
+};
 
 type SwipeDirection = "left" | "right";
 type SwipeSource = "author" | "category" | "favorite";
@@ -162,6 +176,55 @@ function getAuthorCardName(value: string) {
 
   const [firstName] = normalizedValue.split(/\s+/);
   return firstName || normalizedValue;
+}
+
+function normalizeHttpUrlCandidate(value: unknown) {
+  if (typeof value !== "string") {
+    return "";
+  }
+
+  const normalized = value.trim();
+  if (!normalized) {
+    return "";
+  }
+
+  try {
+    const parsed = new URL(normalized);
+    if (parsed.protocol === "http:" || parsed.protocol === "https:") {
+      return parsed.toString();
+    }
+  } catch {
+    return "";
+  }
+
+  return "";
+}
+
+function resolvePostShareUrl(post: PostRecord) {
+  const dynamicPost = post as Record<string, unknown>;
+  const candidateKeys = [
+    "sourceUrl",
+    "sourcePostUrl",
+    "sourceLink",
+    "sourceWebsiteUrl",
+    "canonicalUrl",
+    "permalink",
+    "link",
+    "url",
+  ];
+  const candidates: unknown[] = [
+    ...candidateKeys.map((key) => dynamicPost[key]),
+    post.youtubeVideoUrl,
+  ];
+
+  for (const candidate of candidates) {
+    const normalizedUrl = normalizeHttpUrlCandidate(candidate);
+    if (normalizedUrl) {
+      return normalizedUrl;
+    }
+  }
+
+  return "";
 }
 
 function resolveSwipeSource(value: string | string[] | undefined): SwipeSource | null {
@@ -221,6 +284,243 @@ function chunkPostIds(ids: string[], chunkSize: number) {
   }
 
   return chunks;
+}
+
+const LYRICS_BLOCK_TAGS = new Set([
+  "article",
+  "blockquote",
+  "div",
+  "h1",
+  "h2",
+  "h3",
+  "h4",
+  "h5",
+  "h6",
+  "ol",
+  "p",
+  "section",
+  "table",
+  "tr",
+  "ul",
+]);
+const LYRICS_BOLD_TAGS = new Set(["b", "strong"]);
+const LYRICS_PARAGRAPH_BREAK_TAGS = new Set([
+  "article",
+  "blockquote",
+  "div",
+  "p",
+  "section",
+]);
+
+function appendLyricsChunk(
+  chunks: LyricsContentChunk[],
+  text: string,
+  bold: boolean,
+) {
+  if (!text) {
+    return;
+  }
+
+  const previousChunk = chunks[chunks.length - 1];
+  if (previousChunk && previousChunk.bold === bold) {
+    previousChunk.text += text;
+    return;
+  }
+
+  chunks.push({ text, bold });
+}
+
+function appendLyricsLineBreak(
+  chunks: LyricsContentChunk[],
+  bold: boolean,
+  lineCount = 1,
+  mode: "append" | "ensure" = "ensure",
+) {
+  if (!chunks.length) {
+    return;
+  }
+
+  const safeLineCount = Math.max(1, lineCount);
+  if (mode === "append") {
+    appendLyricsChunk(chunks, "\n".repeat(safeLineCount), bold);
+    return;
+  }
+
+  const lastChunk = chunks[chunks.length - 1];
+  const trailingLineBreakMatch = lastChunk.text.match(/\n+$/);
+  const trailingLineBreakCount = trailingLineBreakMatch ? trailingLineBreakMatch[0].length : 0;
+
+  if (trailingLineBreakCount >= safeLineCount) {
+    return;
+  }
+
+  appendLyricsChunk(chunks, "\n".repeat(safeLineCount - trailingLineBreakCount), bold);
+}
+
+function normalizeLyricsInlineText(value: string) {
+  return value
+    .replace(/\u00a0/g, " ")
+    .replace(/\u200B/g, "")
+    .replace(/\r\n?/g, "\n")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n[ \t]+/g, "\n")
+    .replace(/[ \t]{2,}/g, " ");
+}
+
+function normalizePlainLyricsText(value: string) {
+  const normalizedValue = normalizeLyricsInlineText(value).trim();
+  if (!normalizedValue) {
+    return "";
+  }
+
+  return normalizedValue.replace(/\n{3,}/g, "\n\n").trim();
+}
+
+function parseMarkdownStrongChunks(value: string) {
+  const chunks: LyricsContentChunk[] = [];
+  const markdownBoldPattern = /(\*\*|__)([\s\S]+?)\1/g;
+  let previousIndex = 0;
+  let match: RegExpExecArray | null = markdownBoldPattern.exec(value);
+
+  while (match) {
+    const [fullMatch, , boldText] = match;
+    const plainText = value.slice(previousIndex, match.index);
+    appendLyricsChunk(chunks, plainText, false);
+    appendLyricsChunk(chunks, boldText, true);
+    previousIndex = match.index + fullMatch.length;
+    match = markdownBoldPattern.exec(value);
+  }
+
+  appendLyricsChunk(chunks, value.slice(previousIndex), false);
+  return chunks;
+}
+
+function trimLyricsChunkEdges(chunks: LyricsContentChunk[]) {
+  while (chunks.length && !chunks[0].text.trim()) {
+    chunks.shift();
+  }
+
+  while (chunks.length && !chunks[chunks.length - 1].text.trim()) {
+    chunks.pop();
+  }
+
+  if (!chunks.length) {
+    return chunks;
+  }
+
+  chunks[0].text = chunks[0].text.replace(/^\s+/, "");
+  chunks[chunks.length - 1].text = chunks[chunks.length - 1].text.replace(/\s+$/, "");
+  return chunks;
+}
+
+function parseLyricsContentChunks(
+  content: Pick<PostRecord, "content" | "contentHtml" | "sourcePlatform">,
+) {
+  const sourceValue =
+    typeof content.contentHtml === "string" && content.contentHtml.trim()
+      ? content.contentHtml
+      : content.content;
+  const decodedSource = decodeHtmlEntities(sourceValue)
+    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, " ")
+    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, " ")
+    .trim();
+
+  if (!decodedSource) {
+    return [] as LyricsContentChunk[];
+  }
+
+  if (!CONTENT_HTML_TAG_PATTERN.test(decodedSource)) {
+    const normalizedText = normalizePlainLyricsText(decodedSource);
+    if (!normalizedText) {
+      return [] as LyricsContentChunk[];
+    }
+    return trimLyricsChunkEdges(parseMarkdownStrongChunks(normalizedText));
+  }
+
+  const tokens = decodedSource.split(/(<[^>]+>)/g);
+  const chunks: LyricsContentChunk[] = [];
+  let boldDepth = 0;
+
+  tokens.forEach((token) => {
+    if (!token) {
+      return;
+    }
+
+    if (token.startsWith("<")) {
+      const tagMatch = token.match(/^<\s*(\/?)\s*([a-z0-9]+)[^>]*>/i);
+      if (!tagMatch) {
+        return;
+      }
+
+      const isClosingTag = Boolean(tagMatch[1]);
+      const tagName = tagMatch[2].toLowerCase();
+
+      if (tagName === "br") {
+        appendLyricsLineBreak(chunks, boldDepth > 0, 1, "append");
+        return;
+      }
+
+      if (LYRICS_BOLD_TAGS.has(tagName)) {
+        if (isClosingTag) {
+          boldDepth = Math.max(0, boldDepth - 1);
+        } else {
+          boldDepth += 1;
+        }
+        return;
+      }
+
+      if (tagName === "li") {
+        if (isClosingTag) {
+          appendLyricsLineBreak(chunks, boldDepth > 0);
+        } else {
+          appendLyricsLineBreak(chunks, boldDepth > 0);
+          appendLyricsChunk(chunks, "\u2022 ", boldDepth > 0);
+        }
+        return;
+      }
+
+      if (tagName === "td") {
+        appendLyricsChunk(chunks, " ", boldDepth > 0);
+        return;
+      }
+
+      if (tagName === "hr") {
+        appendLyricsLineBreak(chunks, boldDepth > 0, 2);
+        return;
+      }
+
+      if (!isClosingTag && LYRICS_PARAGRAPH_BREAK_TAGS.has(tagName)) {
+        appendLyricsLineBreak(chunks, boldDepth > 0, 2);
+        return;
+      }
+
+      if (isClosingTag && LYRICS_BLOCK_TAGS.has(tagName)) {
+        appendLyricsLineBreak(
+          chunks,
+          boldDepth > 0,
+          LYRICS_PARAGRAPH_BREAK_TAGS.has(tagName) ? 2 : 1,
+        );
+      }
+
+      return;
+    }
+
+    const normalizedText = normalizeLyricsInlineText(token);
+    if (!normalizedText || !/\S/.test(normalizedText)) {
+      return;
+    }
+
+    appendLyricsChunk(chunks, normalizedText, boldDepth > 0);
+  });
+
+  const normalizedChunks = trimLyricsChunkEdges(chunks).map((chunk) => ({
+    ...chunk,
+    text: chunk.text.replace(/\n{3,}/g, "\n\n"),
+  }));
+
+  return normalizedChunks.length
+    ? normalizedChunks
+    : [{ text: normalizeLyricsInlineText(content.content), bold: false }];
 }
 
 function useResolvedAuthorRoles(
@@ -368,34 +668,54 @@ function useResolvedAuthorRoles(
 
 type PostDetailsPageProps = {
   authorRole: UserRole;
+  isSaved?: boolean;
   isVideoPlaying?: boolean;
   interactive: boolean;
   lyricsFontSize: number;
   onDecreaseLyricsFontSize: () => void;
   onIncreaseLyricsFontSize: () => void;
   onOpenCategory: (post: PostRecord) => void;
+  onOpenRelatedPost?: (post: PostRecord) => void;
   onVideoPlaybackChange?: (isPlaying: boolean) => void;
   post: PostRecord;
+  relatedPosts?: PostRecord[];
   scrollViewRef?: RefObject<ScrollView | null>;
   styles: ReturnType<typeof createStyles>;
   youtubePlayerError?: string;
   onYoutubePlayerError?: (error: string) => void;
+  onHeroImageLoadStart?: (postId: string) => void;
+  onHeroImageLoadEnd?: (postId: string) => void;
+  onHeroImageError?: (postId: string) => void;
+  onVideoMounted?: (postId: string, videoId: string) => void;
+  onVideoReady?: (postId: string, videoId: string) => void;
+  onVideoStateChange?: (postId: string, state: string) => void;
+  onVideoError?: (postId: string, error: string) => void;
 };
 
 function PostDetailsPage({
   authorRole,
+  isSaved = false,
   isVideoPlaying = false,
   interactive,
   lyricsFontSize,
   onDecreaseLyricsFontSize,
   onIncreaseLyricsFontSize,
   onOpenCategory,
+  onOpenRelatedPost,
   onVideoPlaybackChange,
   post,
+  relatedPosts = [],
   scrollViewRef,
   styles,
   youtubePlayerError = "",
   onYoutubePlayerError,
+  onHeroImageLoadStart,
+  onHeroImageLoadEnd,
+  onHeroImageError,
+  onVideoMounted,
+  onVideoReady,
+  onVideoStateChange,
+  onVideoError,
 }: PostDetailsPageProps) {
   const thumbnailUrl = getPostCardThumbnailUrl(post);
   const publishedLabel = formatDate(post.publishedAt || post.uploadDate || post.createDate);
@@ -405,6 +725,22 @@ function PostDetailsPage({
   const canIncreaseLyricsSize = interactive && lyricsFontSize < MAX_LYRICS_FONT_SIZE;
   const authorLabel = post.authorDisplayName || "Community Author";
   const authorCardName = getAuthorCardName(authorLabel);
+  const lyricsContentChunks = useMemo(
+    () => parseLyricsContentChunks(post),
+    [post],
+  );
+  const fallbackLyricsText = useMemo(
+    () => normalizePlainLyricsText(post.content) || "Lyrics are not available for this post yet.",
+    [post.content],
+  );
+
+  useEffect(() => {
+    if (!interactive || !youtubeVideoId) {
+      return;
+    }
+
+    onVideoMounted?.(post.id, youtubeVideoId);
+  }, [interactive, onVideoMounted, post.id, youtubeVideoId]);
 
   return (
     <ScrollView
@@ -420,6 +756,21 @@ function PostDetailsPage({
           source={{ uri: thumbnailUrl }}
           style={styles.thumbnail}
           transition={140}
+          onLoadStart={() => {
+            if (interactive) {
+              onHeroImageLoadStart?.(post.id);
+            }
+          }}
+          onLoad={() => {
+            if (interactive) {
+              onHeroImageLoadEnd?.(post.id);
+            }
+          }}
+          onError={() => {
+            if (interactive) {
+              onHeroImageError?.(post.id);
+            }
+          }}
         />
       ) : null}
 
@@ -439,7 +790,10 @@ function PostDetailsPage({
             <Text style={styles.categoryLinkText}>{categoryLabel}</Text>
           </View>
         </Pressable>
-        <Text style={[styles.meta, styles.metaPublished]}>{`Published: ${publishedLabel}`}</Text>
+        <View style={styles.metaStatusRow}>
+          <Text style={[styles.meta, styles.metaPublished]}>{`Published: ${publishedLabel}`}</Text>
+          {isSaved ? <Text style={styles.metaSaved}>Saved</Text> : null}
+        </View>
       </View>
 
       {post.authorId || post.createdBy ? (
@@ -521,7 +875,16 @@ function PostDetailsPage({
           },
         ]}
       >
-        {post.content.trim() || "Lyrics are not available for this post yet."}
+        {lyricsContentChunks.length
+          ? lyricsContentChunks.map((chunk, index) => (
+              <Text
+                key={`lyrics-chunk-${index}`}
+                style={chunk.bold ? styles.contentStrong : undefined}
+              >
+                {chunk.text}
+              </Text>
+            ))
+          : fallbackLyricsText}
       </Text>
 
       {youtubeVideoId ? (
@@ -535,11 +898,16 @@ function PostDetailsPage({
               forceAndroidAutoplay
               initialPlayerParams={{ rel: false, modestbranding: true }}
               webViewStyle={styles.video}
+              onReady={() => {
+                onVideoReady?.(post.id, youtubeVideoId);
+              }}
               onError={(event: string) => {
                 onVideoPlaybackChange?.(false);
                 onYoutubePlayerError?.(event || "Playback failed.");
+                onVideoError?.(post.id, event || "Playback failed.");
               }}
               onChangeState={(state: string) => {
+                onVideoStateChange?.(post.id, state);
                 if (state === "playing") {
                   onYoutubePlayerError?.("");
                   onVideoPlaybackChange?.(true);
@@ -557,6 +925,55 @@ function PostDetailsPage({
             {youtubePlayerError ? (
               <Text style={styles.videoErrorText}>Video not playing here.</Text>
             ) : null}
+          </View>
+        </View>
+      ) : null}
+
+      {interactive && relatedPosts.length ? (
+        <View style={styles.relatedSection}>
+          <Text style={styles.relatedSectionTitle}>Related Posts</Text>
+          <View style={styles.relatedList}>
+            {relatedPosts.map((relatedPost) => {
+              const relatedThumbnail = getPostCardThumbnailUrl(relatedPost);
+              const relatedPublishedLabel = formatDate(
+                relatedPost.publishedAt || relatedPost.uploadDate || relatedPost.createDate,
+              );
+
+              return (
+                <Pressable
+                  key={relatedPost.id}
+                  style={({ pressed }) => [
+                    styles.relatedCard,
+                    pressed && styles.relatedCardPressed,
+                  ]}
+                  onPress={() => {
+                    onOpenRelatedPost?.(relatedPost);
+                  }}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Open related post: ${relatedPost.title}`}
+                >
+                  {relatedThumbnail ? (
+                    <Image
+                      cachePolicy="memory-disk"
+                      contentFit="cover"
+                      source={{ uri: relatedThumbnail }}
+                      style={styles.relatedCardThumb}
+                      transition={100}
+                    />
+                  ) : (
+                    <View style={[styles.relatedCardThumb, styles.relatedCardThumbFallback]} />
+                  )}
+                  <View style={styles.relatedCardBody}>
+                    <Text style={styles.relatedCardTitle} numberOfLines={2}>
+                      {relatedPost.title}
+                    </Text>
+                    <Text style={styles.relatedCardMeta} numberOfLines={1}>
+                      {`Published: ${relatedPublishedLabel}`}
+                    </Text>
+                  </View>
+                </Pressable>
+              );
+            })}
           </View>
         </View>
       ) : null}
@@ -596,12 +1013,13 @@ export default function PostDetailsScreen() {
   const swipeAuthorId = resolveSwipeAuthorId(swipeAuthorIdParam);
   const swipeCategorySlug = resolveCategorySlug(swipeCategorySlugParam);
   const swipePostIds = useMemo(() => resolveSwipePostIds(swipePostIdsParam), [swipePostIdsParam]);
+  const cachedRoutePost = useMemo(() => readPostNavigationCache(routePostId), [routePostId]);
   const scrollViewRef = useRef<ScrollView | null>(null);
   const pendingRoutePostIdRef = useRef<string | null>(null);
   const [activePostId, setActivePostId] = useState(routePostId);
-  const [post, setPost] = useState<PostRecord | null>(null);
+  const [post, setPost] = useState<PostRecord | null>(cachedRoutePost);
   const [swipePosts, setSwipePosts] = useState<PostRecord[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(!cachedRoutePost);
   const [error, setError] = useState("");
   const [youtubePlayerError, setYoutubePlayerError] = useState("");
   const [isVideoPlaying, setIsVideoPlaying] = useState(false);
@@ -611,11 +1029,54 @@ export default function PostDetailsScreen() {
   const bookmarkPromptOpacity = useRef(new RNAnimated.Value(0)).current;
   const bookmarkPromptTranslateY = useRef(new RNAnimated.Value(BOOKMARK_PROMPT_HIDDEN_OFFSET)).current;
   const bookmarkPromptAnimationRef = useRef<RNAnimated.CompositeAnimation | null>(null);
+  const postPerfStartTimeByIdRef = useRef<Record<string, number>>({});
+  const postPerfLoggedStagesByIdRef = useRef<Record<string, Set<string>>>({});
+  const postPerfHeroImageStartByIdRef = useRef<Record<string, number>>({});
+  const postPerfVideoMountByIdRef = useRef<Record<string, number>>({});
   const translateX = useSharedValue(0);
   const isSwipeNavigating = useSharedValue(false);
   const previewDirectionValue = useSharedValue(0);
   const [previewDirection, setPreviewDirection] = useState<SwipeDirection | null>(null);
   const [settlingPreviewPost, setSettlingPreviewPost] = useState<PostRecord | null>(null);
+
+  const logPostPerfStage = useCallback((
+    postId: string,
+    stage: string,
+    options?: {
+      extra?: Record<string, unknown>;
+      onceKey?: string;
+    },
+  ) => {
+    if (!__DEV__ || !ENABLE_POST_PERF_LOGS || !postId) {
+      return;
+    }
+
+    const startTimes = postPerfStartTimeByIdRef.current;
+    if (!startTimes[postId]) {
+      startTimes[postId] = Date.now();
+    }
+
+    const onceKey = options?.onceKey;
+    if (onceKey) {
+      const loggedStages = postPerfLoggedStagesByIdRef.current;
+      const stageSet = loggedStages[postId] ?? new Set<string>();
+      if (stageSet.has(onceKey)) {
+        return;
+      }
+
+      stageSet.add(onceKey);
+      loggedStages[postId] = stageSet;
+    }
+
+    const elapsedMs = Date.now() - startTimes[postId];
+    const prefix = `${POST_PERF_LOG_PREFIX} post=${postId} +${elapsedMs}ms stage=${stage}`;
+    if (options?.extra) {
+      console.log(prefix, options.extra);
+      return;
+    }
+
+    console.log(prefix);
+  }, []);
 
   const stopBookmarkPromptAnimation = useCallback(() => {
     if (bookmarkPromptAnimationRef.current) {
@@ -715,6 +1176,24 @@ export default function PostDetailsScreen() {
   }, [isConnected]);
 
   useEffect(() => {
+    if (!activePostId) {
+      return;
+    }
+
+    postPerfStartTimeByIdRef.current[activePostId] = Date.now();
+    postPerfLoggedStagesByIdRef.current[activePostId] = new Set<string>();
+    delete postPerfHeroImageStartByIdRef.current[activePostId];
+    delete postPerfVideoMountByIdRef.current[activePostId];
+
+    logPostPerfStage(activePostId, "open", {
+      extra: {
+        swipeSource: swipeSource || "direct",
+        hasNavigationCache: Boolean(readPostNavigationCache(activePostId)),
+      },
+    });
+  }, [activePostId, logPostPerfStage, swipeSource]);
+
+  useEffect(() => {
     translateX.value = 0;
     previewDirectionValue.value = 0;
   }, [previewDirectionValue, translateX, width]);
@@ -789,9 +1268,45 @@ export default function PostDetailsScreen() {
     () => publishedPosts.find((item) => item.id === activePostId) ?? null,
     [activePostId, publishedPosts],
   );
+  const cachedActivePostRef = useRef<PostRecord | null>(cachedActivePost);
+
+  useEffect(() => {
+    cachedActivePostRef.current = cachedActivePost;
+  }, [cachedActivePost]);
+
+  useEffect(() => {
+    if (!post) {
+      return;
+    }
+
+    primePostNavigationCache(post);
+  }, [post]);
+
+  useEffect(() => {
+    if (isLoading || !post?.id) {
+      return;
+    }
+
+    logPostPerfStage(post.id, "render-ready", {
+      onceKey: "render-ready",
+      extra: {
+        hasHeroImage: Boolean(getPostCardThumbnailUrl(post)),
+        hasVideo: Boolean(getYouTubeVideoId(post.youtubeVideoUrl)),
+      },
+    });
+
+    const frame = requestAnimationFrame(() => {
+      logPostPerfStage(post.id, "first-frame", { onceKey: "first-frame" });
+    });
+
+    return () => {
+      cancelAnimationFrame(frame);
+    };
+  }, [isLoading, logPostPerfStage, post]);
 
   useEffect(() => {
     if (!activePostId) {
+      logPostPerfStage(routePostId, "invalid-post-id", { onceKey: "invalid-post-id" });
       setError("Post not found.");
       setPost(null);
       setIsLoading(false);
@@ -799,6 +1314,10 @@ export default function PostDetailsScreen() {
     }
 
     if (activeSwipePost) {
+      logPostPerfStage(activePostId, "content-source", {
+        onceKey: "content-source",
+        extra: { source: "swipe-posts-memory" },
+      });
       setYoutubePlayerError("");
       setPost((currentPost) =>
         currentPost?.id === activeSwipePost.id ? currentPost : activeSwipePost,
@@ -809,6 +1328,10 @@ export default function PostDetailsScreen() {
     }
 
     if (cachedActivePost) {
+      logPostPerfStage(activePostId, "content-source", {
+        onceKey: "content-source",
+        extra: { source: "published-posts-memory" },
+      });
       setYoutubePlayerError("");
       setPost((currentPost) =>
         currentPost?.id === cachedActivePost.id ? currentPost : cachedActivePost,
@@ -818,21 +1341,52 @@ export default function PostDetailsScreen() {
       return;
     }
 
+    const cachedNavigationPost = readPostNavigationCache(activePostId);
+    if (cachedNavigationPost && isSwipeEligiblePost(cachedNavigationPost)) {
+      logPostPerfStage(activePostId, "content-source", {
+        onceKey: "content-source",
+        extra: { source: "navigation-cache-memory" },
+      });
+      setYoutubePlayerError("");
+      setPost((currentPost) =>
+        currentPost?.id === cachedNavigationPost.id ? currentPost : cachedNavigationPost,
+      );
+      setError("");
+      setIsLoading(false);
+      return;
+    }
+
     if (post?.id !== activePostId) {
+      logPostPerfStage(activePostId, "waiting-network", { onceKey: "waiting-network" });
       setIsLoading(true);
     }
-  }, [activePostId, activeSwipePost, cachedActivePost, post?.id]);
+  }, [activePostId, activeSwipePost, cachedActivePost, logPostPerfStage, post?.id, routePostId]);
 
   useEffect(() => {
     if (!activePostId) {
       return;
     }
 
+    const subscribedAt = Date.now();
+    logPostPerfStage(activePostId, "snapshot-subscribe", { onceKey: "snapshot-subscribe" });
+
     const postRef = doc(firestore, POSTS_COLLECTION, activePostId);
     const unsubscribe = onSnapshot(
       postRef,
       (snapshot) => {
+        logPostPerfStage(activePostId, "snapshot-first-response", {
+          onceKey: "snapshot-first-response",
+          extra: {
+            fromCache: snapshot.metadata.fromCache,
+            hasPendingWrites: snapshot.metadata.hasPendingWrites,
+            sinceSubscribeMs: Date.now() - subscribedAt,
+          },
+        });
+
         if (!snapshot.exists()) {
+          logPostPerfStage(activePostId, "snapshot-post-not-found", {
+            onceKey: "snapshot-post-not-found",
+          });
           setError("Post not found.");
           setPost(null);
           setIsLoading(false);
@@ -841,21 +1395,40 @@ export default function PostDetailsScreen() {
 
         const nextPost = mapPostRecord(snapshot.id, snapshot.data() as DocumentData);
         if (!isSwipeEligiblePost(nextPost)) {
+          logPostPerfStage(activePostId, "snapshot-post-unpublished", {
+            onceKey: "snapshot-post-unpublished",
+          });
           setError("Post is not published.");
           setPost(null);
           setIsLoading(false);
           return;
         }
 
+        logPostPerfStage(activePostId, "content-source", {
+          onceKey: "content-source",
+          extra: { source: "firestore-snapshot" },
+        });
         setYoutubePlayerError("");
         setPost(nextPost);
         setError("");
         setIsLoading(false);
       },
       (snapshotError) => {
-        if (cachedActivePost) {
+        logPostPerfStage(activePostId, "snapshot-error", {
+          onceKey: "snapshot-error",
+          extra: {
+            message: snapshotError instanceof Error ? snapshotError.message : "Unknown snapshot error",
+          },
+        });
+
+        const latestCachedActivePost = cachedActivePostRef.current;
+        if (latestCachedActivePost) {
+          logPostPerfStage(activePostId, "content-source", {
+            onceKey: "content-source",
+            extra: { source: "published-posts-memory-fallback" },
+          });
           setYoutubePlayerError("");
-          setPost(cachedActivePost);
+          setPost(latestCachedActivePost);
           setError("");
           setIsLoading(false);
           return;
@@ -874,7 +1447,7 @@ export default function PostDetailsScreen() {
     );
 
     return unsubscribe;
-  }, [activePostId, cachedActivePost]);
+  }, [activePostId, logPostPerfStage]);
 
   useEffect(() => {
     if (swipeSource === "author") {
@@ -1082,6 +1655,46 @@ export default function PostDetailsScreen() {
     });
   };
 
+  const handleOpenRelatedPost = useCallback((targetPost: PostRecord) => {
+    if (!targetPost.id || targetPost.id === post?.id) {
+      return;
+    }
+
+    primePostNavigationCache(targetPost);
+    const relatedCategorySlug = createSlug(targetPost.category);
+
+    router.push({
+      pathname: "/post/[postId]",
+      params: relatedCategorySlug
+        ? {
+            postId: targetPost.id,
+            swipeSource: "category",
+            swipeCategorySlug: relatedCategorySlug,
+          }
+        : {
+            postId: targetPost.id,
+          },
+    });
+  }, [post?.id, router]);
+
+  const handleSharePost = useCallback(async (targetPost: PostRecord) => {
+    const shareUrl = resolvePostShareUrl(targetPost);
+    if (!shareUrl) {
+      Alert.alert("Share Post", "No source link is available for this post.");
+      return;
+    }
+
+    try {
+      await Share.share({
+        title: targetPost.title,
+        message: `${targetPost.title}\n${shareUrl}`,
+        url: shareUrl,
+      });
+    } catch {
+      Alert.alert("Share Post", "Unable to open share options right now.");
+    }
+  }, []);
+
   const handleOpenPostEditor = (targetPost: PostRecord) => {
     router.push(`/admin/posts/edit?postId=${targetPost.id}`);
   };
@@ -1104,6 +1717,72 @@ export default function PostDetailsScreen() {
     setLyricsFontSize((value) => Math.min(MAX_LYRICS_FONT_SIZE, value + LYRICS_FONT_STEP));
     showToast("Lyrics font size increased.");
   };
+
+  const handleHeroImageLoadStart = useCallback((postId: string) => {
+    postPerfHeroImageStartByIdRef.current[postId] = Date.now();
+    logPostPerfStage(postId, "image-load-start", { onceKey: "image-load-start" });
+  }, [logPostPerfStage]);
+
+  const handleHeroImageLoadEnd = useCallback((postId: string) => {
+    const startedAt = postPerfHeroImageStartByIdRef.current[postId];
+    const extra = startedAt ? { durationMs: Date.now() - startedAt } : undefined;
+    logPostPerfStage(postId, "image-loaded", {
+      onceKey: "image-loaded",
+      ...(extra ? { extra } : {}),
+    });
+  }, [logPostPerfStage]);
+
+  const handleHeroImageError = useCallback((postId: string) => {
+    const startedAt = postPerfHeroImageStartByIdRef.current[postId];
+    const extra = startedAt ? { durationMs: Date.now() - startedAt } : undefined;
+    logPostPerfStage(postId, "image-error", {
+      onceKey: "image-error",
+      ...(extra ? { extra } : {}),
+    });
+  }, [logPostPerfStage]);
+
+  const handleVideoMounted = useCallback((postId: string, videoId: string) => {
+    postPerfVideoMountByIdRef.current[postId] = Date.now();
+    logPostPerfStage(postId, "video-mount", {
+      onceKey: "video-mount",
+      extra: { videoId },
+    });
+  }, [logPostPerfStage]);
+
+  const handleVideoReady = useCallback((postId: string, videoId: string) => {
+    const mountedAt = postPerfVideoMountByIdRef.current[postId];
+    const extra: Record<string, unknown> = { videoId };
+    if (mountedAt) {
+      extra.readyDurationMs = Date.now() - mountedAt;
+    }
+    logPostPerfStage(postId, "video-ready", {
+      onceKey: "video-ready",
+      extra,
+    });
+  }, [logPostPerfStage]);
+
+  const handleVideoStateChange = useCallback((postId: string, state: string) => {
+    logPostPerfStage(postId, "video-state", {
+      onceKey: "video-first-state",
+      extra: { state },
+    });
+
+    if (state === "playing") {
+      const mountedAt = postPerfVideoMountByIdRef.current[postId];
+      const extra = mountedAt ? { playDurationMs: Date.now() - mountedAt } : undefined;
+      logPostPerfStage(postId, "video-playing", {
+        onceKey: "video-playing",
+        ...(extra ? { extra } : {}),
+      });
+    }
+  }, [logPostPerfStage]);
+
+  const handleVideoError = useCallback((postId: string, errorMessage: string) => {
+    logPostPerfStage(postId, "video-error", {
+      onceKey: "video-error",
+      extra: { message: errorMessage },
+    });
+  }, [logPostPerfStage]);
 
   const currentPostIndex = useMemo(() => {
     if (!post) {
@@ -1134,6 +1813,23 @@ export default function PostDetailsScreen() {
   );
   const authorRolesByUserId = useResolvedAuthorRoles(visibleAuthorPosts);
   const currentPostAuthorRole = resolvePostAuthorRole(post, authorRolesByUserId);
+  const relatedPosts = useMemo(() => {
+    if (!post) {
+      return [];
+    }
+
+    const currentCategorySlug = createSlug(post.category);
+    if (!currentCategorySlug) {
+      return [];
+    }
+
+    return sortPostsByRecency(
+      publishedPosts.filter(
+        (item) => item.id !== post.id && createSlug(item.category) === currentCategorySlug,
+      ),
+    ).slice(0, 5);
+  }, [post, publishedPosts]);
+  const currentPostIsSaved = post ? isFavorite(post.id) : false;
   const canEditCurrentPost = Boolean(
     post &&
       canManagePosts &&
@@ -1440,18 +2136,28 @@ export default function PostDetailsScreen() {
           <Animated.View style={[styles.page, styles.pageCard, currentPageStyle]}>
             <PostDetailsPage
               authorRole={currentPostAuthorRole}
+              isSaved={currentPostIsSaved}
               interactive
               lyricsFontSize={lyricsFontSize}
               onDecreaseLyricsFontSize={handleDecreaseLyricsFontSize}
               onIncreaseLyricsFontSize={handleIncreaseLyricsFontSize}
               onOpenCategory={handleOpenCategory}
+              onOpenRelatedPost={handleOpenRelatedPost}
               onVideoPlaybackChange={setIsVideoPlaying}
               post={post}
+              relatedPosts={relatedPosts}
               scrollViewRef={scrollViewRef}
               styles={styles}
               isVideoPlaying={isVideoPlaying}
               youtubePlayerError={youtubePlayerError}
               onYoutubePlayerError={setYoutubePlayerError}
+              onHeroImageLoadStart={handleHeroImageLoadStart}
+              onHeroImageLoadEnd={handleHeroImageLoadEnd}
+              onHeroImageError={handleHeroImageError}
+              onVideoMounted={handleVideoMounted}
+              onVideoReady={handleVideoReady}
+              onVideoStateChange={handleVideoStateChange}
+              onVideoError={handleVideoError}
             />
           </Animated.View>
         </GestureDetector>
@@ -1459,18 +2165,28 @@ export default function PostDetailsScreen() {
         <Animated.View style={[styles.page, styles.pageCard, currentPageStyle]}>
           <PostDetailsPage
             authorRole={currentPostAuthorRole}
+            isSaved={currentPostIsSaved}
             interactive
             lyricsFontSize={lyricsFontSize}
             onDecreaseLyricsFontSize={handleDecreaseLyricsFontSize}
             onIncreaseLyricsFontSize={handleIncreaseLyricsFontSize}
             onOpenCategory={handleOpenCategory}
+            onOpenRelatedPost={handleOpenRelatedPost}
             onVideoPlaybackChange={setIsVideoPlaying}
             post={post}
+            relatedPosts={relatedPosts}
             scrollViewRef={scrollViewRef}
             styles={styles}
             isVideoPlaying={isVideoPlaying}
             youtubePlayerError={youtubePlayerError}
             onYoutubePlayerError={setYoutubePlayerError}
+            onHeroImageLoadStart={handleHeroImageLoadStart}
+            onHeroImageLoadEnd={handleHeroImageLoadEnd}
+            onHeroImageError={handleHeroImageError}
+            onVideoMounted={handleVideoMounted}
+            onVideoReady={handleVideoReady}
+            onVideoStateChange={handleVideoStateChange}
+            onVideoError={handleVideoError}
           />
         </Animated.View>
       )}
@@ -1521,6 +2237,29 @@ export default function PostDetailsScreen() {
                 <View style={styles.headerMenuActionDivider} />
               </>
             ) : null}
+
+            <Pressable
+              style={({ pressed }) => [
+                styles.headerMenuAction,
+                pressed && styles.headerMenuActionPressed,
+              ]}
+              onPress={() => {
+                if (!post) {
+                  return;
+                }
+
+                closeHeaderMenu();
+                void handleSharePost(post);
+              }}
+              accessibilityRole="button"
+              accessibilityLabel="Share post source link"
+            >
+              <View style={styles.headerMenuActionIconWrap}>
+                <ArrowRightIcon color={colors.subtleText} size={14} />
+              </View>
+              <Text style={styles.headerMenuActionTitle}>Share post link</Text>
+            </Pressable>
+            <View style={styles.headerMenuActionDivider} />
 
             <Pressable
               style={({ pressed }) => [
@@ -1712,13 +2451,23 @@ const createStyles = (colors: ThemeColors, isDarkTheme: boolean) => StyleSheet.c
     fontSize: 12,
   },
   metaPublished: {
-    marginLeft: SPACING.sm,
+    marginLeft: 0,
   },
   metaRow: {
     flexDirection: "row",
     alignItems: "center",
     flexWrap: "wrap",
     gap: SPACING.xs,
+  },
+  metaStatusRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.xs,
+  },
+  metaSaved: {
+    color: "#E53935",
+    fontSize: 12,
+    fontWeight: "700",
   },
   categoryLink: {
     borderRadius: RADIUS.pill,
@@ -1876,6 +2625,10 @@ const createStyles = (colors: ThemeColors, isDarkTheme: boolean) => StyleSheet.c
     paddingHorizontal: SPACING.sm,
     paddingVertical: SPACING.xs,
   },
+  contentStrong: {
+    color: colors.text,
+    fontWeight: "700",
+  },
   videoCard: {
     borderRadius: RADIUS.md,
     borderWidth: 1,
@@ -1919,6 +2672,56 @@ const createStyles = (colors: ThemeColors, isDarkTheme: boolean) => StyleSheet.c
     gap: SPACING.xs,
   },
   videoErrorText: {
+    color: colors.mutedText,
+    fontSize: 12,
+  },
+  relatedSection: {
+    marginTop: SPACING.sm,
+    gap: SPACING.sm,
+  },
+  relatedSectionTitle: {
+    color: colors.text,
+    fontSize: 18,
+    fontWeight: "700",
+  },
+  relatedList: {
+    gap: SPACING.sm,
+  },
+  relatedCard: {
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    padding: SPACING.sm,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.sm,
+  },
+  relatedCardPressed: {
+    opacity: 0.82,
+  },
+  relatedCardThumb: {
+    width: 68,
+    height: 68,
+    borderRadius: 8,
+    backgroundColor: colors.surfaceSoft,
+  },
+  relatedCardThumbFallback: {
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  relatedCardBody: {
+    flex: 1,
+    minWidth: 0,
+    gap: 4,
+  },
+  relatedCardTitle: {
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: "600",
+    lineHeight: 20,
+  },
+  relatedCardMeta: {
     color: colors.mutedText,
     fontSize: 12,
   },

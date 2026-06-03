@@ -7,12 +7,27 @@ type GoogleOneTapSignInApi = {
   signOut: () => Promise<null>;
 };
 
+type GoogleSigninUser = {
+  user?: {
+    email?: string | null;
+  } | null;
+  idToken?: string | null;
+};
+
+type GoogleSigninSuccessResponse = {
+  type?: string;
+  data?: GoogleSigninUser | null;
+} & GoogleSigninUser;
+
 type GoogleSigninApi = {
   configure: (params: { webClientId?: string; iosClientId?: string }) => void;
   hasPlayServices: (options: {
     showPlayServicesUpdateDialog: boolean;
   }) => Promise<boolean>;
   signIn: () => Promise<unknown>;
+  signInSilently?: () => Promise<GoogleSigninSuccessResponse>;
+  hasPreviousSignIn?: () => boolean;
+  getCurrentUser?: () => GoogleSigninUser | null;
   getTokens: () => Promise<{ idToken: string; accessToken: string }>;
   signOut: () => Promise<null>;
   revokeAccess?: () => Promise<null | void>;

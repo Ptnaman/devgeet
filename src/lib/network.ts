@@ -1,5 +1,5 @@
 const NETWORK_ERROR_CODE_PATTERN =
-  /(network-request-failed|unavailable|deadline-exceeded|failed-precondition)/i;
+  /(network-request-failed|unavailable|deadline-exceeded)/i;
 const NETWORK_ERROR_MESSAGE_PATTERN =
   /(network request failed|failed to fetch|offline|internet connection appears to be offline|timed out|timeout|network error|could not reach|unable to connect)/i;
 

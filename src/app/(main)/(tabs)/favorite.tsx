@@ -1,6 +1,14 @@
-import { useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Image } from "expo-image";
 import { useRouter } from "expo-router";
+import {
+  collection,
+  documentId,
+  getDocs,
+  query,
+  where,
+  type DocumentData,
+} from "firebase/firestore";
 import {
   ActivityIndicator,
   Alert,
@@ -21,20 +29,30 @@ import {
   STATIC_COLORS,
   type ThemeColors,
 } from "@/constants/theme";
-import { getPostCardThumbnailUrl, type PostRecord } from "@/lib/content";
+import {
+  getPostCardThumbnailUrl,
+  isPostTrashed,
+  mapPostRecord,
+  POSTS_COLLECTION,
+  sortPostsByRecency,
+  type PostRecord,
+} from "@/lib/content";
+import { firestore } from "@/lib/firebase";
+import { primePostNavigationCache } from "@/lib/post-navigation-cache";
 import {
   DEFAULT_OFFLINE_MESSAGE,
   getActionErrorMessage,
+  getRequestErrorMessage,
 } from "@/lib/network";
 import { useFavorites } from "@/hooks/use-favorites";
 import { useNetworkStatus } from "@/providers/network-provider";
-import { useMainTabData } from "@/providers/main-tab-data-provider";
 import { useAppTheme } from "@/providers/theme-provider";
+
+const FAVORITE_POST_IDS_CHUNK_SIZE = 10;
 
 export default function FavoriteTabScreen() {
   const { colors } = useAppTheme();
-  const { publishedPosts, isLoadingPosts, postsError } = useMainTabData();
-  const { isConnected, showOfflineToast } = useNetworkStatus();
+  const { isConnected, refreshConnection, showOfflineToast } = useNetworkStatus();
   const router = useRouter();
   const {
     favoritePostIds,
@@ -44,22 +62,146 @@ export default function FavoriteTabScreen() {
     toggleFavorite,
   } = useFavorites();
   const styles = createStyles(colors);
+  const isConnectedRef = useRef(isConnected);
+  const [favoritePosts, setFavoritePosts] = useState<PostRecord[]>([]);
+  const [favoritePostsError, setFavoritePostsError] = useState("");
+  const [isLoadingFavoritePosts, setIsLoadingFavoritePosts] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
-  const favoritePosts = useMemo(
-    () => publishedPosts.filter((post) => favoritePostIds.has(post.id)),
-    [favoritePostIds, publishedPosts],
-  );
+  useEffect(() => {
+    isConnectedRef.current = isConnected;
+  }, [isConnected]);
 
-  const isLoading = isLoadingPosts || isLoadingFavorites;
-  const combinedError = postsError || favoritesError;
+  const fetchFavoritePostsByIdsAsync = useCallback(async (favoriteIds: string[]) => {
+    const chunks: string[][] = [];
+    for (let index = 0; index < favoriteIds.length; index += FAVORITE_POST_IDS_CHUNK_SIZE) {
+      chunks.push(favoriteIds.slice(index, index + FAVORITE_POST_IDS_CHUNK_SIZE));
+    }
+
+    const snapshots = await Promise.all(
+      chunks.map((chunk) =>
+        getDocs(
+          query(
+            collection(firestore, POSTS_COLLECTION),
+            where(documentId(), "in", chunk),
+          ),
+        ),
+      ),
+    );
+
+    return sortPostsByRecency(
+      snapshots
+        .flatMap((snapshot) => snapshot.docs)
+        .map((item) => mapPostRecord(item.id, item.data() as DocumentData))
+        .filter((post) => post.status === "published" && !isPostTrashed(post)),
+    );
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    const favoriteIds = Array.from(favoritePostIds);
+
+    if (!favoriteIds.length) {
+      setFavoritePosts([]);
+      setFavoritePostsError("");
+      setIsLoadingFavoritePosts(false);
+      return () => {
+        active = false;
+      };
+    }
+
+    const hydrateFavoritePosts = async () => {
+      try {
+        setIsLoadingFavoritePosts(true);
+        const posts = await fetchFavoritePostsByIdsAsync(favoriteIds);
+
+        if (!active) {
+          return;
+        }
+
+        setFavoritePosts(posts);
+        setFavoritePostsError("");
+      } catch (loadError) {
+        if (!active) {
+          return;
+        }
+
+        setFavoritePosts([]);
+        setFavoritePostsError(
+          getRequestErrorMessage({
+            error: loadError,
+            isConnected: isConnectedRef.current,
+            onlineMessage: "Unable to load bookmarked posts right now.",
+          }),
+        );
+      } finally {
+        if (active) {
+          setIsLoadingFavoritePosts(false);
+        }
+      }
+    };
+
+    void hydrateFavoritePosts();
+
+    return () => {
+      active = false;
+    };
+  }, [favoritePostIds, fetchFavoritePostsByIdsAsync]);
+
+  const refreshFavoritePostsAsync = useCallback(async () => {
+    if (isRefreshing) {
+      return;
+    }
+
+    setIsRefreshing(true);
+    try {
+      const latestConnectionState = await refreshConnection();
+      isConnectedRef.current = latestConnectionState;
+    } catch {
+      // Continue refresh attempt even if connectivity probe fails.
+    }
+
+    const favoriteIds = Array.from(favoritePostIds);
+    if (!favoriteIds.length) {
+      setFavoritePosts([]);
+      setFavoritePostsError("");
+      setIsRefreshing(false);
+      return;
+    }
+
+    try {
+      const posts = await fetchFavoritePostsByIdsAsync(favoriteIds);
+      setFavoritePosts(posts);
+      setFavoritePostsError("");
+    } catch (loadError) {
+      setFavoritePostsError(
+        getRequestErrorMessage({
+          error: loadError,
+          isConnected: isConnectedRef.current,
+          onlineMessage: "Unable to refresh bookmarked posts right now.",
+        }),
+      );
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [
+    favoritePostIds,
+    fetchFavoritePostsByIdsAsync,
+    isRefreshing,
+    refreshConnection,
+  ]);
+
+  const isLoading = isLoadingFavoritePosts || isLoadingFavorites;
+  const combinedError = favoritePostsError || favoritesError;
   const isOfflineState = !isConnected || combinedError === DEFAULT_OFFLINE_MESSAGE;
   const showInlineError = Boolean(combinedError) && !isOfflineState;
 
-  const openPost = (postId: string) => {
+  const openPost = (post: PostRecord) => {
+    primePostNavigationCache(post);
     router.push({
       pathname: "/post/[postId]",
       params: {
-        postId,
+        postId: post.id,
         swipeSource: "favorite",
         swipePostIds: favoritePosts.map((item) => item.id).join(","),
       },
@@ -160,7 +302,7 @@ export default function FavoriteTabScreen() {
                   styles.cardBody,
                   pressed && styles.cardBodyPressed,
                 ]}
-                onPress={() => openPost(post.id)}
+                onPress={() => openPost(post)}
               >
                 {thumbnailUrl ? (
                   <Image
@@ -259,6 +401,10 @@ export default function FavoriteTabScreen() {
         }
         contentContainerStyle={styles.container}
         showsVerticalScrollIndicator={false}
+        refreshing={isRefreshing}
+        onRefresh={() => {
+          void refreshFavoritePostsAsync();
+        }}
       />
     </View>
   );

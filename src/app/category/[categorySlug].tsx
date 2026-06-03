@@ -2,12 +2,16 @@ import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { Image } from "expo-image";
 import {
   collection,
-  onSnapshot,
+  getDocs,
+  limit,
+  orderBy,
   query,
+  startAfter,
   where,
   type DocumentData,
+  type QueryDocumentSnapshot,
 } from "firebase/firestore";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
@@ -36,6 +40,7 @@ import {
   type PostRecord,
 } from "@/lib/content";
 import { firestore } from "@/lib/firebase";
+import { primePostNavigationCache } from "@/lib/post-navigation-cache";
 import { DEFAULT_OFFLINE_MESSAGE, getRequestErrorMessage } from "@/lib/network";
 import { useMainTabData } from "@/providers/main-tab-data-provider";
 import { useNetworkStatus } from "@/providers/network-provider";
@@ -43,6 +48,7 @@ import { useAppTheme } from "@/providers/theme-provider";
 
 const resolveCategorySlug = (value: string | string[] | undefined) =>
   typeof value === "string" ? createSlug(value) : "";
+const CATEGORY_POSTS_PAGE_SIZE = 30;
 
 const formatCategoryLabel = (value: string) => {
   if (!value) {
@@ -58,15 +64,19 @@ const formatCategoryLabel = (value: string) => {
 
 export default function CategoryPostsScreen() {
   const { colors } = useAppTheme();
-  const { isConnected } = useNetworkStatus();
+  const { isConnected, refreshConnection } = useNetworkStatus();
   const isConnectedRef = useRef(isConnected);
   const router = useRouter();
   const styles = createStyles(colors);
   const { categorySlug: categorySlugParam } = useLocalSearchParams<{ categorySlug?: string }>();
   const { publishedPosts } = useMainTabData();
   const categorySlug = resolveCategorySlug(categorySlugParam);
+  const lastPostCursorRef = useRef<QueryDocumentSnapshot<DocumentData> | null>(null);
   const [posts, setPosts] = useState<PostRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [hasMorePosts, setHasMorePosts] = useState(true);
   const [error, setError] = useState("");
   const cachedCategoryPosts = useMemo(
     () =>
@@ -80,8 +90,47 @@ export default function CategoryPostsScreen() {
     isConnectedRef.current = isConnected;
   }, [isConnected]);
 
+  const fetchCategoryPostsPageAsync = useCallback(
+    async (afterDoc?: QueryDocumentSnapshot<DocumentData>) => {
+      const categoryPostsQuery = afterDoc
+        ? query(
+            collection(firestore, POSTS_COLLECTION),
+            where("category", "==", categorySlug),
+            where("status", "==", "published"),
+            orderBy("uploadDate", "desc"),
+            startAfter(afterDoc),
+            limit(CATEGORY_POSTS_PAGE_SIZE),
+          )
+        : query(
+            collection(firestore, POSTS_COLLECTION),
+            where("category", "==", categorySlug),
+            where("status", "==", "published"),
+            orderBy("uploadDate", "desc"),
+            limit(CATEGORY_POSTS_PAGE_SIZE),
+          );
+
+      const snapshot = await getDocs(categoryPostsQuery);
+      const nextPosts = sortPostsByRecency(
+        snapshot.docs
+          .map((item) => mapPostRecord(item.id, item.data() as DocumentData))
+          .filter((item) => item.status === "published" && !isPostTrashed(item)),
+      );
+
+      return {
+        posts: nextPosts,
+        lastDoc: snapshot.docs[snapshot.docs.length - 1] ?? null,
+        hasMore: snapshot.docs.length >= CATEGORY_POSTS_PAGE_SIZE,
+      };
+    },
+    [categorySlug],
+  );
+
   useEffect(() => {
+    let active = true;
     setIsLoading(true);
+    setIsLoadingMore(false);
+    setHasMorePosts(true);
+    lastPostCursorRef.current = null;
 
     if (!categorySlug) {
       setPosts([]);
@@ -90,25 +139,29 @@ export default function CategoryPostsScreen() {
       return;
     }
 
-    const postsQuery = query(
-      collection(firestore, POSTS_COLLECTION),
-      where("category", "==", categorySlug),
-      where("status", "==", "published"),
-    );
+    if (cachedCategoryPosts.length) {
+      setPosts(cachedCategoryPosts);
+      setIsLoading(false);
+    } else {
+      setPosts([]);
+    }
 
-    const unsubscribe = onSnapshot(
-      postsQuery,
-      (snapshot) => {
-        const nextPosts = sortPostsByRecency(
-          snapshot.docs
-            .map((item) => mapPostRecord(item.id, item.data() as DocumentData))
-            .filter((item) => item.status === "published" && !isPostTrashed(item)),
-        );
-        setPosts(nextPosts);
+    const hydrateCategoryPosts = async () => {
+      try {
+        const firstPage = await fetchCategoryPostsPageAsync();
+        if (!active) {
+          return;
+        }
+
+        setPosts(firstPage.posts);
+        setHasMorePosts(firstPage.hasMore);
+        lastPostCursorRef.current = firstPage.lastDoc;
         setError("");
-        setIsLoading(false);
-      },
-      (snapshotError) => {
+      } catch (loadError) {
+        if (!active) {
+          return;
+        }
+
         if (cachedCategoryPosts.length) {
           setPosts(cachedCategoryPosts);
           setError("");
@@ -116,18 +169,98 @@ export default function CategoryPostsScreen() {
           setPosts([]);
           setError(
             getRequestErrorMessage({
-              error: snapshotError,
+              error: loadError,
               isConnected: isConnectedRef.current,
               onlineMessage: "Unable to load category posts.",
             }),
           );
         }
-        setIsLoading(false);
-      },
-    );
+      } finally {
+        if (active) {
+          setIsLoading(false);
+        }
+      }
+    };
 
-    return unsubscribe;
-  }, [cachedCategoryPosts, categorySlug]);
+    void hydrateCategoryPosts();
+
+    return () => {
+      active = false;
+    };
+  }, [cachedCategoryPosts, categorySlug, fetchCategoryPostsPageAsync]);
+
+  const loadMorePosts = useCallback(async () => {
+    if (
+      isLoading ||
+      isLoadingMore ||
+      !hasMorePosts ||
+      !lastPostCursorRef.current
+    ) {
+      return;
+    }
+
+    try {
+      setIsLoadingMore(true);
+      const page = await fetchCategoryPostsPageAsync(lastPostCursorRef.current);
+      lastPostCursorRef.current = page.lastDoc ?? lastPostCursorRef.current;
+      setHasMorePosts(page.hasMore);
+      setPosts((currentPosts) => {
+        const postsById = new Map<string, PostRecord>();
+        [...currentPosts, ...page.posts].forEach((post) => {
+          postsById.set(post.id, post);
+        });
+        return sortPostsByRecency(Array.from(postsById.values()));
+      });
+      setError("");
+    } catch (loadError) {
+      setError(
+        getRequestErrorMessage({
+          error: loadError,
+          isConnected: isConnectedRef.current,
+          onlineMessage: "Unable to load more posts.",
+        }),
+      );
+    } finally {
+      setIsLoadingMore(false);
+    }
+  }, [
+    fetchCategoryPostsPageAsync,
+    hasMorePosts,
+    isLoading,
+    isLoadingMore,
+  ]);
+
+  const refreshCategoryPostsAsync = useCallback(async () => {
+    if (!categorySlug || isRefreshing) {
+      return;
+    }
+
+    setIsRefreshing(true);
+    try {
+      const latestConnectionState = await refreshConnection();
+      isConnectedRef.current = latestConnectionState;
+    } catch {
+      // Continue to Firestore refresh even if connectivity probe fails.
+    }
+
+    try {
+      const firstPage = await fetchCategoryPostsPageAsync();
+      setPosts(firstPage.posts);
+      setHasMorePosts(firstPage.hasMore);
+      lastPostCursorRef.current = firstPage.lastDoc;
+      setError("");
+    } catch (loadError) {
+      setError(
+        getRequestErrorMessage({
+          error: loadError,
+          isConnected: isConnectedRef.current,
+          onlineMessage: "Unable to refresh category posts.",
+        }),
+      );
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [categorySlug, fetchCategoryPostsPageAsync, isRefreshing, refreshConnection]);
 
   const categoryLabel = useMemo(() => formatCategoryLabel(categorySlug), [categorySlug]);
   const isOfflineState = !isConnected || error === DEFAULT_OFFLINE_MESSAGE;
@@ -141,13 +274,14 @@ export default function CategoryPostsScreen() {
   );
   const summaryLabel = isLoading
     ? "Updating posts..."
-    : `${posts.length} published post${posts.length === 1 ? "" : "s"}`;
+    : `${posts.length} loaded post${posts.length === 1 ? "" : "s"}`;
 
-  const openPost = (postId: string) => {
+  const openPost = (post: PostRecord) => {
+    primePostNavigationCache(post);
     router.push({
       pathname: "/post/[postId]",
       params: {
-        postId,
+        postId: post.id,
         swipeSource: "category",
         swipeCategorySlug: categorySlug,
       },
@@ -176,7 +310,7 @@ export default function CategoryPostsScreen() {
                 styles.postCard,
                 pressed && styles.postCardPressed,
               ]}
-              onPress={() => openPost(post.id)}
+              onPress={() => openPost(post)}
             >
               {thumbnailUrl ? (
                 <Image
@@ -209,6 +343,13 @@ export default function CategoryPostsScreen() {
           );
         }}
         ItemSeparatorComponent={() => <View style={styles.listSeparator} />}
+        ListFooterComponent={
+          !isLoading && isLoadingMore ? (
+            <View style={styles.loadingMoreWrap}>
+              <ActivityIndicator size="small" color={colors.primary} />
+            </View>
+          ) : null
+        }
         ListHeaderComponent={
           <View style={styles.headerContent}>
             <View style={styles.heroCard}>
@@ -246,6 +387,18 @@ export default function CategoryPostsScreen() {
         showsVerticalScrollIndicator={false}
         updateCellsBatchingPeriod={DEFAULT_LIST_UPDATE_BATCHING_PERIOD}
         windowSize={DEFAULT_LIST_WINDOW_SIZE}
+        refreshing={isRefreshing}
+        onRefresh={() => {
+          void refreshCategoryPostsAsync();
+        }}
+        onEndReachedThreshold={0.35}
+        onEndReached={() => {
+          if (!hasMorePosts || isLoading || isLoadingMore) {
+            return;
+          }
+
+          void loadMorePosts();
+        }}
       />
     </View>
   );
@@ -326,6 +479,11 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   },
   loadingWrap: {
     minHeight: 180,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  loadingMoreWrap: {
+    paddingVertical: SPACING.lg,
     alignItems: "center",
     justifyContent: "center",
   },

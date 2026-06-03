@@ -69,7 +69,11 @@ export function SearchInput({
           <BackArrowIcon color={colors.text} size={20} />
         </Pressable>
       ) : (
-        <SearchInputIcon color={isFocused ? colors.inputFocus : colors.mutedText} size={18} />
+        <SearchInputIcon
+          color={isFocused ? colors.inputFocus : colors.mutedText}
+          size={18}
+          styleVariant="tab"
+        />
       )}
 
       <TextInput

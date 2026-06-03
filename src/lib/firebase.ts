@@ -80,13 +80,21 @@ const createAuthInstance = (): Auth => {
 export const auth = createAuthInstance();
 
 const createFirestoreInstance = () => {
-  if (Platform.OS !== "web") {
-    return getFirestore(firebaseApp);
+  if (Platform.OS === "web") {
+    try {
+      return initializeFirestore(firebaseApp, {
+        localCache: persistentLocalCache(),
+      });
+    } catch {
+      return getFirestore(firebaseApp);
+    }
   }
 
   try {
     return initializeFirestore(firebaseApp, {
-      localCache: persistentLocalCache(),
+      // React Native networks/proxies can block Firestore's default stream transport.
+      // These settings reduce "Could not reach Cloud Firestore backend" timeouts.
+      experimentalAutoDetectLongPolling: true,
     });
   } catch {
     return getFirestore(firebaseApp);

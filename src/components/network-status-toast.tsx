@@ -125,8 +125,10 @@ const createStyles = (
       bottom: hasBottomTabs
         ? Math.max(insetBottom + TAB_BAR_CLEARANCE, SPACING.xxl * 2)
         : Math.max(insetBottom + SCREEN_BOTTOM_CLEARANCE, SPACING.xl),
-      zIndex: 20,
+      zIndex: 9999,
+      elevation: 999,
       alignItems: "center",
+      overflow: "visible",
     },
     toast: {
       minWidth: 220,

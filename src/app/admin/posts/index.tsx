@@ -639,7 +639,7 @@ export default function AdminPostsListScreen() {
                 accessibilityRole="button"
                 accessibilityLabel={isSearchOpen ? "Close search" : "Open search"}
               >
-                <SearchInputIcon color={colors.text} size={22} />
+                <SearchInputIcon color={colors.text} size={22} styleVariant="tab" />
               </Pressable>
             </View>
           ),

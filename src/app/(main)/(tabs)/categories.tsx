@@ -1,6 +1,6 @@
-import { useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useRouter } from "expo-router";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, RefreshControl, StyleSheet, Text, View } from "react-native";
 
 import { MainTabScrollView } from "@/components/main-tabs/main-tab-scroll-view";
 import { SkeletonBlock } from "@/components/skeleton-block";
@@ -25,27 +25,50 @@ export default function CategoriesTabScreen() {
   const {
     categories,
     publishedPosts,
+    hasMorePublishedPosts,
     isLoadingCategories,
     isLoadingPosts,
     categoriesError,
     postsError,
+    refreshMainTabDataAsync,
   } = useMainTabData();
-  const { isConnected } = useNetworkStatus();
+  const { isConnected, refreshConnection } = useNetworkStatus();
   const router = useRouter();
   const styles = createStyles(colors);
   const error = categoriesError || postsError;
   const isOfflineState = !isConnected || error === DEFAULT_OFFLINE_MESSAGE;
   const showInlineError = Boolean(error) && !isOfflineState;
   const isLoading = isLoadingCategories || isLoadingPosts;
-
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const postCountsByCategory = useMemo(() => {
-    const counts = new Map<string, number>();
+    const nextCounts = new Map<string, number>();
+
     publishedPosts.forEach((post) => {
-      const key = normalizeCategoryKey(post.category);
-      counts.set(key, (counts.get(key) ?? 0) + 1);
+      const categoryKey = normalizeCategoryKey(post.category);
+      nextCounts.set(categoryKey, (nextCounts.get(categoryKey) ?? 0) + 1);
     });
-    return counts;
+
+    return nextCounts;
   }, [publishedPosts]);
+  const refreshCategoriesAsync = useCallback(async () => {
+    if (isRefreshing) {
+      return;
+    }
+
+    setIsRefreshing(true);
+    try {
+      await refreshConnection();
+    } catch {
+      // Continue to Firestore refresh even if connectivity probe fails.
+    }
+
+    try {
+      await refreshMainTabDataAsync();
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [isRefreshing, refreshConnection, refreshMainTabDataAsync]);
+
   const subtitle = "Tap a category to see all of its published posts on the next screen.";
 
   const openCategory = (categorySlug: string) => {
@@ -54,7 +77,19 @@ export default function CategoriesTabScreen() {
 
   return (
     <View style={styles.screen}>
-      <MainTabScrollView tabName="categories" contentContainerStyle={styles.container}>
+      <MainTabScrollView
+        tabName="categories"
+        contentContainerStyle={styles.container}
+        refreshControl={(
+          <RefreshControl
+            refreshing={isRefreshing}
+            onRefresh={() => {
+              void refreshCategoriesAsync();
+            }}
+            tintColor={colors.primary}
+          />
+        )}
+      >
         <Text style={styles.subtitle}>{subtitle}</Text>
 
         {showInlineError ? <Text style={styles.error}>{error}</Text> : null}
@@ -82,6 +117,12 @@ export default function CategoriesTabScreen() {
             {categories.map((item) => {
               const categoryKey = normalizeCategoryKey(item.slug);
               const postCount = postCountsByCategory.get(categoryKey) ?? 0;
+              const hasApproximateCount = hasMorePublishedPosts;
+              const postCountLabel = hasApproximateCount
+                ? postCount > 0
+                  ? `At least ${postCount} post${postCount === 1 ? "" : "s"}`
+                  : "Counting posts..."
+                : `${postCount} post${postCount === 1 ? "" : "s"}`;
 
               return (
                 <Pressable
@@ -98,9 +139,7 @@ export default function CategoriesTabScreen() {
                   <Text style={styles.categorySlug} numberOfLines={1}>
                     {item.slug}
                   </Text>
-                  <Text style={styles.categoryCount}>
-                    {`${postCount} post${postCount === 1 ? "" : "s"}`}
-                  </Text>
+                  <Text style={styles.categoryCount}>{postCountLabel}</Text>
                 </Pressable>
               );
             })}

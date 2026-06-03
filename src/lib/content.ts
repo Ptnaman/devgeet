@@ -29,6 +29,9 @@ export type PostRecord = {
   slug: string;
   title: string;
   content: string;
+  contentHtml?: string;
+  sourcePlatform?: string;
+  sourceUrl?: string;
   featureImageUrl: string;
   youtubeVideoUrl: string;
   createDate: string;
@@ -131,6 +134,99 @@ export const createSlug = (value: string) =>
     .replace(/\s+/g, "-")
     .replace(/-+/g, "-")
     .replace(/^-|-$/g, "");
+
+const HTML_NAMED_ENTITY_MAP: Record<string, string> = {
+  amp: "&",
+  apos: "'",
+  bull: "\u2022",
+  copy: "\u00A9",
+  gt: ">",
+  hellip: "...",
+  laquo: "\u00AB",
+  ldquo: "\u201C",
+  lsquo: "\u2018",
+  lt: "<",
+  mdash: "\u2014",
+  nbsp: " ",
+  ndash: "\u2013",
+  quot: '"',
+  raquo: "\u00BB",
+  rdquo: "\u201D",
+  reg: "\u00AE",
+  rsquo: "\u2019",
+  trade: "\u2122",
+};
+
+const decodeHtmlEntityCodePoint = (value: number) => {
+  if (!Number.isInteger(value) || value < 0 || value > 0x10ffff) {
+    return "";
+  }
+
+  try {
+    return String.fromCodePoint(value);
+  } catch {
+    return "";
+  }
+};
+
+const HTML_TAG_PATTERN = /<\/?[a-z][^>]*>/i;
+
+const decodeHtmlEntitiesOnce = (value: string) =>
+  value
+    .replace(/&#x([0-9a-f]+);?/gi, (match, hexValue: string) => {
+      const parsedValue = Number.parseInt(hexValue, 16);
+      const decoded = decodeHtmlEntityCodePoint(parsedValue);
+      return decoded || match;
+    })
+    .replace(/&#([0-9]+);?/g, (match, decimalValue: string) => {
+      const parsedValue = Number.parseInt(decimalValue, 10);
+      const decoded = decodeHtmlEntityCodePoint(parsedValue);
+      return decoded || match;
+    })
+    .replace(/&([a-z][a-z0-9]+);?/gi, (match, entityName: string) => {
+      const decoded = HTML_NAMED_ENTITY_MAP[entityName.toLowerCase()];
+      return decoded ?? match;
+    });
+
+export const decodeHtmlEntities = (value: string) => {
+  let currentValue = value;
+
+  for (let pass = 0; pass < 3; pass += 1) {
+    const decodedValue = decodeHtmlEntitiesOnce(currentValue);
+    if (decodedValue === currentValue) {
+      break;
+    }
+    currentValue = decodedValue;
+  }
+
+  return currentValue;
+};
+
+export const normalizePostContentText = (value: string) => {
+  if (!value.trim()) {
+    return "";
+  }
+
+  const decoded = decodeHtmlEntities(value)
+    .replace(/\u00a0/g, " ")
+    .replace(/\u200B/g, "");
+
+  return decoded
+    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, " ")
+    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, " ")
+    .replace(/<\s*br\s*\/?\s*>/gi, "\n")
+    .replace(/<\s*\/\s*(p|div|h[1-6]|li|ul|ol|blockquote|section|article|tr)\s*>/gi, "\n")
+    .replace(/<\s*li[^>]*>/gi, "\u2022 ")
+    .replace(/<\s*\/\s*td\s*>/gi, " ")
+    .replace(/<\s*td[^>]*>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\r\n?/g, "\n")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n[ \t]+/g, "\n")
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+};
 
 const toDateString = (value: unknown) => {
   if (!value) {
@@ -269,12 +365,22 @@ export const mapFavoriteRecord = (id: string, data: DocumentData): FavoriteRecor
 
 export const mapPostRecord = (id: string, data: DocumentData): PostRecord => {
   const rawAuthorRole = typeof data.authorRole === "string" ? data.authorRole.trim() : "";
+  const rawTitle = typeof data.title === "string" ? data.title : "";
+  const rawContentText = typeof data.content === "string" ? data.content : "";
+  const rawContentHtml = typeof data.contentHtml === "string" ? data.contentHtml : "";
+  const rawContentSource = rawContentHtml || rawContentText;
+  const decodedContentHtml = decodeHtmlEntities(rawContentHtml || rawContentText).trim();
+  const normalizedContentHtml = HTML_TAG_PATTERN.test(decodedContentHtml)
+    ? decodedContentHtml
+    : "";
+  const normalizedTitle = decodeHtmlEntities(rawTitle).trim();
 
   return {
     id,
     slug: typeof data.slug === "string" ? data.slug : "",
-    title: typeof data.title === "string" ? data.title : "Untitled",
-    content: typeof data.content === "string" ? data.content : "",
+    title: normalizedTitle || "Untitled",
+    content: normalizePostContentText(rawContentSource),
+    contentHtml: normalizedContentHtml,
     featureImageUrl: normalizeHttpUrl(data.featureImageUrl),
     youtubeVideoUrl: normalizeHttpUrl(data.youtubeVideoUrl),
     createDate: toDateString(data.createDate),
@@ -310,6 +416,8 @@ export const mapPostRecord = (id: string, data: DocumentData): PostRecord => {
     deletedAt: toDateString(data.deletedAt),
     deletedBy: typeof data.deletedBy === "string" ? data.deletedBy : "",
     deletedByEmail: typeof data.deletedByEmail === "string" ? data.deletedByEmail : "",
+    sourcePlatform: typeof data.sourcePlatform === "string" ? data.sourcePlatform : "",
+    sourceUrl: normalizeHttpUrl(data.sourceUrl),
   };
 };
 
@@ -367,7 +475,8 @@ export const formatDate = (value: string) => {
 };
 
 export const getPreviewText = (value: string, maxLength = 18) => {
-  const normalized = value.replace(/\s+/g, " ").trim();
+  const normalizedSource = /[<&]/.test(value) ? normalizePostContentText(value) : value;
+  const normalized = normalizedSource.replace(/\s+/g, " ").trim();
   if (!normalized) {
     return "-";
   }
@@ -380,7 +489,8 @@ export const getPreviewText = (value: string, maxLength = 18) => {
 };
 
 export const getContentPreviewLines = (value: string, maxLines = 2) => {
-  const normalizedLines = value
+  const normalizedSource = /[<&]/.test(value) ? normalizePostContentText(value) : value;
+  const normalizedLines = normalizedSource
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter(Boolean);

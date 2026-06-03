@@ -1,9 +1,20 @@
-import { Stack } from "expo-router";
+import { Redirect, Stack } from "expo-router";
 
+import { AppScreenLoader } from "@/components/app-screen-loader";
+import { useAuth } from "@/providers/auth-provider";
 import { useAppTheme } from "@/providers/theme-provider";
 
 export default function MainLayout() {
   const { colors } = useAppTheme();
+  const { isBootstrapping, user } = useAuth();
+
+  if (isBootstrapping) {
+    return <AppScreenLoader backgroundColor={colors.background} indicatorColor={colors.primary} />;
+  }
+
+  if (!user) {
+    return <Redirect href="/auth-choice" />;
+  }
 
   return (
     <Stack

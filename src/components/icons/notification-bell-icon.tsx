@@ -8,6 +8,7 @@ type NotificationBellIconProps = {
   showAlertDot?: boolean;
   alertDotColor?: string;
   alertDotStrokeColor?: string;
+  styleVariant?: "default" | "tab";
 };
 
 export function NotificationBellIcon({
@@ -18,7 +19,10 @@ export function NotificationBellIcon({
   showAlertDot = false,
   alertDotColor = "#FF3B30",
   alertDotStrokeColor = "#FFFFFF",
+  styleVariant = "default",
 }: NotificationBellIconProps) {
+  const isTabVariant = styleVariant === "tab";
+
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
       <Path
@@ -28,7 +32,7 @@ export function NotificationBellIcon({
       />
       <Path
         d="M15.5 18C15.5 19.933 13.933 21.5 12 21.5C10.067 21.5 8.5 19.933 8.5 18"
-        opacity={filled ? 1 : 0.78}
+        opacity={filled ? 1 : isTabVariant ? 0.4 : 0.78}
         stroke={color}
         strokeWidth={1.5}
         strokeLinecap="round"
@@ -43,12 +47,12 @@ export function NotificationBellIcon({
       />
       {showAlertDot ? (
         <Circle
-          cx={18.5}
-          cy={5.5}
-          r={6.2}
+          cx={isTabVariant ? 18 : 18.5}
+          cy={isTabVariant ? 6 : 5.5}
+          r={isTabVariant ? 3.1 : 6.2}
           fill={alertDotColor}
           stroke={alertDotStrokeColor}
-          strokeWidth={1.6}
+          strokeWidth={isTabVariant ? 1.5 : 1.6}
         />
       ) : null}
     </Svg>

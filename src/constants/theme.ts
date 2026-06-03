@@ -144,7 +144,7 @@ export const LIGHT_COLORS: ThemeColors = {
   favoriteAccent: LIGHT_TEXT,
   favoriteAccentUnderlay: STATIC_COLORS.white,
   favoriteRemove: STATIC_COLORS.favoriteRemove,
-  tabActive: withOpacity(LIGHT_TEXT, 0.9),
+  tabActive: "#FF184E",
   tabInactive: withOpacity(LIGHT_TEXT, 0.68),
 };
 
@@ -198,7 +198,7 @@ export const DARK_COLORS: ThemeColors = {
   favoriteAccent: LIGHT_TEXT,
   favoriteAccentUnderlay: STATIC_COLORS.white,
   favoriteRemove: STATIC_COLORS.favoriteRemove,
-  tabActive: withOpacity(DARK_TEXT, 0.9),
+  tabActive: "#FF184E",
   tabInactive: withOpacity(DARK_TEXT, 0.72),
 };
 
@@ -276,31 +276,59 @@ export const FONT_SIZE = {
   heroTitle: 30,
 };
 
+export const TYPOGRAPHY = {
+  h1: {
+    fontSize: 30,
+    lineHeight: 38,
+    fontWeight: "700",
+  },
+  h2: {
+    fontSize: 26,
+    lineHeight: 34,
+    fontWeight: "700",
+  },
+  h3: {
+    fontSize: 22,
+    lineHeight: 30,
+    fontWeight: "700",
+  },
+  h4: {
+    fontSize: 19,
+    lineHeight: 27,
+    fontWeight: "700",
+  },
+  h5: {
+    fontSize: 17,
+    lineHeight: 24,
+    fontWeight: "700",
+  },
+} as const;
+
 export const CONTROL_SIZE = {
   inputHeight: 56,
 };
 
 export const SHADOWS = {
   sm: {
-    shadowColor: "#0000002f",
+    shadowColor: "#00000012",
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 20,
-    elevation: 20,
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 10,
   },
   md: {
-    shadowColor: "#0000004f",
+    shadowColor: "#0000001F",
     shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.08,
-    shadowRadius: 24,
-    elevation: 25,
+    shadowOpacity: 0.1,
+    shadowRadius: 20,
+    elevation: 16,
   },
   lg: {
-    shadowColor: "#0000006f",
+    shadowColor: "#0000002A",
     shadowOffset: { width: 0, height: 5 },
-    shadowOpacity: 0.07,
+    shadowOpacity: 0.12,
     shadowRadius: 30,
-    elevation: 35,
+    elevation: 24,
   },
 } as const;
 

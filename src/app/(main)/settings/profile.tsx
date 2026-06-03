@@ -141,6 +141,8 @@ export default function ProfileScreen() {
   const accountProviderLabel =
     profile?.provider === "google"
       ? "Google"
+      : profile?.provider === "email"
+        ? "Email"
       : profile?.provider === "apple"
         ? "Apple"
         : "Connected account";

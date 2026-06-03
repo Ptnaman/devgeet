@@ -240,6 +240,7 @@ export default function NotificationsScreen() {
                   <NotificationBellIcon
                     size={20}
                     color={notification.isRead ? colors.subtleText : colors.primary}
+                    styleVariant="tab"
                   />
                 </View>
               )}
@@ -289,7 +290,7 @@ export default function NotificationsScreen() {
           !isLoading ? (
             <View style={styles.emptyCard}>
               <View style={styles.emptyIconWrap}>
-                <NotificationBellIcon size={22} color={colors.mutedText} />
+                <NotificationBellIcon size={22} color={colors.mutedText} styleVariant="tab" />
               </View>
               <Text style={styles.emptyTitle}>No notifications yet</Text>
               <Text style={styles.emptyText}>

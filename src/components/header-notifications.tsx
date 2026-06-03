@@ -96,6 +96,7 @@ export function HeaderNotificationsButton({
         showAlertDot={showDotBadge}
         alertDotColor={colors.danger}
         alertDotStrokeColor={colors.surface}
+        styleVariant="tab"
       />
       {showCountBadge ? (
         <View style={styles.unreadBadge}>
@@ -199,7 +200,7 @@ export function HeaderNotificationsMenu({
 
           {!isLoading && !notifications.length ? (
             <View style={styles.notificationsState}>
-              <NotificationBellIcon size={20} color={colors.mutedText} />
+              <NotificationBellIcon size={20} color={colors.mutedText} styleVariant="tab" />
               <Text style={styles.emptyTitle}>No notifications yet</Text>
               <Text style={styles.emptySubtitle}>
                 Creator approvals and publishing updates will appear here.
@@ -230,7 +231,7 @@ export function HeaderNotificationsMenu({
                     />
                   ) : (
                     <View style={styles.notificationImageFallback}>
-                      <NotificationBellIcon size={18} color={colors.primary} />
+                      <NotificationBellIcon size={18} color={colors.primary} styleVariant="tab" />
                     </View>
                   )}
 

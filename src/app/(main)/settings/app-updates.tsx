@@ -54,7 +54,6 @@ export default function AppUpdatesScreen() {
     <View style={styles.screen}>
       <StatusBar
         style={resolvedTheme === "dark" ? "light" : "dark"}
-        backgroundColor={colors.background}
       />
       <ScrollView
         contentContainerStyle={styles.container}
