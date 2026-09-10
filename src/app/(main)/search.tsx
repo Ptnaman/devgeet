@@ -1,5 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { Image } from "expo-image";
 import { Stack, useNavigation, useRouter } from "expo-router";
 import {
@@ -19,6 +19,10 @@ import { FavoriteActionIcon } from "@/components/icons/favorite-action-icon";
 import { SearchInput } from "@/components/search-input";
 import { SkeletonBlock } from "@/components/skeleton-block";
 import {
+  REMOTE_IMAGE_PLACEHOLDER,
+  REMOTE_IMAGE_TRANSITION_MS,
+} from "@/constants/image-loading";
+import {
   DEFAULT_LIST_INITIAL_NUM_TO_RENDER,
   DEFAULT_LIST_MAX_TO_RENDER_PER_BATCH,
   DEFAULT_LIST_REMOVE_CLIPPED_SUBVIEWS,
@@ -36,7 +40,6 @@ import {
 } from "@/constants/theme";
 import { useFavorites } from "@/hooks/use-favorites";
 import {
-  buildPostSearchIndex,
   formatDate,
   getContentPreviewLines,
   getPostCardThumbnailUrl,
@@ -48,6 +51,14 @@ import {
   DEFAULT_OFFLINE_MESSAGE,
   getActionErrorMessage,
 } from "@/lib/network";
+import {
+  buildSearchablePostEntries,
+  getSuggestedSearchTerms,
+  removeRecentSearch as removeRecentSearchTerm,
+  sanitizeRecentSearches,
+  searchPosts,
+  upsertRecentSearch,
+} from "@/lib/post-search";
 import { useNetworkStatus } from "@/providers/network-provider";
 import { useMainTabData } from "@/providers/main-tab-data-provider";
 import { useAppTheme } from "@/providers/theme-provider";
@@ -60,6 +71,123 @@ const HEADER_SHADOW_SCROLL_THRESHOLD = 6;
 type SearchResultItem =
   | number
   | PostRecord;
+type SearchStyles = ReturnType<typeof createStyles>;
+
+const SearchSkeletonCard = memo(function SearchSkeletonCard({
+  styles,
+}: {
+  styles: SearchStyles;
+}) {
+  return (
+    <View style={styles.card}>
+      <View style={styles.cardBody}>
+        <SkeletonBlock height={156} borderRadius={RADIUS.md} />
+        <SkeletonBlock width="82%" height={24} />
+        <SkeletonBlock width="68%" height={24} />
+        <SkeletonBlock width="100%" height={16} borderRadius={RADIUS.sm} />
+        <SkeletonBlock width="76%" height={16} borderRadius={RADIUS.sm} />
+      </View>
+
+      <View style={styles.cardFooter}>
+        <SkeletonBlock width={92} height={16} borderRadius={RADIUS.sm} />
+      </View>
+    </View>
+  );
+});
+
+const SearchResultCard = memo(function SearchResultCard({
+  favorite,
+  favoritePalette,
+  onOpenPost,
+  onToggleFavorite,
+  post,
+  styles,
+}: {
+  favorite: boolean;
+  favoritePalette: ReturnType<typeof getFavoriteActionPalette>;
+  onOpenPost: (post: PostRecord) => void;
+  onToggleFavorite: (post: PostRecord) => Promise<void>;
+  post: PostRecord;
+  styles: SearchStyles;
+}) {
+  const thumbnailUrl = getPostCardThumbnailUrl(post);
+  const updatedLabel = formatDate(post.uploadDate || post.createDate);
+  const previewText = getContentPreviewLines(post.content);
+  const authorName =
+    post.authorDisplayName.trim() ||
+    post.authorUsername.trim() ||
+    "Unknown Author";
+
+  return (
+    <View style={styles.card}>
+      <Pressable
+        style={({ pressed }) => [
+          styles.cardBody,
+          pressed && styles.cardBodyPressed,
+        ]}
+        onPress={() => onOpenPost(post)}
+      >
+        <View style={styles.mediaWrap}>
+          {thumbnailUrl ? (
+            <Image
+              cachePolicy="memory-disk"
+              contentFit="cover"
+              placeholder={REMOTE_IMAGE_PLACEHOLDER}
+              placeholderContentFit="cover"
+              source={{ uri: thumbnailUrl }}
+              style={styles.thumbnail}
+              transition={REMOTE_IMAGE_TRANSITION_MS}
+            />
+          ) : (
+            <View style={styles.thumbnailFallback} />
+          )}
+          <Pressable
+            style={({ pressed }) => [
+              styles.favoriteButton,
+              pressed && styles.favoriteButtonPressed,
+            ]}
+            onPress={(event) => {
+              event.stopPropagation();
+              void onToggleFavorite(post);
+            }}
+            accessibilityRole="button"
+            accessibilityLabel={
+              favorite
+                ? `Remove ${post.title} from bookmarks`
+                : `Add ${post.title} to bookmarks`
+            }
+          >
+            <FavoriteActionIcon
+              size={16}
+              color={favoritePalette.color}
+              filled={favorite}
+              fillColor={favoritePalette.fillColor}
+              accentColor={favoritePalette.accentColor}
+              accentUnderlayColor={favoritePalette.accentUnderlayColor}
+            />
+          </Pressable>
+        </View>
+        <Text style={styles.cardTitle} numberOfLines={3} ellipsizeMode="tail">
+          {post.title}
+        </Text>
+        <Text
+          style={styles.cardPreview}
+          numberOfLines={2}
+          ellipsizeMode="tail"
+        >
+          {previewText}
+        </Text>
+        <Text style={styles.cardAuthor} numberOfLines={1}>
+          {`By ${authorName}`}
+        </Text>
+      </Pressable>
+
+      <View style={styles.cardFooter}>
+        <Text style={styles.meta}>{`Updated ${updatedLabel}`}</Text>
+      </View>
+    </View>
+  );
+});
 
 export default function SearchScreen() {
   const insets = useSafeAreaInsets();
@@ -75,7 +203,7 @@ export default function SearchScreen() {
   } = useMainTabData();
   const navigation = useNavigation();
   const router = useRouter();
-  const { isFavorite, toggleFavorite } = useFavorites();
+  const { favoritePostIds, toggleFavorite } = useFavorites();
   const { isConnected, refreshConnection, showOfflineToast } = useNetworkStatus();
   const favoritePalette = useMemo(
     () => getFavoriteActionPalette(resolvedTheme),
@@ -99,20 +227,11 @@ export default function SearchScreen() {
   const isOfflineState = !isConnected || postsError === DEFAULT_OFFLINE_MESSAGE;
   const showInlineError = Boolean(postsError) && !isOfflineState;
   const searchablePosts = useMemo(
-    () =>
-      publishedPosts.map((post) => ({
-        post,
-        searchIndex: buildPostSearchIndex(post),
-      })),
+    () => buildSearchablePostEntries(publishedPosts),
     [publishedPosts],
   );
   const filteredPosts = useMemo(
-    () =>
-      searchablePosts
-        .filter((item) =>
-          !normalizedDeferredSearchTerm || item.searchIndex.includes(normalizedDeferredSearchTerm),
-        )
-        .map((item) => item.post),
+    () => searchPosts(searchablePosts, normalizedDeferredSearchTerm),
     [normalizedDeferredSearchTerm, searchablePosts],
   );
   const searchResultItems = useMemo<SearchResultItem[]>(
@@ -141,55 +260,17 @@ export default function SearchScreen() {
     ],
   );
   const suggestedSearchTerms = useMemo(() => {
-    const uniqueTitles: string[] = [];
-    const seenTitles = new Set<string>();
-
-    publishedPosts.forEach((post) => {
-      const title = post.title.trim();
-      if (!title) {
-        return;
-      }
-
-      const normalizedTitle = title.toLowerCase();
-      if (seenTitles.has(normalizedTitle)) {
-        return;
-      }
-
-      seenTitles.add(normalizedTitle);
-      uniqueTitles.push(title);
-    });
-
-    return uniqueTitles.slice(0, 3);
+    return getSuggestedSearchTerms(publishedPosts, 3);
   }, [publishedPosts]);
 
   const addRecentSearch = useCallback((value: string) => {
-    const normalizedValue = value.trim();
-
-    if (!normalizedValue) {
-      return;
-    }
-
-    setRecentSearches((currentItems) => {
-      const nextItems = [
-        normalizedValue,
-        ...currentItems.filter(
-          (item) => item.toLowerCase() !== normalizedValue.toLowerCase(),
-        ),
-      ];
-
-      return nextItems.slice(0, MAX_RECENT_SEARCHES);
-    });
+    setRecentSearches((currentItems) =>
+      upsertRecentSearch(currentItems, value, MAX_RECENT_SEARCHES),
+    );
   }, []);
 
   const removeRecentSearch = useCallback((value: string) => {
-    const normalizedValue = value.trim().toLowerCase();
-    if (!normalizedValue) {
-      return;
-    }
-
-    setRecentSearches((currentItems) => (
-      currentItems.filter((item) => item.trim().toLowerCase() !== normalizedValue)
-    ));
+    setRecentSearches((currentItems) => removeRecentSearchTerm(currentItems, value));
   }, []);
 
   useEffect(() => {
@@ -214,20 +295,9 @@ export default function SearchScreen() {
           return;
         }
 
-        const uniqueItems: string[] = [];
-        const seenItems = new Set<string>();
-
-        sanitizedItems.forEach((item) => {
-          const normalizedItem = item.toLowerCase();
-          if (seenItems.has(normalizedItem)) {
-            return;
-          }
-
-          seenItems.add(normalizedItem);
-          uniqueItems.push(item);
-        });
-
-        setRecentSearches(uniqueItems.slice(0, MAX_RECENT_SEARCHES));
+        setRecentSearches(
+          sanitizeRecentSearches(sanitizedItems, MAX_RECENT_SEARCHES),
+        );
       } catch {
         // Ignore corrupted persistence and keep in-memory defaults.
       } finally {
@@ -389,105 +459,24 @@ export default function SearchScreen() {
   const renderSearchResultItem = useCallback(
     ({ item }: { item: SearchResultItem }) => {
       if (typeof item === "number") {
-        return (
-          <View style={styles.card}>
-            <View style={styles.cardBody}>
-              <SkeletonBlock height={156} borderRadius={RADIUS.md} />
-              <SkeletonBlock width="82%" height={24} />
-              <SkeletonBlock width="68%" height={24} />
-              <SkeletonBlock width="100%" height={16} borderRadius={RADIUS.sm} />
-              <SkeletonBlock width="76%" height={16} borderRadius={RADIUS.sm} />
-            </View>
-
-            <View style={styles.cardFooter}>
-              <SkeletonBlock width={92} height={16} borderRadius={RADIUS.sm} />
-            </View>
-          </View>
-        );
+        return <SearchSkeletonCard styles={styles} />;
       }
 
-      const post = item;
-      const thumbnailUrl = getPostCardThumbnailUrl(post);
-      const favorite = isFavorite(post.id);
-      const updatedLabel = formatDate(post.uploadDate || post.createDate);
-      const previewText = getContentPreviewLines(post.content);
-      const authorName =
-        post.authorDisplayName.trim() ||
-        post.authorUsername.trim() ||
-        "Unknown Author";
-
       return (
-        <View style={styles.card}>
-          <Pressable
-            style={({ pressed }) => [
-              styles.cardBody,
-              pressed && styles.cardBodyPressed,
-            ]}
-            onPress={() => openPost(post)}
-          >
-            <View style={styles.mediaWrap}>
-              {thumbnailUrl ? (
-                <Image
-                  cachePolicy="memory-disk"
-                  contentFit="cover"
-                  source={{ uri: thumbnailUrl }}
-                  style={styles.thumbnail}
-                  transition={120}
-                />
-              ) : (
-                <View style={styles.thumbnailFallback} />
-              )}
-              <Pressable
-                style={({ pressed }) => [
-                  styles.favoriteButton,
-                  pressed && styles.favoriteButtonPressed,
-                ]}
-                onPress={(event) => {
-                  event.stopPropagation();
-                  void handleToggleFavorite(post);
-                }}
-                accessibilityRole="button"
-                accessibilityLabel={
-                  favorite
-                    ? `Remove ${post.title} from bookmarks`
-                    : `Add ${post.title} to bookmarks`
-                }
-              >
-                <FavoriteActionIcon
-                  size={16}
-                  color={favoritePalette.color}
-                  filled={favorite}
-                  fillColor={favoritePalette.fillColor}
-                  accentColor={favoritePalette.accentColor}
-                  accentUnderlayColor={favoritePalette.accentUnderlayColor}
-                />
-              </Pressable>
-            </View>
-            <Text style={styles.cardTitle} numberOfLines={3} ellipsizeMode="tail">
-              {post.title}
-            </Text>
-            <Text
-              style={styles.cardPreview}
-              numberOfLines={2}
-              ellipsizeMode="tail"
-            >
-              {previewText}
-            </Text>
-            <Text style={styles.cardAuthor} numberOfLines={1}>
-              {`By ${authorName}`}
-            </Text>
-          </Pressable>
-
-          <View style={styles.cardFooter}>
-            <Text style={styles.meta}>{`Updated ${updatedLabel}`}</Text>
-          </View>
-        </View>
+        <SearchResultCard
+          favorite={favoritePostIds.has(item.id)}
+          favoritePalette={favoritePalette}
+          onOpenPost={openPost}
+          onToggleFavorite={handleToggleFavorite}
+          post={item}
+          styles={styles}
+        />
       );
     },
     [
+      favoritePostIds,
       favoritePalette,
       handleToggleFavorite,
-      isFavorite,
       openPost,
       styles,
     ],

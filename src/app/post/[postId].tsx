@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { Image } from "expo-image";
 import {
+  REMOTE_IMAGE_PLACEHOLDER,
+  REMOTE_IMAGE_TRANSITION_MS,
+} from "@/constants/image-loading";
+import {
   ActivityIndicator,
   Animated as RNAnimated,
   Alert,
@@ -39,6 +43,7 @@ import Animated, {
 import YoutubePlayer from "react-native-youtube-iframe";
 
 import { VerifiedRoleBadge } from "@/components/verified-role-badge";
+import { BookmarkCollectionSheet } from "@/components/bookmark-collection-sheet";
 import {
   FONT_SIZE,
   RADIUS,
@@ -753,9 +758,11 @@ function PostDetailsPage({
         <Image
           cachePolicy="memory-disk"
           contentFit="cover"
+          placeholder={REMOTE_IMAGE_PLACEHOLDER}
+          placeholderContentFit="cover"
           source={{ uri: thumbnailUrl }}
           style={styles.thumbnail}
-          transition={140}
+          transition={REMOTE_IMAGE_TRANSITION_MS}
           onLoadStart={() => {
             if (interactive) {
               onHeroImageLoadStart?.(post.id);
@@ -802,9 +809,11 @@ function PostDetailsPage({
             <Image
               cachePolicy="memory-disk"
               contentFit="cover"
+              placeholder={REMOTE_IMAGE_PLACEHOLDER}
+              placeholderContentFit="cover"
               source={{ uri: post.authorPhotoURL }}
               style={styles.authorAvatar}
-              transition={120}
+              transition={REMOTE_IMAGE_TRANSITION_MS}
             />
           ) : (
             <View style={[styles.authorAvatar, styles.authorAvatarFallback]}>
@@ -956,9 +965,11 @@ function PostDetailsPage({
                     <Image
                       cachePolicy="memory-disk"
                       contentFit="cover"
+                      placeholder={REMOTE_IMAGE_PLACEHOLDER}
+                      placeholderContentFit="cover"
                       source={{ uri: relatedThumbnail }}
                       style={styles.relatedCardThumb}
-                      transition={100}
+                      transition={REMOTE_IMAGE_TRANSITION_MS}
                     />
                   ) : (
                     <View style={[styles.relatedCardThumb, styles.relatedCardThumbFallback]} />
@@ -1026,6 +1037,7 @@ export default function PostDetailsScreen() {
   const [lyricsFontSize, setLyricsFontSize] = useState(DEFAULT_LYRICS_FONT_SIZE);
   const [isHeaderMenuVisible, setIsHeaderMenuVisible] = useState(false);
   const [bookmarkPromptMode, setBookmarkPromptMode] = useState<BookmarkPromptMode | null>(null);
+  const [isCollectionSheetVisible, setIsCollectionSheetVisible] = useState(false);
   const bookmarkPromptOpacity = useRef(new RNAnimated.Value(0)).current;
   const bookmarkPromptTranslateY = useRef(new RNAnimated.Value(BOOKMARK_PROMPT_HIDDEN_OFFSET)).current;
   const bookmarkPromptAnimationRef = useRef<RNAnimated.CompositeAnimation | null>(null);
@@ -1631,6 +1643,27 @@ export default function PostDetailsScreen() {
     }
   };
 
+  const handleDoubleTapBookmark = useCallback(async () => {
+    if (!post) return;
+    try {
+      if (!isFavorite(post.id)) {
+        await toggleFavorite(post, { showToast: false });
+      }
+      setIsCollectionSheetVisible(true);
+    } catch (bookmarkError) {
+      const message = getActionErrorMessage({
+        error: bookmarkError,
+        isConnected,
+        fallbackMessage: "Bookmark could not be saved right now.",
+      });
+      if (message === DEFAULT_OFFLINE_MESSAGE) {
+        showOfflineToast();
+        return;
+      }
+      Alert.alert("Unable to save bookmark", message);
+    }
+  }, [isConnected, isFavorite, post, showOfflineToast, toggleFavorite]);
+
   const closeHeaderMenu = () => {
     setIsHeaderMenuVisible(false);
   };
@@ -1996,6 +2029,14 @@ export default function PostDetailsScreen() {
         runOnJS(clearActivePreview)();
       }
     });
+  const doubleTapGesture = Gesture.Tap()
+    .numberOfTaps(2)
+    .maxDuration(260)
+    .runOnJS(true)
+    .onEnd((_event, success) => {
+      if (success) void handleDoubleTapBookmark();
+    });
+  const postGesture = Gesture.Simultaneous(panGesture, doubleTapGesture);
 
   const currentPageStyle = useAnimatedStyle(() => {
     const distance = Math.abs(translateX.value);
@@ -2132,7 +2173,7 @@ export default function PostDetailsScreen() {
       ) : null}
 
       {isSwipeNavigationEnabled ? (
-        <GestureDetector gesture={panGesture}>
+        <GestureDetector gesture={postGesture}>
           <Animated.View style={[styles.page, styles.pageCard, currentPageStyle]}>
             <PostDetailsPage
               authorRole={currentPostAuthorRole}
@@ -2162,8 +2203,9 @@ export default function PostDetailsScreen() {
           </Animated.View>
         </GestureDetector>
       ) : (
-        <Animated.View style={[styles.page, styles.pageCard, currentPageStyle]}>
-          <PostDetailsPage
+        <GestureDetector gesture={doubleTapGesture}>
+          <Animated.View style={[styles.page, styles.pageCard, currentPageStyle]}>
+            <PostDetailsPage
             authorRole={currentPostAuthorRole}
             isSaved={currentPostIsSaved}
             interactive
@@ -2187,8 +2229,9 @@ export default function PostDetailsScreen() {
             onVideoReady={handleVideoReady}
             onVideoStateChange={handleVideoStateChange}
             onVideoError={handleVideoError}
-          />
-        </Animated.View>
+            />
+          </Animated.View>
+        </GestureDetector>
       )}
 
       {settlingPreviewPost ? (
@@ -2363,6 +2406,11 @@ export default function PostDetailsScreen() {
           </RNAnimated.View>
         </RNAnimated.View>
       ) : null}
+      <BookmarkCollectionSheet
+        isPresented={isCollectionSheetVisible}
+        onDismiss={() => setIsCollectionSheetVisible(false)}
+        postId={post.id}
+      />
     </View>
   );
 }

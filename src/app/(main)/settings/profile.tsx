@@ -1,9 +1,9 @@
 import { useRouter } from "expo-router";
+import { Image } from "expo-image";
 import { useState, type ReactNode } from "react";
 import {
   ActivityIndicator,
   Alert,
-  Image,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -19,6 +19,10 @@ import { UserAvatarIcon } from "@/components/icons/user-avatar-icon";
 import { VerifiedRoleBadge } from "@/components/verified-role-badge";
 import { ArrowRightIcon } from "@/components/icons/arrow-right-icon";
 import { RADIUS, SHADOWS, SPACING, type ThemeColors } from "@/constants/theme";
+import {
+  REMOTE_IMAGE_PLACEHOLDER,
+  REMOTE_IMAGE_TRANSITION_MS,
+} from "@/constants/image-loading";
 import {
   getActionErrorMessage,
 } from "@/lib/network";
@@ -295,7 +299,15 @@ export default function ProfileScreen() {
       <View style={styles.profileCard}>
         <View style={styles.avatarWrap}>
           {avatarUri ? (
-            <Image source={{ uri: avatarUri }} style={styles.avatarImage} />
+            <Image
+              cachePolicy="memory-disk"
+              contentFit="cover"
+              placeholder={REMOTE_IMAGE_PLACEHOLDER}
+              placeholderContentFit="cover"
+              source={{ uri: avatarUri }}
+              style={styles.avatarImage}
+              transition={REMOTE_IMAGE_TRANSITION_MS}
+            />
           ) : (
             <Text style={styles.avatarText}>{accountInitials}</Text>
           )}

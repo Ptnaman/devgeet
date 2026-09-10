@@ -27,6 +27,7 @@ type AuthScreenShellProps = {
   children: ReactNode;
   footer?: ReactNode;
   showTopBar?: boolean;
+  topBarShadow?: boolean;
   showHero?: boolean;
   centerContent?: boolean;
   topAligned?: boolean;
@@ -48,6 +49,7 @@ export function AuthScreenShell({
   children,
   footer,
   showTopBar = true,
+  topBarShadow = false,
   showHero = true,
   centerContent = false,
   topAligned = false,
@@ -102,7 +104,7 @@ export function AuthScreenShell({
         >
           <View style={[styles.layout, layoutStyle]}>
             {showTopBar ? (
-              <View style={styles.topBar}>
+              <View style={[styles.topBar, topBarShadow ? styles.topBarShadow : undefined]}>
                 <Pressable
                   style={({ pressed }) => [styles.backButton, pressed ? styles.pressed : undefined]}
                   onPress={onBack}
@@ -181,6 +183,13 @@ const createStyles = (colors: ThemeColors) =>
       flexDirection: "row",
       alignItems: "center",
       gap: SPACING.md,
+    },
+    topBarShadow: {
+      backgroundColor: colors.surface,
+      borderRadius: 14,
+      paddingHorizontal: SPACING.md,
+      paddingVertical: SPACING.sm,
+      boxShadow: "0 2px 8px rgba(0, 0, 0, 0.14)",
     },
     backButton: {
       width: 42,

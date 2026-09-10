@@ -3,17 +3,18 @@ import { Image } from "expo-image";
 import { useNavigation, useRouter } from "expo-router";
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   View,
 } from "react-native";
 
 import { MainTabFlatList } from "@/components/main-tabs/main-tab-flat-list";
+import { BookmarkCollectionSheet } from "@/components/bookmark-collection-sheet";
 import { SkeletonBlock } from "@/components/skeleton-block";
 import {
   FONT_SIZE,
@@ -24,84 +25,26 @@ import {
   type ThemeColors,
 } from "@/constants/theme";
 import {
+  REMOTE_IMAGE_PLACEHOLDER,
+  REMOTE_IMAGE_TRANSITION_MS,
+} from "@/constants/image-loading";
+import {
   getContentPreviewLines,
   getPostCardThumbnailUrl,
-  sortPostsByRecency,
   type PostRecord,
 } from "@/lib/content";
 import { primePostNavigationCache } from "@/lib/post-navigation-cache";
+import { DEFAULT_OFFLINE_MESSAGE, getActionErrorMessage } from "@/lib/network";
+import { useFavorites } from "@/hooks/use-favorites";
+import { useNetworkStatus } from "@/providers/network-provider";
 import { useMainTabData } from "@/providers/main-tab-data-provider";
 import { useAppTheme } from "@/providers/theme-provider";
 
 const HOME_SKELETON_ITEMS = Array.from({ length: 3 }, (_, index) => index);
-const HOME_CATEGORY_SKELETON_ITEMS = Array.from({ length: 4 }, (_, index) => index);
-const ALL_CATEGORY_SLUG = "__all__";
-const ALL_CATEGORY_LABEL = "All";
-const HOME_CATEGORY_SLUG = "home";
-const HOME_CATEGORY_LABEL = "Home";
-type HomeListItem =
-  | number
-  | PostRecord;
+type HomeListItem = number | PostRecord;
 type HomeListRef = FlatList<HomeListItem>;
-
-const HOME_FEED_MEMORY: {
-  scrollOffset: number;
-  selectedCategorySlug: string;
-} = {
-  scrollOffset: 0,
-  selectedCategorySlug: ALL_CATEGORY_SLUG,
-};
-
-const normalizeCategorySlug = (value: string) => value.trim().toLowerCase();
-const toCategoryLabel = (slug: string) =>
-  slug
-    .split(/[-_]+/)
-    .filter(Boolean)
-    .map((segment) =>
-      segment.charAt(0).toUpperCase() + segment.slice(1),
-    )
-    .join(" ");
-
+const HOME_FEED_MEMORY = { scrollOffset: 0 };
 type HomeStyles = ReturnType<typeof createStyles>;
-
-const HomeControlChip = memo(function HomeControlChip({
-  accessibilityLabel,
-  label,
-  onPress,
-  selected,
-  styles,
-}: {
-  accessibilityLabel: string;
-  label: string;
-  onPress: () => void;
-  selected: boolean;
-  styles: HomeStyles;
-}) {
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={accessibilityLabel}
-      accessibilityState={{ selected }}
-      hitSlop={6}
-      onPress={onPress}
-      style={({ pressed }) => [
-        styles.controlChip,
-        selected ? styles.controlChipSelected : null,
-        pressed ? styles.controlChipPressed : null,
-      ]}
-    >
-      <Text
-        style={[
-          styles.controlChipText,
-          selected ? styles.controlChipTextSelected : null,
-        ]}
-        numberOfLines={1}
-      >
-        {label}
-      </Text>
-    </Pressable>
-  );
-});
 
 const HomeSkeletonCard = memo(function HomeSkeletonCard({ styles }: { styles: HomeStyles }) {
   return (
@@ -122,20 +65,40 @@ const HomeSkeletonCard = memo(function HomeSkeletonCard({ styles }: { styles: Ho
 });
 
 const HomePostCard = memo(function HomePostCard({
+  onDoublePressPost,
   onPressPost,
   post,
   styles,
 }: {
+  onDoublePressPost: (post: PostRecord) => void;
   onPressPost: (post: PostRecord) => void;
   post: PostRecord;
   styles: HomeStyles;
 }) {
+  const tapTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const thumbnailUrl = getPostCardThumbnailUrl(post);
   const previewText = getContentPreviewLines(post.content);
   const authorName =
     post.authorDisplayName.trim() ||
     post.authorUsername.trim() ||
     "Unknown Author";
+
+  useEffect(() => () => {
+    if (tapTimerRef.current) clearTimeout(tapTimerRef.current);
+  }, []);
+
+  const handlePress = () => {
+    if (tapTimerRef.current) {
+      clearTimeout(tapTimerRef.current);
+      tapTimerRef.current = null;
+      onDoublePressPost(post);
+      return;
+    }
+    tapTimerRef.current = setTimeout(() => {
+      tapTimerRef.current = null;
+      onPressPost(post);
+    }, 240);
+  };
 
   return (
     <View style={styles.card}>
@@ -144,16 +107,18 @@ const HomePostCard = memo(function HomePostCard({
           styles.cardBody,
           pressed && styles.cardBodyPressed,
         ]}
-        onPress={() => onPressPost(post)}
+        onPress={handlePress}
       >
         <View style={styles.mediaWrap}>
           {thumbnailUrl ? (
             <Image
               cachePolicy="memory-disk"
               contentFit="cover"
+              placeholder={REMOTE_IMAGE_PLACEHOLDER}
+              placeholderContentFit="cover"
               source={{ uri: thumbnailUrl }}
               style={styles.thumbnail}
-              transition={120}
+              transition={REMOTE_IMAGE_TRANSITION_MS}
             />
           ) : (
             <View style={styles.thumbnailFallback} />
@@ -178,128 +143,52 @@ const HomePostCard = memo(function HomePostCard({
 });
 
 export default function MainIndexScreen() {
-  const { colors, resolvedTheme } = useAppTheme();
+  const { colors } = useAppTheme();
+  const { isConnected, showOfflineToast } = useNetworkStatus();
+  const { isFavorite, toggleFavorite } = useFavorites();
   const {
-    categories,
     publishedPosts,
-    isLoadingCategories,
     isLoadingPosts,
     isLoadingMorePosts,
     hasMorePublishedPosts,
-    isRefreshing,
     postsError,
-    refreshMainTabDataAsync,
     loadMorePublishedPostsAsync,
   } = useMainTabData();
   const navigation = useNavigation();
   const router = useRouter();
   const listRef = useRef<HomeListRef | null>(null);
   const hasRestoredInitialScrollRef = useRef(false);
-  const [selectedCategorySlug, setSelectedCategorySlug] = useState<string>(
-    HOME_FEED_MEMORY.selectedCategorySlug,
+  const [collectionPostId, setCollectionPostId] = useState("");
+  const styles = useMemo(() => createStyles(colors), [colors]);
+  // Background requests must keep existing cards mounted and scrollable.
+  const isLoadingVisiblePosts = isLoadingPosts && publishedPosts.length === 0;
+  const listItems = useMemo<HomeListItem[]>(
+    () => (isLoadingVisiblePosts ? HOME_SKELETON_ITEMS : publishedPosts),
+    [isLoadingVisiblePosts, publishedPosts],
   );
-  const styles = useMemo(
-    () => createStyles(colors, resolvedTheme),
-    [colors, resolvedTheme],
-  );
-  const showInlineError = Boolean(postsError);
-
-  useEffect(() => {
-    HOME_FEED_MEMORY.selectedCategorySlug = selectedCategorySlug;
-  }, [selectedCategorySlug]);
-
   const scrollHomeFeedToTop = useCallback((animated = true) => {
     HOME_FEED_MEMORY.scrollOffset = 0;
     listRef.current?.scrollToOffset({ offset: 0, animated });
   }, []);
-
-  const categoryFilters = useMemo(() => {
-    const filtersBySlug = new Map<
-      string,
-      {
-        key: string;
-        slug: string;
-        label: string;
-        accessibilityLabel: string;
-      }
-    >();
-
-    const registerFilter = (slugValue: string, labelValue: string, key: string) => {
-      const slug = normalizeCategorySlug(slugValue);
-      if (!slug || slug === ALL_CATEGORY_SLUG || filtersBySlug.has(slug)) {
-        return;
-      }
-
-      const fallbackLabel = slug === HOME_CATEGORY_SLUG ? HOME_CATEGORY_LABEL : toCategoryLabel(slug);
-      const label = labelValue.trim() || fallbackLabel;
-
-      filtersBySlug.set(slug, {
-        key,
-        slug,
-        label,
-        accessibilityLabel: `Filter posts by ${label}`,
-      });
-    };
-
-    categories.forEach((item) => {
-      registerFilter(item.slug, item.name, item.id);
-    });
-
-    publishedPosts.forEach((post) => {
-      const normalizedSlug = normalizeCategorySlug(post.category);
-      registerFilter(post.category, "", `post-${normalizedSlug}`);
-    });
-
-    return [
-      {
-        key: ALL_CATEGORY_SLUG,
-        slug: ALL_CATEGORY_SLUG,
-        label: ALL_CATEGORY_LABEL,
-        accessibilityLabel: "Show all posts",
-      },
-      ...Array.from(filtersBySlug.values()),
-    ];
-  }, [categories, publishedPosts]);
-
-  const visiblePosts = useMemo(() => {
-    if (selectedCategorySlug === ALL_CATEGORY_SLUG) {
-      return publishedPosts;
-    }
-
-    return sortPostsByRecency(
-      publishedPosts.filter(
-        (post) => normalizeCategorySlug(post.category) === selectedCategorySlug,
-      ),
-    );
-  }, [publishedPosts, selectedCategorySlug]);
-
-  const listItems = useMemo<HomeListItem[]>(
-    () => (isLoadingPosts ? HOME_SKELETON_ITEMS : visiblePosts),
-    [isLoadingPosts, visiblePosts],
-  );
-
   const openPost = useCallback((post: PostRecord) => {
     primePostNavigationCache(post);
     router.push({ pathname: "/post/[postId]", params: { postId: post.id } });
   }, [router]);
-
-  const selectCategory = useCallback((categorySlug: string) => {
-    const normalizedSlug = normalizeCategorySlug(categorySlug);
-    if (!normalizedSlug) {
-      return;
+  const bookmarkPostWithDoubleTap = useCallback(async (post: PostRecord) => {
+    try {
+      if (!isFavorite(post.id)) {
+        await toggleFavorite(post, { showToast: false });
+      }
+      setCollectionPostId(post.id);
+    } catch (bookmarkError) {
+      const message = getActionErrorMessage({ error: bookmarkError, isConnected, fallbackMessage: "Bookmark could not be saved right now." });
+      if (message === DEFAULT_OFFLINE_MESSAGE) {
+        showOfflineToast();
+        return;
+      }
+      Alert.alert("Unable to save bookmark", message);
     }
-
-    setSelectedCategorySlug(normalizedSlug);
-    scrollHomeFeedToTop();
-  }, [scrollHomeFeedToTop]);
-
-  const refreshHomeFeed = useCallback(async () => {
-    await refreshMainTabDataAsync();
-  }, [refreshMainTabDataAsync]);
-
-  const loadMoreHomeFeed = useCallback(async () => {
-    await loadMorePublishedPostsAsync();
-  }, [loadMorePublishedPostsAsync]);
+  }, [isConnected, isFavorite, showOfflineToast, toggleFavorite]);
 
   const handleScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
     HOME_FEED_MEMORY.scrollOffset = event.nativeEvent.contentOffset.y;
@@ -324,7 +213,7 @@ export default function MainIndexScreen() {
   }, [navigation, scrollHomeFeedToTop]);
 
   useEffect(() => {
-    if (hasRestoredInitialScrollRef.current || isLoadingPosts) {
+    if (hasRestoredInitialScrollRef.current || isLoadingVisiblePosts) {
       return;
     }
 
@@ -340,28 +229,7 @@ export default function MainIndexScreen() {
         animated: false,
       });
     });
-  }, [isLoadingPosts, listItems.length]);
-
-  useEffect(() => {
-    if (
-      isLoadingPosts ||
-      isLoadingMorePosts ||
-      !hasMorePublishedPosts ||
-      selectedCategorySlug === ALL_CATEGORY_SLUG ||
-      visiblePosts.length > 0
-    ) {
-      return;
-    }
-
-    void loadMorePublishedPostsAsync();
-  }, [
-    hasMorePublishedPosts,
-    isLoadingMorePosts,
-    isLoadingPosts,
-    loadMorePublishedPostsAsync,
-    selectedCategorySlug,
-    visiblePosts.length,
-  ]);
+  }, [isLoadingVisiblePosts, listItems.length]);
 
   const keyExtractor = useCallback((item: HomeListItem) => {
     if (typeof item === "number") {
@@ -379,13 +247,14 @@ export default function MainIndexScreen() {
 
       return (
         <HomePostCard
+          onDoublePressPost={(post) => void bookmarkPostWithDoubleTap(post)}
           onPressPost={openPost}
           post={item}
           styles={styles}
         />
       );
     },
-    [openPost, styles],
+    [bookmarkPostWithDoubleTap, openPost, styles],
   );
 
   const renderSeparator = useCallback(
@@ -395,80 +264,48 @@ export default function MainIndexScreen() {
 
   const listEmptyComponent = useMemo(
     () =>
-      !isLoadingPosts && !showInlineError ? (
+      !isLoadingVisiblePosts && !postsError ? (
         <View style={styles.emptyWrap}>
           <Text style={styles.emptyText}>
-            {selectedCategorySlug !== ALL_CATEGORY_SLUG
-              ? "No posts are available in this category right now."
-              : "No published posts are available right now."}
+            No published posts are available right now.
           </Text>
         </View>
       ) : null,
-    [isLoadingPosts, selectedCategorySlug, showInlineError, styles],
+    [isLoadingVisiblePosts, postsError, styles],
   );
 
-  const listFooterComponent = useMemo(
-    () =>
-      !isLoadingPosts && isLoadingMorePosts ? (
-        <View style={styles.listFooter}>
-          <ActivityIndicator size="small" color={colors.primary} />
-        </View>
-      ) : null,
-    [colors.primary, isLoadingMorePosts, isLoadingPosts, styles.listFooter],
-  );
-
-  const listHeaderComponent = useMemo(
-    () => (
-      <View style={styles.controlsWrap}>
-        <View style={styles.controlsSection}>
-          {isLoadingCategories ? (
-            <View style={styles.categorySkeletonRow}>
-              {HOME_CATEGORY_SKELETON_ITEMS.map((item) => (
-                <SkeletonBlock
-                  key={`category-skeleton-${item}`}
-                  width={96}
-                  height={34}
-                  borderRadius={RADIUS.pill}
-                />
-              ))}
-            </View>
-          ) : (
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.controlRowContent}
-            >
-              {categoryFilters.map((item) => (
-                <HomeControlChip
-                  key={item.key}
-                  accessibilityLabel={item.accessibilityLabel}
-                  label={item.label}
-                  onPress={() => selectCategory(item.slug)}
-                  selected={selectedCategorySlug === item.slug}
-                  styles={styles}
-                />
-              ))}
-            </ScrollView>
+  const listFooterComponent = (
+    <View style={styles.listFooter}>
+      {!isLoadingVisiblePosts && postsError ? (
+        <Text selectable style={styles.errorText}>{postsError}</Text>
+      ) : null}
+      {!isLoadingVisiblePosts && (hasMorePublishedPosts || isLoadingMorePosts) ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Load more posts"
+          accessibilityState={{ busy: isLoadingMorePosts, disabled: isLoadingMorePosts }}
+          disabled={isLoadingMorePosts}
+          onPress={() => void loadMorePublishedPostsAsync()}
+          style={({ pressed }) => [
+            styles.loadMoreButton,
+            isLoadingMorePosts && styles.loadMoreButtonDisabled,
+            pressed && !isLoadingMorePosts && styles.loadMoreButtonPressed,
+          ]}
+        >
+          {({ pressed }) => (
+            <>
+              {isLoadingMorePosts ? (
+                <ActivityIndicator size="small" color={pressed ? colors.primaryText : colors.primary} />
+              ) : null}
+              <Text style={[styles.loadMoreButtonText, pressed && styles.loadMoreButtonTextPressed]}>
+                {isLoadingMorePosts ? "Loading..." : "Load more"}
+              </Text>
+            </>
           )}
-        </View>
-
-        {!isLoadingPosts && showInlineError ? (
-          <Text style={styles.errorText}>{postsError}</Text>
-        ) : null}
-      </View>
-    ),
-    [
-      categoryFilters,
-      isLoadingCategories,
-      isLoadingPosts,
-      postsError,
-      selectCategory,
-      selectedCategorySlug,
-      showInlineError,
-      styles,
-    ],
+        </Pressable>
+      ) : null}
+    </View>
   );
-
   return (
     <View style={styles.screen}>
       <MainTabFlatList<HomeListItem>
@@ -477,87 +314,33 @@ export default function MainIndexScreen() {
         data={listItems}
         keyExtractor={keyExtractor}
         renderItem={renderItem}
-        ListHeaderComponent={listHeaderComponent}
         ItemSeparatorComponent={renderSeparator}
         ListEmptyComponent={listEmptyComponent}
         ListFooterComponent={listFooterComponent}
         contentContainerStyle={styles.listContentContainer}
         showsVerticalScrollIndicator={false}
         onScroll={handleScroll}
-        refreshing={isRefreshing}
-        onRefresh={refreshHomeFeed}
-        onEndReachedThreshold={0.35}
-        onEndReached={() => {
-          if (!hasMorePublishedPosts || isLoadingPosts || isLoadingMorePosts) {
-            return;
-          }
-
-          void loadMoreHomeFeed();
-        }}
+        contentInsetAdjustmentBehavior="automatic"
+      />
+      <BookmarkCollectionSheet
+        isPresented={Boolean(collectionPostId)}
+        onDismiss={() => setCollectionPostId("")}
+        postId={collectionPostId}
       />
     </View>
   );
 }
 
-const createStyles = (
-  colors: ThemeColors,
-  resolvedTheme: "light" | "dark",
-) => {
-  const isDarkTheme = resolvedTheme === "dark";
-  const launcherBorderColor = isDarkTheme ? colors.inputBorder : colors.border;
-  const launcherBackgroundColor = colors.surface;
-  const chipActiveBackgroundColor = isDarkTheme ? colors.accent : colors.tabActive;
-
+const createStyles = (colors: ThemeColors) => {
   return StyleSheet.create({
     screen: {
       flex: 1,
       backgroundColor: colors.background,
     },
-    controlsWrap: {
-      gap: SPACING.md,
-      paddingTop: SPACING.lg,
-      paddingBottom: SPACING.md,
-    },
-    controlsSection: {
-      gap: SPACING.xs,
-    },
-    controlRowContent: {
-      gap: SPACING.sm,
-      paddingRight: SPACING.md,
-    },
-    categorySkeletonRow: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: SPACING.sm,
-    },
-    controlChip: {
-      minHeight: 34,
-      paddingHorizontal: SPACING.md,
-      borderRadius: RADIUS.pill,
-      borderWidth: 1,
-      borderColor: launcherBorderColor,
-      backgroundColor: launcherBackgroundColor,
-      justifyContent: "center",
-      alignItems: "center",
-    },
-    controlChipSelected: {
-      borderColor: chipActiveBackgroundColor,
-      backgroundColor: chipActiveBackgroundColor,
-    },
-    controlChipPressed: {
-      opacity: 0.84,
-    },
-    controlChipText: {
-      color: colors.text,
-      fontSize: 13,
-      fontWeight: "600",
-    },
-    controlChipTextSelected: {
-      color: STATIC_COLORS.white,
-    },
     listContentContainer: {
       flexGrow: 1,
       paddingHorizontal: SPACING.xxl,
+      paddingTop: SPACING.lg,
       paddingBottom: SPACING.xxl * 2,
       backgroundColor: colors.background,
     },
@@ -565,10 +348,39 @@ const createStyles = (
       height: SPACING.xl,
     },
     listFooter: {
+      minHeight: 88,
+      gap: SPACING.md,
       paddingVertical: SPACING.lg,
       alignItems: "center",
       justifyContent: "center",
     },
+    loadMoreButton: {
+      width: "100%",
+      minHeight: 50,
+      paddingVertical: SPACING.md,
+      paddingHorizontal: SPACING.lg,
+      borderRadius: RADIUS.md,
+      backgroundColor: STATIC_COLORS.white,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: SPACING.sm,
+      borderCurve: "continuous",
+      boxShadow: "0 5px 16px rgba(0, 0, 0, 0.12)",
+    },
+    loadMoreButtonDisabled: {
+      opacity: 0.7,
+    },
+    loadMoreButtonPressed: {
+      backgroundColor: colors.primary,
+      transform: [{ scale: 0.97 }],
+    },
+    loadMoreButtonText: {
+      color: colors.text,
+      fontSize: 15,
+      fontWeight: "800",
+    },
+    loadMoreButtonTextPressed: { color: colors.primaryText },
     card: {
       borderRadius: 14,
       backgroundColor: colors.surface,

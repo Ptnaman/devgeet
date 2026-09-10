@@ -1,90 +1,100 @@
 import { useRouter } from "expo-router";
 import { useState } from "react";
-import {
-  ActivityIndicator,
-  Pressable,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from "react-native";
+import { ActivityIndicator, Pressable, Text, View } from "react-native";
+import { LinearGradient } from "expo-linear-gradient";
+import { ArrowRight, LockKeyhole, Mail, UserRound } from "lucide-react-native";
 
-import { AuthScreenShell } from "@/components/auth-screen-shell";
-import { LockPasswordIcon } from "@/components/icons/lock-password-icon";
-import { MailInputIcon } from "@/components/icons/mail-input-icon";
-import {
-  CONTROL_SIZE,
-  FONT_SIZE,
-  RADIUS,
-  SPACING,
-  type ThemeColors,
-} from "@/constants/theme";
+import { AuthEmailField } from "@/components/auth-email-field";
+import { DevGeetAuthShell, devgeetAuthStyles as styles } from "@/components/devgeet-auth-shell";
 import {
   EMAIL_VALIDATION_MESSAGE,
+  PASSWORD_MIN_LENGTH,
   PASSWORD_VALIDATION_MESSAGE,
   isValidEmailAddress,
 } from "@/lib/auth-validation";
 import { DEFAULT_OFFLINE_MESSAGE, getActionErrorMessage } from "@/lib/network";
 import { useAuth } from "@/providers/auth-provider";
 import { useNetworkStatus } from "@/providers/network-provider";
-import { useAppTheme } from "@/providers/theme-provider";
 
 export default function EmailSignupScreen() {
-  const { colors } = useAppTheme();
-  const styles = createStyles(colors);
   const router = useRouter();
   const { isConnected, showOfflineToast } = useNetworkStatus();
   const { signupWithEmailPassword } = useAuth();
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [error, setError] = useState("");
+  const [fieldErrors, setFieldErrors] = useState<{
+    firstName?: string;
+    lastName?: string;
+    email?: string;
+    password?: string;
+    confirmPassword?: string;
+  }>({});
 
   const normalizedEmail = email.trim().toLowerCase();
-  const isEmailValid = isValidEmailAddress(normalizedEmail);
-  const hasPassword = password.length > 0;
-  const hasConfirmPassword = confirmPassword.length > 0;
-  const isPasswordConfirmed = password === confirmPassword;
-  const canSubmit =
-    !isSubmitting && isEmailValid && hasPassword && hasConfirmPassword && isPasswordConfirmed;
+  const canSubmit = !isSubmitting;
 
-  const clearError = () => {
-    if (error) {
-      setError("");
-    }
+  const clearFieldError = (
+    field: "firstName" | "lastName" | "email" | "password" | "confirmPassword",
+  ) => {
+    setFieldErrors((current) => {
+      if (!current[field]) return current;
+      const next = { ...current };
+      delete next[field];
+      return next;
+    });
+  };
+
+  const setFieldError = (
+    field: "firstName" | "lastName" | "email" | "password" | "confirmPassword",
+    message: string,
+  ) => {
+    setFieldErrors((current) => ({ ...current, [field]: message }));
   };
 
   const handleSubmit = async () => {
-    if (!isConnected) {
-      showOfflineToast();
+    if (!isConnected) return showOfflineToast();
+    if (!firstName.trim()) {
+      setFieldError("firstName", "First name is required.");
       return;
     }
-
-    if (!isEmailValid) {
-      setError(EMAIL_VALIDATION_MESSAGE);
+    if (!lastName.trim()) {
+      setFieldError("lastName", "Last name is required.");
       return;
     }
-
-    if (!hasPassword) {
-      setError("Password is required.");
+    if (!isValidEmailAddress(normalizedEmail)) {
+      setFieldError("email", EMAIL_VALIDATION_MESSAGE);
       return;
     }
-
-    if (!hasConfirmPassword) {
-      setError("Confirm your password.");
+    if (!password) {
+      setFieldError("password", "Password is required.");
       return;
     }
-
-    if (!isPasswordConfirmed) {
-      setError("Passwords do not match.");
+    if (password.length < PASSWORD_MIN_LENGTH) {
+      setFieldError("password", PASSWORD_VALIDATION_MESSAGE);
+      return;
+    }
+    if (!confirmPassword) {
+      setFieldError("confirmPassword", "Confirm your password.");
+      return;
+    }
+    if (password !== confirmPassword) {
+      setFieldError("confirmPassword", "Passwords do not match.");
       return;
     }
 
     try {
       setIsSubmitting(true);
-      setError("");
-      await signupWithEmailPassword({ email: normalizedEmail, password });
+      setFieldErrors({});
+      await signupWithEmailPassword({
+        firstName: firstName.trim(),
+        lastName: lastName.trim(),
+        email: normalizedEmail,
+        password,
+      });
       router.replace("/(main)/(tabs)");
     } catch (signupError) {
       const message = getActionErrorMessage({
@@ -92,199 +102,176 @@ export default function EmailSignupScreen() {
         isConnected,
         fallbackMessage: "Unable to create your account right now.",
       });
-      if (message === DEFAULT_OFFLINE_MESSAGE) {
-        showOfflineToast();
-      }
-      setError(message);
+      if (message === DEFAULT_OFFLINE_MESSAGE) showOfflineToast();
+      const target = /email|account|already|exist/i.test(message) ? "email" : "password";
+      setFieldError(target, message);
     } finally {
       setIsSubmitting(false);
     }
   };
 
   return (
-    <AuthScreenShell
-      eyebrow="Create Account"
-      title="Email Signup"
-      subtitle="Create a new account with email and password."
-      onBack={() => {
-        router.replace("/auth-choice");
-      }}
-      topAligned
-      scrollContentStyle={styles.scrollContent}
+    <DevGeetAuthShell
+      headerLabel="Sign up"
+      title="Create your account"
+      subtitle="Join DevGeet to save favorites and keep your lyrics close."
     >
-      <View style={styles.formCard}>
-        <View style={styles.inputStack}>
-          <View style={styles.inputWrap}>
-            <MailInputIcon color={colors.iconMuted} size={20} />
-            <TextInput
-              value={email}
+      <View style={styles.inputStack}>
+        <View style={styles.nameRow}>
+          <View style={styles.nameField}>
+            <AuthEmailField
+              forceLight
+              label="First Name"
+              error={fieldErrors.firstName}
+              icon={<UserRound size={20} color="#6B7280" strokeWidth={2} />}
+              value={firstName}
               onChangeText={(value) => {
-                setEmail(value);
-                clearError();
+                setFirstName(value);
+                clearFieldError("firstName");
               }}
-              placeholder="Email address"
-              placeholderTextColor={colors.placeholderText}
-              keyboardType="email-address"
-              autoCapitalize="none"
-              autoCorrect={false}
-              autoComplete="email"
-              textContentType="emailAddress"
+              onBlur={() => {
+                if (!firstName.trim()) setFieldError("firstName", "First name is required.");
+              }}
+              placeholder="First name"
+              placeholderTextColor="#9CA3AF"
+              autoCapitalize="words"
+              autoComplete="name-given"
+              textContentType="givenName"
               returnKeyType="next"
-              style={styles.input}
             />
           </View>
-
-          <View style={styles.inputWrap}>
-            <LockPasswordIcon color={colors.iconMuted} size={20} />
-            <TextInput
-              value={password}
+          <View style={styles.nameField}>
+            <AuthEmailField
+              forceLight
+              label="Last Name"
+              error={fieldErrors.lastName}
+              icon={<UserRound size={20} color="#6B7280" strokeWidth={2} />}
+              value={lastName}
               onChangeText={(value) => {
-                setPassword(value);
-                clearError();
+                setLastName(value);
+                clearFieldError("lastName");
               }}
-              placeholder="Password"
-              placeholderTextColor={colors.placeholderText}
-              autoCapitalize="none"
-              autoCorrect={false}
-              secureTextEntry
-              autoComplete="password-new"
-              textContentType="newPassword"
+              onBlur={() => {
+                if (!lastName.trim()) setFieldError("lastName", "Last name is required.");
+              }}
+              placeholder="Last name"
+              placeholderTextColor="#9CA3AF"
+              autoCapitalize="words"
+              autoComplete="name-family"
+              textContentType="familyName"
               returnKeyType="next"
-              style={styles.input}
-            />
-          </View>
-
-          <View style={styles.inputWrap}>
-            <LockPasswordIcon color={colors.iconMuted} size={20} />
-            <TextInput
-              value={confirmPassword}
-              onChangeText={(value) => {
-                setConfirmPassword(value);
-                clearError();
-              }}
-              placeholder="Confirm password"
-              placeholderTextColor={colors.placeholderText}
-              autoCapitalize="none"
-              autoCorrect={false}
-              secureTextEntry
-              autoComplete="password-new"
-              textContentType="password"
-              returnKeyType="done"
-              style={styles.input}
             />
           </View>
         </View>
-
-        <Text style={styles.helperText}>{PASSWORD_VALIDATION_MESSAGE}</Text>
-
-        {error ? <Text style={styles.errorText}>{error}</Text> : null}
-
-        <Pressable
-          style={({ pressed }) => [
-            styles.primaryButton,
-            !canSubmit ? styles.primaryButtonDisabled : null,
-            pressed && canSubmit ? styles.primaryButtonPressed : null,
-          ]}
-          disabled={!canSubmit}
-          onPress={() => {
-            void handleSubmit();
+        <AuthEmailField
+          forceLight
+          label="Email Address"
+          error={fieldErrors.email}
+          icon={<Mail size={21} color="#6B7280" strokeWidth={2} />}
+          value={email}
+          onChangeText={(value) => {
+            setEmail(value);
+            clearFieldError("email");
           }}
-        >
+          onBlur={() => {
+            if (email.trim() && !isValidEmailAddress(normalizedEmail)) {
+              setFieldError("email", EMAIL_VALIDATION_MESSAGE);
+            }
+          }}
+          placeholder="Enter your email address"
+          placeholderTextColor="#9CA3AF"
+          keyboardType="email-address"
+          autoCapitalize="none"
+          autoCorrect={false}
+          autoComplete="email"
+          textContentType="emailAddress"
+          returnKeyType="next"
+        />
+        <AuthEmailField
+          forceLight
+          label="Password"
+          error={fieldErrors.password}
+          icon={<LockKeyhole size={21} color="#6B7280" strokeWidth={2} />}
+          value={password}
+          onChangeText={(value) => {
+            setPassword(value);
+            clearFieldError("password");
+          }}
+          onBlur={() => {
+            if (!password) {
+              setFieldError("password", "Password is required.");
+            } else if (password.length < PASSWORD_MIN_LENGTH) {
+              setFieldError("password", PASSWORD_VALIDATION_MESSAGE);
+            }
+          }}
+          placeholder="Create a password"
+          placeholderTextColor="#9CA3AF"
+          autoCapitalize="none"
+          autoCorrect={false}
+          autoComplete="new-password"
+          textContentType="newPassword"
+          returnKeyType="next"
+          secure
+        />
+        <AuthEmailField
+          forceLight
+          label="Confirm Password"
+          error={fieldErrors.confirmPassword}
+          icon={<LockKeyhole size={21} color="#6B7280" strokeWidth={2} />}
+          value={confirmPassword}
+          onChangeText={(value) => {
+            setConfirmPassword(value);
+            clearFieldError("confirmPassword");
+          }}
+          onBlur={() => {
+            if (!confirmPassword) {
+              setFieldError("confirmPassword", "Confirm your password.");
+            } else if (password !== confirmPassword) {
+              setFieldError("confirmPassword", "Passwords do not match.");
+            }
+          }}
+          placeholder="Confirm your password"
+          placeholderTextColor="#9CA3AF"
+          autoCapitalize="none"
+          autoCorrect={false}
+          autoComplete="new-password"
+          textContentType="newPassword"
+          returnKeyType="done"
+          onSubmitEditing={() => void handleSubmit()}
+          secure
+        />
+      </View>
+
+      <Text style={styles.optionText}>{PASSWORD_VALIDATION_MESSAGE}</Text>
+      <Pressable
+        accessibilityRole="button"
+        disabled={!canSubmit}
+        accessibilityState={{ disabled: !canSubmit, busy: isSubmitting }}
+        style={({ pressed }) => [
+          styles.primaryButton,
+          !canSubmit && styles.primaryButtonDisabled,
+          pressed && canSubmit && styles.primaryButtonPressed,
+        ]}
+        onPress={() => void handleSubmit()}
+      >
+        <LinearGradient colors={["#7C3AED", "#5B21B6"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.primaryGradient}>
           {isSubmitting ? (
-            <ActivityIndicator size="small" color={colors.primaryText} />
+            <ActivityIndicator color="#FFFFFF" />
           ) : (
-            <Text style={styles.primaryButtonText}>Create Account</Text>
+            <>
+              <Text style={styles.primaryButtonText}>Create Account</Text>
+              <ArrowRight size={19} color="#FFFFFF" strokeWidth={2.4} />
+            </>
           )}
-        </Pressable>
+        </LinearGradient>
+      </Pressable>
 
-        <Pressable
-          style={({ pressed }) => [styles.linkButton, pressed ? styles.modeButtonPressed : null]}
-          onPress={() => {
-            router.push("./email-login");
-          }}
-        >
-          <Text style={styles.linkButtonText}>Already have an account? Login</Text>
+      <View style={styles.accountRow}>
+        <Text style={styles.accountPrompt}>Already have an account?</Text>
+        <Pressable onPress={() => router.push("./email-login")} hitSlop={8}>
+          <Text style={styles.linkText}>Login</Text>
         </Pressable>
       </View>
-    </AuthScreenShell>
+    </DevGeetAuthShell>
   );
 }
-
-const createStyles = (colors: ThemeColors) =>
-  StyleSheet.create({
-    scrollContent: {
-      paddingTop: SPACING.sm,
-    },
-    formCard: {
-      borderRadius: RADIUS.lg,
-      borderWidth: 1,
-      borderColor: colors.border,
-      backgroundColor: colors.surface,
-      padding: SPACING.lg,
-      gap: SPACING.md,
-    },
-    modeButtonPressed: {
-      opacity: 0.85,
-    },
-    inputStack: {
-      gap: SPACING.sm,
-    },
-    inputWrap: {
-      minHeight: CONTROL_SIZE.inputHeight,
-      borderRadius: RADIUS.md,
-      borderWidth: 1,
-      borderColor: colors.inputBorder,
-      backgroundColor: colors.surface,
-      paddingHorizontal: SPACING.md,
-      flexDirection: "row",
-      alignItems: "center",
-      gap: SPACING.sm,
-    },
-    input: {
-      flex: 1,
-      color: colors.text,
-      fontSize: 16,
-      lineHeight: 20,
-      paddingVertical: 0,
-    },
-    helperText: {
-      color: colors.mutedText,
-      fontSize: 12,
-      lineHeight: 17,
-    },
-    errorText: {
-      color: colors.danger,
-      fontSize: 13,
-      lineHeight: 18,
-    },
-    primaryButton: {
-      minHeight: CONTROL_SIZE.inputHeight,
-      borderRadius: RADIUS.md,
-      backgroundColor: colors.primary,
-      alignItems: "center",
-      justifyContent: "center",
-      paddingHorizontal: SPACING.md,
-    },
-    primaryButtonDisabled: {
-      opacity: 0.5,
-    },
-    primaryButtonPressed: {
-      opacity: 0.9,
-    },
-    primaryButtonText: {
-      color: colors.primaryText,
-      fontSize: FONT_SIZE.button,
-      fontWeight: "700",
-    },
-    linkButton: {
-      alignItems: "center",
-      justifyContent: "center",
-      minHeight: 34,
-    },
-    linkButtonText: {
-      color: colors.accent,
-      fontSize: 13,
-      lineHeight: 18,
-      fontWeight: "600",
-    },
-  });

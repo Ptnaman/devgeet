@@ -1,5 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Image } from "expo-image";
+import {
+  REMOTE_IMAGE_PLACEHOLDER,
+  REMOTE_IMAGE_TRANSITION_MS,
+} from "@/constants/image-loading";
 import {
   ActivityIndicator,
   Alert,
@@ -86,6 +90,83 @@ const SEARCH_FILTER_OPTIONS: { key: SearchFilterKey; label: string }[] = [
 const POST_ACTION_MENU_WIDTH = 188;
 const POST_ACTION_MENU_ITEM_HEIGHT = 50;
 const POST_ACTION_MENU_OFFSET = 8;
+type AdminPostsStyles = ReturnType<typeof createStyles>;
+
+const AdminPostListItem = memo(function AdminPostListItem({
+  menuIconColor,
+  onOpenActionMenu,
+  onOpenPost,
+  post,
+  styles,
+}: {
+  menuIconColor: string;
+  onOpenActionMenu: (post: PostRecord, anchorX: number, anchorY: number) => void;
+  onOpenPost: (postId: string) => void;
+  post: PostRecord;
+  styles: AdminPostsStyles;
+}) {
+  const isTrashed = isPostTrashed(post);
+  const updatedLabel = formatDate(
+    post.publishedAt || post.uploadDate || post.createDate,
+  );
+  const thumbnailUrl = getPostCardThumbnailUrl(post);
+  const postTitle = post.title.trim() || "Untitled Post";
+  const postPreview = getContentPreviewLines(post.content, 1) || "-";
+  const statusLabel = isTrashed
+    ? "Trashed"
+    : post.status === "published"
+      ? "Published"
+      : post.status === "pending"
+        ? "Pending Review"
+        : "Draft";
+
+  return (
+    <View style={styles.postCard}>
+      <Pressable
+        style={({ pressed }) => [styles.postCardBody, pressed && styles.postCardBodyPressed]}
+        onPress={isTrashed ? undefined : () => onOpenPost(post.id)}
+        disabled={isTrashed}
+      >
+        <View style={styles.postMediaWrap}>
+          {thumbnailUrl ? (
+            <Image
+              cachePolicy="memory-disk"
+              contentFit="cover"
+              placeholder={REMOTE_IMAGE_PLACEHOLDER}
+              placeholderContentFit="cover"
+              source={{ uri: thumbnailUrl }}
+              style={styles.postImage}
+              transition={REMOTE_IMAGE_TRANSITION_MS}
+            />
+          ) : (
+            <View style={styles.postImageFallback} />
+          )}
+        </View>
+
+        <View style={styles.postMetaWrap}>
+          <Text style={styles.postTitle} numberOfLines={2}>
+            {postTitle}
+          </Text>
+          <Text style={styles.postPreview} numberOfLines={1}>
+            {postPreview}
+          </Text>
+          <Text style={styles.postDate}>{`${statusLabel} | ${updatedLabel}`}</Text>
+        </View>
+      </Pressable>
+      <View style={styles.rowMenuWrap}>
+        <Pressable
+          style={({ pressed }) => [styles.rowMenuButton, pressed && styles.rowMenuButtonPressed]}
+          onPress={(event) => {
+            const { pageX, pageY } = event.nativeEvent;
+            onOpenActionMenu(post, pageX, pageY);
+          }}
+        >
+          <MoreVerticalIcon color={menuIconColor} size={20} />
+        </Pressable>
+      </View>
+    </View>
+  );
+});
 
 export default function AdminPostsListScreen() {
   const { colors, resolvedTheme } = useAppTheme();
@@ -94,7 +175,7 @@ export default function AdminPostsListScreen() {
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const router = useRouter();
   const { canManagePosts, canModeratePosts, role, user } = useAuth();
-  const styles = createStyles(colors, resolvedTheme);
+  const styles = useMemo(() => createStyles(colors, resolvedTheme), [colors, resolvedTheme]);
 
   const [posts, setPosts] = useState<PostRecord[]>([]);
   const [isLoadingPosts, setIsLoadingPosts] = useState(true);
@@ -281,10 +362,6 @@ export default function AdminPostsListScreen() {
 
     return "Published Posts";
   }, [activeTab]);
-
-  if (!canManagePosts) {
-    return <Redirect href="/settings" />;
-  }
 
   const clearFeedback = () => {
     setError("");
@@ -608,6 +685,56 @@ export default function AdminPostsListScreen() {
     setActiveActionMenu(null);
   };
 
+  const openPostEditor = useCallback((postId: string) => {
+    router.push(`/admin/posts/edit?postId=${postId}`);
+  }, [router]);
+
+  const openActionMenu = useCallback((post: PostRecord, anchorX: number, anchorY: number) => {
+    setIsSearchFilterMenuOpen(false);
+    setIsStatusMenuOpen(false);
+    setActiveActionMenu({
+      post,
+      anchorX,
+      anchorY,
+    });
+  }, []);
+
+  const keyExtractor = useCallback((item: PostRecord) => item.id, []);
+
+  const renderPost = useCallback(
+    ({ item }: { item: PostRecord }) => (
+      <AdminPostListItem
+        menuIconColor={colors.subtleText}
+        onOpenActionMenu={openActionMenu}
+        onOpenPost={openPostEditor}
+        post={item}
+        styles={styles}
+      />
+    ),
+    [colors.subtleText, openActionMenu, openPostEditor, styles],
+  );
+
+  const renderSeparator = useCallback(
+    () => <View style={styles.listSeparator} />,
+    [styles],
+  );
+
+  const listEmptyComponent = useMemo(
+    () =>
+      !isLoadingPosts ? (
+        <View style={styles.emptyState}>
+          <Text style={styles.emptyText}>
+            No posts found in this tab.
+          </Text>
+        </View>
+      ) : null,
+    [isLoadingPosts, styles],
+  );
+
+  if (!canManagePosts) {
+    return <Redirect href="/settings" />;
+  }
+
   return (
     <View style={styles.screen}>
       <Stack.Screen
@@ -771,90 +898,12 @@ export default function AdminPostsListScreen() {
         contentContainerStyle={styles.listContent}
         data={isLoadingPosts ? [] : filteredPosts}
         initialNumToRender={DEFAULT_LIST_INITIAL_NUM_TO_RENDER}
-        keyExtractor={(item) => item.id}
+        keyExtractor={keyExtractor}
         maxToRenderPerBatch={DEFAULT_LIST_MAX_TO_RENDER_PER_BATCH}
         removeClippedSubviews={DEFAULT_LIST_REMOVE_CLIPPED_SUBVIEWS}
-        renderItem={({ item: post }) => {
-          const isTrashed = isPostTrashed(post);
-          const updatedLabel = formatDate(
-            post.publishedAt || post.uploadDate || post.createDate,
-          );
-          const thumbnailUrl = getPostCardThumbnailUrl(post);
-          const postTitle = post.title.trim() || "Untitled Post";
-          const postPreview = getContentPreviewLines(post.content, 1) || "-";
-          const statusLabel = isTrashed
-            ? "Trashed"
-            : post.status === "published"
-              ? "Published"
-              : post.status === "pending"
-                ? "Pending Review"
-                : "Draft";
-
-          return (
-            <View style={styles.postCard}>
-              <Pressable
-                style={({ pressed }) => [styles.postCardBody, pressed && styles.postCardBodyPressed]}
-                onPress={
-                  isTrashed
-                    ? undefined
-                    : () => router.push(`/admin/posts/edit?postId=${post.id}`)
-                }
-                disabled={isTrashed}
-              >
-                <View style={styles.postMediaWrap}>
-                  {thumbnailUrl ? (
-                    <Image
-                      cachePolicy="memory-disk"
-                      contentFit="cover"
-                      source={{ uri: thumbnailUrl }}
-                      style={styles.postImage}
-                      transition={100}
-                    />
-                  ) : (
-                    <View style={styles.postImageFallback} />
-                  )}
-                </View>
-
-                <View style={styles.postMetaWrap}>
-                  <Text style={styles.postTitle} numberOfLines={2}>
-                    {postTitle}
-                  </Text>
-                  <Text style={styles.postPreview} numberOfLines={1}>
-                    {postPreview}
-                  </Text>
-                  <Text style={styles.postDate}>{`${statusLabel} | ${updatedLabel}`}</Text>
-                </View>
-              </Pressable>
-              <View style={styles.rowMenuWrap}>
-                <Pressable
-                  style={({ pressed }) => [styles.rowMenuButton, pressed && styles.rowMenuButtonPressed]}
-                  onPress={(event) => {
-                    const { pageX, pageY } = event.nativeEvent;
-                    setIsSearchFilterMenuOpen(false);
-                    setIsStatusMenuOpen(false);
-                    setActiveActionMenu({
-                      post,
-                      anchorX: pageX,
-                      anchorY: pageY,
-                    });
-                  }}
-                >
-                  <MoreVerticalIcon color={colors.subtleText} size={20} />
-                </Pressable>
-              </View>
-            </View>
-          );
-        }}
-        ItemSeparatorComponent={() => <View style={styles.listSeparator} />}
-        ListEmptyComponent={
-          !isLoadingPosts ? (
-            <View style={styles.emptyState}>
-              <Text style={styles.emptyText}>
-                No posts found in this tab.
-              </Text>
-            </View>
-          ) : null
-        }
+        renderItem={renderPost}
+        ItemSeparatorComponent={renderSeparator}
+        ListEmptyComponent={listEmptyComponent}
         onScrollBeginDrag={closeAllMenus}
         showsVerticalScrollIndicator={false}
         updateCellsBatchingPeriod={DEFAULT_LIST_UPDATE_BATCHING_PERIOD}

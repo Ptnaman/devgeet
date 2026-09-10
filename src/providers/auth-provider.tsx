@@ -68,6 +68,7 @@ import {
 const USERNAMES_COLLECTION = "usernames";
 const USERS_COLLECTION = "users";
 const FAVORITES_COLLECTION = "favorites";
+const BOOKMARK_COLLECTIONS_COLLECTION = "bookmarkCollections";
 const PUSH_TOKENS_COLLECTION = "pushTokens";
 const NOTIFICATIONS_COLLECTION = "notifications";
 const MAX_BATCH_DELETE_COUNT = 400;
@@ -119,6 +120,8 @@ type AuthContextType = {
     password: string;
   }) => Promise<void>;
   signupWithEmailPassword: (payload: {
+    firstName: string;
+    lastName: string;
     email: string;
     password: string;
   }) => Promise<void>;
@@ -407,6 +410,36 @@ const mapEmailAuthActionError = (
   }
 
   return new Error("Unable to login right now.");
+};
+
+const mapFederatedAuthError = (error: unknown, provider: "Google" | "Apple") => {
+  const code = readAuthErrorCode(error);
+
+  if (code === "auth/account-exists-with-different-credential") {
+    return new Error("This email is already linked to a different sign-in method.");
+  }
+
+  if (code === "auth/invalid-credential" || code === "auth/invalid-login-credentials") {
+    return new Error(`${provider} sign-in could not be verified. Please try again.`);
+  }
+
+  if (code === "auth/operation-not-allowed") {
+    return new Error(`${provider} sign-in is not enabled for this app yet.`);
+  }
+
+  if (code === "auth/too-many-requests") {
+    return new Error("Too many attempts. Try again after some time.");
+  }
+
+  if (code === "auth/network-request-failed") {
+    return new Error("Check your internet connection and try again.");
+  }
+
+  if (error instanceof Error) {
+    return error;
+  }
+
+  return new Error(`${provider} sign-in failed. Please try again.`);
 };
 
 const clearGoogleSessionsAsync = async () => {
@@ -790,8 +823,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     void signOut(auth);
   }, [profile, user]);
 
-  const setRememberSessionPersistence = useCallback(async (_remember: boolean) => {
-    await setPersistence(auth, getAuthPersistenceForRememberMe(true));
+  const setRememberSessionPersistence = useCallback(async (remember: boolean) => {
+    await setPersistence(auth, getAuthPersistenceForRememberMe(remember));
   }, []);
 
   const isUsernameAvailable = useCallback(
@@ -985,10 +1018,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const signupWithEmailPassword = useCallback(async (payload: {
+    firstName: string;
+    lastName: string;
     email: string;
     password: string;
   }) => {
     const normalizedEmail = normalizeEmail(payload.email);
+
+    validateName("First name", payload.firstName);
+    validateName("Last name", payload.lastName);
 
     if (!isValidEmailAddress(normalizedEmail)) {
       throw new Error(EMAIL_VALIDATION_MESSAGE);
@@ -1004,7 +1042,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         authUser: result.user,
         provider: "email",
         email: normalizedEmail,
-        displayName: result.user.displayName,
+        firstName: payload.firstName,
+        lastName: payload.lastName,
+        displayName: `${payload.firstName.trim()} ${payload.lastName.trim()}`,
         photoURL: result.user.photoURL,
       });
     } catch (error) {
@@ -1027,15 +1067,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const loginWithGoogleIdToken = useCallback(async (idToken: string) => {
-    const credential = GoogleAuthProvider.credential(idToken);
-    const result = await signInWithCredential(auth, credential);
-    await persistFederatedUserProfile({
-      authUser: result.user,
-      provider: "google",
-      email: result.user.email,
-      displayName: result.user.displayName,
-      photoURL: result.user.photoURL,
-    });
+    try {
+      const credential = GoogleAuthProvider.credential(idToken);
+      const result = await signInWithCredential(auth, credential);
+      await persistFederatedUserProfile({
+        authUser: result.user,
+        provider: "google",
+        email: result.user.email,
+        displayName: result.user.displayName,
+        photoURL: result.user.photoURL,
+      });
+    } catch (error) {
+      throw mapFederatedAuthError(error, "Google");
+    }
   }, []);
 
   const loginWithAppleCredential = useCallback(async (payload: {
@@ -1045,21 +1089,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     firstName?: string | null;
     lastName?: string | null;
   }) => {
-    const provider = new OAuthProvider("apple.com");
-    const credential = provider.credential({
-      idToken: payload.idToken,
-      rawNonce: payload.rawNonce,
-    });
-    const result = await signInWithCredential(auth, credential);
-    await persistFederatedUserProfile({
-      authUser: result.user,
-      provider: "apple",
-      email: payload.email ?? result.user.email,
-      firstName: payload.firstName,
-      lastName: payload.lastName,
-      displayName: `${payload.firstName ?? ""} ${payload.lastName ?? ""}`.trim(),
-      photoURL: result.user.photoURL,
-    });
+    try {
+      const provider = new OAuthProvider("apple.com");
+      const credential = provider.credential({
+        idToken: payload.idToken,
+        rawNonce: payload.rawNonce,
+      });
+      const result = await signInWithCredential(auth, credential);
+      await persistFederatedUserProfile({
+        authUser: result.user,
+        provider: "apple",
+        email: payload.email ?? result.user.email,
+        firstName: payload.firstName,
+        lastName: payload.lastName,
+        displayName: `${payload.firstName ?? ""} ${payload.lastName ?? ""}`.trim(),
+        photoURL: result.user.photoURL,
+      });
+    } catch (error) {
+      throw mapFederatedAuthError(error, "Apple");
+    }
   }, []);
 
   const deleteCurrentUserAccount = useCallback(async () => {
@@ -1082,6 +1130,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         authorFollowersSnapshot,
         authorFollowingSnapshot,
         favoritesSnapshot,
+        bookmarkCollectionsSnapshot,
         pushTokensSnapshot,
         notificationsSnapshot,
       ] =
@@ -1101,6 +1150,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           getDocs(
             query(
               collection(firestore, FAVORITES_COLLECTION),
+              where("uid", "==", currentUser.uid),
+            ),
+          ),
+          getDocs(
+            query(
+              collection(firestore, BOOKMARK_COLLECTIONS_COLLECTION),
               where("uid", "==", currentUser.uid),
             ),
           ),
@@ -1129,6 +1184,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await Promise.all([
         deleteDocumentRefsInChunks(authorFollowRefs),
         deleteDocumentRefsInChunks(favoritesSnapshot.docs.map((item) => item.ref)),
+        deleteDocumentRefsInChunks(bookmarkCollectionsSnapshot.docs.map((item) => item.ref)),
         deleteDocumentRefsInChunks(pushTokensSnapshot.docs.map((item) => item.ref)),
         deleteDocumentRefsInChunks(notificationsSnapshot.docs.map((item) => item.ref)),
       ]);

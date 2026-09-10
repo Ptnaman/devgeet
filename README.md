@@ -1,56 +1,120 @@
-# Welcome to your Expo app 👋
+# DevGeet
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+DevGeet is a cross-platform reading and publishing app built with Expo, React Native, Expo Router, and Firebase. It provides categorized content feeds, search, favorites, creator tools, notifications, and role-based administration on Android, iOS, and the web.
 
-## Get started
+## Features
 
-1. Install dependencies
+- Email/password authentication with persistent sessions
+- Native Google Sign-In in development and release builds
+- Home and category feeds backed by Cloud Firestore
+- Post search, recent searches, favorites, and creator following
+- Rich post reader with images and supported video content
+- User, author, and admin roles with author applications
+- Admin tools for posts, categories, users, and notifications
+- Offline-aware content caching and network status feedback
+- Light, dark, and system themes
+- EAS Update support
+- Google Sans loaded through `@expo-google-fonts/google-sans`
+- WordPress-to-Firebase content synchronization
 
-   ```bash
-   npm install
-   ```
+## Tech stack
 
-2. Start the app
+- Expo and React Native with TypeScript
+- Expo Router for file-based navigation
+- Firebase Authentication, Cloud Firestore, Cloud Functions, and FCM
+- Expo SQLite and AsyncStorage for local persistence
+- EAS Build and EAS Update for native distribution
 
-   ```bash
-   npx expo start
-   ```
+## Local setup
 
-In the output, you'll find options to open the app in a
+### Requirements
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+- Node.js 20 or newer
+- npm
+- Android Studio for local Android builds
+- Xcode on macOS for local iOS builds
+- Java and Firebase CLI when running Firestore emulator tests or deploying backend resources
 
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
+### Install and run
 
 ```bash
-npm run reset-project
+npm install
+npm run start
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+The Expo CLI will show the available Android, iOS, web, and development-build options.
 
-### Other setup steps
+Expo Go can be used for compatible UI and email-auth flows. Native Google Sign-In, remote push notifications, and other custom native functionality require a development or release build.
 
-- To set up ESLint for linting, run `npx expo lint`, or follow our guide on ["Using ESLint and Prettier"](https://docs.expo.dev/guides/using-eslint/)
-- If you'd like to set up unit testing, follow our guide on ["Unit Testing with Jest"](https://docs.expo.dev/develop/unit-testing/)
-- Learn more about the TypeScript setup in this template in our guide on ["Using TypeScript"](https://docs.expo.dev/guides/typescript/)
+## Environment variables
 
-## Learn more
+Configure these values in the local Expo environment:
 
-To learn more about developing your project with Expo, look at the following resources:
+```env
+EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID=
+EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID=
+EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID=
+EXPO_PUBLIC_ADMIN_EMAILS=
+```
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+Values prefixed with `EXPO_PUBLIC_` are bundled into the client application. Never store private keys, service-account credentials, or backend secrets in them.
 
-## Join the community
+WordPress sync secrets belong in `functions/.env`; see the dedicated setup guide below.
 
-Join our community of developers creating universal apps.
+## Commands
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+| Command | Purpose |
+| --- | --- |
+| `npm run start` | Start the Expo development server |
+| `npm run android` | Build and run the native Android project |
+| `npm run ios` | Build and run the native iOS project on macOS |
+| `npm run web` | Start the web app |
+| `npm run lint` | Run Expo ESLint checks |
+| `npx tsc --noEmit` | Run TypeScript validation |
+| `npm run test:rules` | Test Firestore rules with the local emulator |
+
+## Firebase backend
+
+Firestore rules, indexes, and Cloud Functions live in this repository. Install the function dependencies separately before local backend work or deployment:
+
+```bash
+cd functions
+npm install
+cd ..
+```
+
+Common deployment commands:
+
+```bash
+firebase deploy --only firestore:rules,firestore:indexes
+firebase deploy --only functions
+```
+
+Review and test the selected Firebase resources before deploying them to production.
+
+## Project structure
+
+```text
+src/app/          Expo Router routes
+src/components/   Shared UI and icons
+src/lib/          Firebase, content, caching, search, and notification logic
+src/providers/    App-wide auth, theme, network, update, and data state
+functions/        Firebase Cloud Functions and WordPress sync logic
+docs/             Backend migration and integration guides
+firestore.rules   Firestore access rules
+```
+
+## Additional documentation
+
+- [Push notification migration](docs/push-notifications-migration.md)
+- [WordPress to Firebase sync](docs/wordpress-firebase-sync.md)
+
+## Before committing
+
+```bash
+npm run lint
+npx tsc --noEmit
+npm run test:rules
+```
+
+Do not commit `.env` secrets, Firebase service-account files, signing keys, or generated native credentials.

@@ -1,12 +1,12 @@
 import { Platform, StyleSheet, Text, TextInput, type StyleProp, type TextStyle } from "react-native";
 
 export const APP_FONTS = {
-  regular: "GoogleSans-Regular",
-  medium: "GoogleSans-Medium",
-  bold: "GoogleSans-Bold",
-  italic: "GoogleSans-Italic",
-  mediumItalic: "GoogleSans-MediumItalic",
-  boldItalic: "GoogleSans-BoldItalic",
+  regular: "GoogleSans_400Regular",
+  medium: "GoogleSans_500Medium",
+  bold: "GoogleSans_700Bold",
+  italic: "GoogleSans_400Regular_Italic",
+  mediumItalic: "GoogleSans_500Medium_Italic",
+  boldItalic: "GoogleSans_700Bold_Italic",
 } as const;
 
 type FontVariant = "regular" | "medium" | "bold";

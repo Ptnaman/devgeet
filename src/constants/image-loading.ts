@@ -1,0 +1,3 @@
+export const REMOTE_IMAGE_BLURHASH = "L6Pj0^~q00M{00t7-;t700WB_3of";
+export const REMOTE_IMAGE_PLACEHOLDER = { blurhash: REMOTE_IMAGE_BLURHASH } as const;
+export const REMOTE_IMAGE_TRANSITION_MS = 300;

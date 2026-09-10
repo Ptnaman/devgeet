@@ -1,85 +1,69 @@
 import { useRouter } from "expo-router";
 import { useState } from "react";
-import {
-  ActivityIndicator,
-  Pressable,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from "react-native";
+import { ActivityIndicator, Pressable, Text, View } from "react-native";
+import { LinearGradient } from "expo-linear-gradient";
+import { ArrowRight, Check, LockKeyhole, Mail } from "lucide-react-native";
 
-import { AuthScreenShell } from "@/components/auth-screen-shell";
-import { LockPasswordIcon } from "@/components/icons/lock-password-icon";
-import { MailInputIcon } from "@/components/icons/mail-input-icon";
-import {
-  CONTROL_SIZE,
-  FONT_SIZE,
-  RADIUS,
-  SPACING,
-  type ThemeColors,
-} from "@/constants/theme";
-import {
-  EMAIL_VALIDATION_MESSAGE,
-  isValidEmailAddress,
-} from "@/lib/auth-validation";
+import { AuthEmailField } from "@/components/auth-email-field";
+import { DevGeetAuthShell, devgeetAuthStyles as styles } from "@/components/devgeet-auth-shell";
+import { GoogleAuthButton } from "@/components/google-auth-button";
+import { EMAIL_VALIDATION_MESSAGE, isValidEmailAddress } from "@/lib/auth-validation";
 import { DEFAULT_OFFLINE_MESSAGE, getActionErrorMessage } from "@/lib/network";
 import { useAuth } from "@/providers/auth-provider";
 import { useNetworkStatus } from "@/providers/network-provider";
-import { useAppTheme } from "@/providers/theme-provider";
 
 export default function EmailLoginScreen() {
-  const { colors } = useAppTheme();
-  const styles = createStyles(colors);
   const router = useRouter();
   const { isConnected, showOfflineToast } = useNetworkStatus();
-  const {
-    loginWithEmailPassword,
-    sendPasswordResetForEmail,
-  } = useAuth();
+  const { loginWithEmailPassword, sendPasswordResetForEmail, setRememberSessionPersistence } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [rememberMe, setRememberMe] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSendingReset, setIsSendingReset] = useState(false);
-  const [error, setError] = useState("");
+  const [fieldErrors, setFieldErrors] = useState<{
+    email?: string;
+    password?: string;
+  }>({});
+  const [formError, setFormError] = useState("");
   const [info, setInfo] = useState("");
 
   const normalizedEmail = email.trim().toLowerCase();
-  const isEmailValid = isValidEmailAddress(normalizedEmail);
-  const hasPassword = password.length > 0;
-  const canSubmit = !isSubmitting && isEmailValid && hasPassword;
+  const canSubmit = !isSubmitting;
 
-  const clearFeedback = () => {
-    if (error) {
-      setError("");
-    }
-    if (info) {
-      setInfo("");
-    }
+  const clearFieldError = (field: "email" | "password") => {
+    setFieldErrors((current) => {
+      if (!current[field]) return current;
+      const next = { ...current };
+      delete next[field];
+      return next;
+    });
+    if (formError) setFormError("");
+    if (info) setInfo("");
+  };
+
+  const setFieldError = (field: "email" | "password", message: string) => {
+    setFieldErrors((current) => ({ ...current, [field]: message }));
   };
 
   const handleSubmit = async () => {
-    if (!isConnected) {
-      showOfflineToast();
+    if (!isConnected) return showOfflineToast();
+    if (!isValidEmailAddress(normalizedEmail)) {
+      setFieldError("email", EMAIL_VALIDATION_MESSAGE);
       return;
     }
-
-    if (!isEmailValid) {
-      setError(EMAIL_VALIDATION_MESSAGE);
-      return;
-    }
-
-    if (!hasPassword) {
-      setError("Password is required.");
+    if (!password) {
+      setFieldError("password", "Password is required.");
       return;
     }
 
     try {
       setIsSubmitting(true);
-      setError("");
+      setFieldErrors({});
+      setFormError("");
       setInfo("");
+      await setRememberSessionPersistence(rememberMe);
       await loginWithEmailPassword({ email: normalizedEmail, password });
-
       router.replace("/(main)/(tabs)");
     } catch (authActionError) {
       const message = getActionErrorMessage({
@@ -87,29 +71,24 @@ export default function EmailLoginScreen() {
         isConnected,
         fallbackMessage: "Unable to login right now.",
       });
-      if (message === DEFAULT_OFFLINE_MESSAGE) {
-        showOfflineToast();
-      }
-      setError(message);
+      if (message === DEFAULT_OFFLINE_MESSAGE) showOfflineToast();
+      setFieldError("password", message);
     } finally {
       setIsSubmitting(false);
     }
   };
 
   const handleResetPassword = async () => {
-    if (!isConnected) {
-      showOfflineToast();
-      return;
-    }
-
-    if (!isEmailValid) {
-      setError(EMAIL_VALIDATION_MESSAGE);
+    if (!isConnected) return showOfflineToast();
+    if (!isValidEmailAddress(normalizedEmail)) {
+      setFieldError("email", EMAIL_VALIDATION_MESSAGE);
       return;
     }
 
     try {
       setIsSendingReset(true);
-      setError("");
+      setFieldErrors((current) => ({ ...current, email: undefined }));
+      setFormError("");
       setInfo("");
       await sendPasswordResetForEmail(normalizedEmail);
       setInfo("Password reset link sent. Check your inbox.");
@@ -119,204 +98,139 @@ export default function EmailLoginScreen() {
         isConnected,
         fallbackMessage: "Unable to send reset link right now.",
       });
-      if (message === DEFAULT_OFFLINE_MESSAGE) {
-        showOfflineToast();
-      }
-      setError(message);
+      if (message === DEFAULT_OFFLINE_MESSAGE) showOfflineToast();
+      setFieldError("email", message);
     } finally {
       setIsSendingReset(false);
     }
   };
 
   return (
-    <AuthScreenShell
-      eyebrow="Account Access"
-      title="Email Login"
-      subtitle="Login with your email and password."
-      onBack={() => {
-        router.replace("/auth-choice");
-      }}
-      topAligned
-      scrollContentStyle={styles.scrollContent}
+    <DevGeetAuthShell
+      headerLabel="Login"
+      title="Login to your account"
+      subtitle="Welcome back! Please login to continue."
     >
-      <View style={styles.formCard}>
-        <View style={styles.inputStack}>
-          <View style={styles.inputWrap}>
-            <MailInputIcon color={colors.iconMuted} size={20} />
-            <TextInput
-              value={email}
-              onChangeText={(value) => {
-                setEmail(value);
-                clearFeedback();
-              }}
-              placeholder="Email address"
-              placeholderTextColor={colors.placeholderText}
-              keyboardType="email-address"
-              autoCapitalize="none"
-              autoCorrect={false}
-              autoComplete="email"
-              textContentType="emailAddress"
-              returnKeyType="next"
-              style={styles.input}
-            />
-          </View>
-
-          <View style={styles.inputWrap}>
-            <LockPasswordIcon color={colors.iconMuted} size={20} />
-            <TextInput
-              value={password}
-              onChangeText={(value) => {
-                setPassword(value);
-                clearFeedback();
-              }}
-              placeholder="Password"
-              placeholderTextColor={colors.placeholderText}
-              autoCapitalize="none"
-              autoCorrect={false}
-              secureTextEntry
-              autoComplete="password"
-              textContentType="password"
-              returnKeyType="done"
-              style={styles.input}
-            />
-          </View>
-        </View>
-
-        {error ? <Text style={styles.errorText}>{error}</Text> : null}
-        {info ? <Text style={styles.infoText}>{info}</Text> : null}
-
-        <Pressable
-          style={({ pressed }) => [
-            styles.linkButton,
-            (pressed || isSendingReset) ? styles.modeButtonPressed : null,
-          ]}
-          disabled={isSendingReset}
-          onPress={() => {
-            void handleResetPassword();
+      <View style={styles.inputStack}>
+          <AuthEmailField
+            forceLight
+            label="Email Address"
+            error={fieldErrors.email}
+          icon={<Mail size={21} color="#6B7280" strokeWidth={2} />}
+          value={email}
+          onChangeText={(value) => {
+            setEmail(value);
+            clearFieldError("email");
           }}
+          onBlur={() => {
+            if (email.trim() && !isValidEmailAddress(normalizedEmail)) {
+              setFieldError("email", EMAIL_VALIDATION_MESSAGE);
+            }
+          }}
+          placeholder="Enter your email address"
+          placeholderTextColor="#9CA3AF"
+          keyboardType="email-address"
+          autoCapitalize="none"
+          autoCorrect={false}
+          autoComplete="email"
+          textContentType="emailAddress"
+          returnKeyType="next"
+        />
+          <AuthEmailField
+            forceLight
+            label="Password"
+            error={fieldErrors.password}
+          icon={<LockKeyhole size={21} color="#6B7280" strokeWidth={2} />}
+          value={password}
+          onChangeText={(value) => {
+            setPassword(value);
+            clearFieldError("password");
+          }}
+          onBlur={() => {
+            if (!password) setFieldError("password", "Password is required.");
+          }}
+          placeholder="Enter your password"
+          placeholderTextColor="#9CA3AF"
+          autoCapitalize="none"
+          autoCorrect={false}
+          autoComplete="current-password"
+          textContentType="password"
+          returnKeyType="done"
+          onSubmitEditing={() => void handleSubmit()}
+          secure
+        />
+      </View>
+
+      <View style={styles.optionsRow}>
+        <Pressable
+          accessibilityRole="checkbox"
+          accessibilityState={{ checked: rememberMe }}
+          style={styles.checkboxButton}
+          onPress={() => setRememberMe((selected) => !selected)}
         >
-          <Text style={styles.linkButtonText}>
-            {isSendingReset ? "Sending reset link..." : "Forgot password?"}
+          <View style={[styles.checkbox, rememberMe && styles.checkboxSelected]}>
+            {rememberMe ? <Check size={14} color="#FFFFFF" strokeWidth={3} /> : null}
+          </View>
+          <Text style={styles.optionText}>Remember Me</Text>
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          disabled={isSendingReset}
+          accessibilityState={{ disabled: isSendingReset }}
+          onPress={() => void handleResetPassword()}
+        >
+          <Text style={styles.linkText}>
+            {isSendingReset ? "Sending..." : "Forgot Password?"}
           </Text>
         </Pressable>
+      </View>
 
-        <Pressable
-          style={({ pressed }) => [
-            styles.primaryButton,
-            !canSubmit ? styles.primaryButtonDisabled : null,
-            pressed && canSubmit ? styles.primaryButtonPressed : null,
-          ]}
-          disabled={!canSubmit}
-          onPress={() => {
-            void handleSubmit();
-          }}
-        >
+      {info ? <Text style={styles.successFeedback}>{info}</Text> : null}
+
+      <Pressable
+        accessibilityRole="button"
+        disabled={!canSubmit}
+        accessibilityState={{ disabled: !canSubmit, busy: isSubmitting }}
+        style={({ pressed }) => [
+          styles.primaryButton,
+          !canSubmit && styles.primaryButtonDisabled,
+          pressed && canSubmit && styles.primaryButtonPressed,
+        ]}
+        onPress={() => void handleSubmit()}
+      >
+        <LinearGradient colors={["#7C3AED", "#5B21B6"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.primaryGradient}>
           {isSubmitting ? (
-            <ActivityIndicator size="small" color={colors.primaryText} />
+            <ActivityIndicator color="#FFFFFF" />
           ) : (
-            <Text style={styles.primaryButtonText}>
-              Login
-            </Text>
+            <>
+              <Text style={styles.primaryButtonText}>Log In</Text>
+              <ArrowRight size={19} color="#FFFFFF" strokeWidth={2.4} />
+            </>
           )}
-        </Pressable>
+        </LinearGradient>
+      </Pressable>
 
-        <Pressable
-          style={({ pressed }) => [styles.linkButton, pressed ? styles.modeButtonPressed : null]}
-          onPress={() => {
-            router.push("./email-signup");
-          }}
-        >
-          <Text style={styles.linkButtonText}>Create new account</Text>
-        </Pressable>
+      <View style={styles.divider}>
+        <View style={styles.dividerLine} />
+        <Text style={styles.dividerText}>or continue with</Text>
+        <View style={styles.dividerLine} />
+      </View>
 
-        <Pressable
-          style={({ pressed }) => [styles.linkButton, pressed ? styles.modeButtonPressed : null]}
-          onPress={() => {
-            router.replace("/auth-choice");
-          }}
-        >
-          <Text style={styles.linkButtonText}>Use Google instead</Text>
+      <GoogleAuthButton
+        label="Continue with Google"
+        onError={setFormError}
+        containerStyle={styles.googleButton}
+        textStyle={styles.googleButtonText}
+        showTrailingIcon={false}
+      />
+      {formError ? <Text style={styles.feedback}>{formError}</Text> : null}
+
+      <View style={styles.accountRow}>
+        <Text style={styles.accountPrompt}>Don&apos;t have an account?</Text>
+        <Pressable onPress={() => router.push("./email-signup")} hitSlop={8}>
+          <Text style={styles.linkText}>Sign Up</Text>
         </Pressable>
       </View>
-    </AuthScreenShell>
+    </DevGeetAuthShell>
   );
 }
-
-const createStyles = (colors: ThemeColors) =>
-  StyleSheet.create({
-    scrollContent: {
-      paddingTop: SPACING.sm,
-    },
-    formCard: {
-      borderRadius: RADIUS.lg,
-      borderWidth: 1,
-      borderColor: colors.border,
-      backgroundColor: colors.surface,
-      padding: SPACING.lg,
-      gap: SPACING.md,
-    },
-    modeButtonPressed: {
-      opacity: 0.85,
-    },
-    inputStack: {
-      gap: SPACING.sm,
-    },
-    inputWrap: {
-      minHeight: CONTROL_SIZE.inputHeight,
-      borderRadius: RADIUS.md,
-      borderWidth: 1,
-      borderColor: colors.inputBorder,
-      backgroundColor: colors.surface,
-      paddingHorizontal: SPACING.md,
-      flexDirection: "row",
-      alignItems: "center",
-      gap: SPACING.sm,
-    },
-    input: {
-      flex: 1,
-      color: colors.text,
-      fontSize: 16,
-      lineHeight: 20,
-      paddingVertical: 0,
-    },
-    errorText: {
-      color: colors.danger,
-      fontSize: 13,
-      lineHeight: 18,
-    },
-    infoText: {
-      color: colors.success,
-      fontSize: 13,
-      lineHeight: 18,
-    },
-    primaryButton: {
-      minHeight: CONTROL_SIZE.inputHeight,
-      borderRadius: RADIUS.md,
-      backgroundColor: colors.primary,
-      alignItems: "center",
-      justifyContent: "center",
-      paddingHorizontal: SPACING.md,
-    },
-    primaryButtonDisabled: {
-      opacity: 0.5,
-    },
-    primaryButtonPressed: {
-      opacity: 0.9,
-    },
-    primaryButtonText: {
-      color: colors.primaryText,
-      fontSize: FONT_SIZE.button,
-      fontWeight: "700",
-    },
-    linkButton: {
-      alignItems: "center",
-      justifyContent: "center",
-      minHeight: 34,
-    },
-    linkButtonText: {
-      color: colors.accent,
-      fontSize: 13,
-      lineHeight: 18,
-      fontWeight: "600",
-    },
-  });

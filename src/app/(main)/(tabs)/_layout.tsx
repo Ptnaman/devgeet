@@ -1,13 +1,11 @@
 import { useCallback, useMemo } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
-import { Tabs, useRouter } from "expo-router";
+import { Stack, usePathname, useRouter } from "expo-router";
+import { DarkTheme, DefaultTheme, ThemeProvider } from "expo-router/react-navigation";
+import { NativeTabs } from "expo-router/unstable-native-tabs";
 
-import { CategoryTabIcon } from "@/components/icons/category-tab-icon";
-import { FavoriteTabIcon } from "@/components/icons/favorite-tab-icon";
-import { HomeTabIcon } from "@/components/icons/home-tab-icon";
 import { NotificationBellIcon } from "@/components/icons/notification-bell-icon";
 import { SearchInputIcon } from "@/components/icons/search-input-icon";
-import { SettingsTabIcon } from "@/components/icons/settings-tab-icon";
 import { RADIUS, SPACING } from "@/constants/theme";
 import { resolveAppFontFamily } from "@/lib/typography";
 import { useUserNotifications } from "@/hooks/use-user-notifications";
@@ -17,7 +15,30 @@ export default function MainTabsLayout() {
   const { colors, resolvedTheme } = useAppTheme();
   const { unreadCount } = useUserNotifications();
   const router = useRouter();
+  const pathname = usePathname();
   const styles = useMemo(() => createStyles(), []);
+  const headerTitle = pathname === "/categories"
+    ? "Categories"
+    : pathname === "/favorite"
+      ? "Bookmarks"
+      : pathname === "/settings"
+        ? "Settings"
+        : "GeetKosh";
+  const navigationTheme = useMemo(() => {
+    const base = resolvedTheme === "dark" ? DarkTheme : DefaultTheme;
+    return {
+      ...base,
+      colors: {
+        ...base.colors,
+        primary: colors.tabActive,
+        background: colors.background,
+        card: colors.surface,
+        text: colors.text,
+        border: colors.border,
+        notification: colors.tabActive,
+      },
+    };
+  }, [colors, resolvedTheme]);
 
   const openSearch = useCallback(() => {
     router.push("/(main)/search");
@@ -65,106 +86,66 @@ export default function MainTabsLayout() {
   );
 
   return (
-    <Tabs
-      backBehavior="history"
-      initialRouteName="index"
-      screenOptions={{
-        headerShown: true,
-        headerStyle: { backgroundColor: colors.surface },
-        headerTintColor: colors.text,
-        headerTitleStyle: {
-          fontFamily: resolveAppFontFamily("medium"),
-        },
-        headerShadowVisible: false,
-        tabBarActiveTintColor: colors.tabActive,
-        tabBarInactiveTintColor: colors.tabInactive,
-        tabBarHideOnKeyboard: true,
-        tabBarButton: ({
-          accessibilityHint,
-          accessibilityLabel,
-          accessibilityRole,
-          accessibilityState,
-          accessibilityValue,
-          children,
-          disabled,
-          onLongPress,
-          onPress,
-          onPressIn,
-          onPressOut,
-          style,
-          testID,
-        }) => (
-          <Pressable
-            accessibilityHint={accessibilityHint}
-            accessibilityLabel={accessibilityLabel}
-            accessibilityRole={accessibilityRole}
-            accessibilityState={accessibilityState}
-            accessibilityValue={accessibilityValue}
-            android_ripple={{ color: "transparent", borderless: false }}
-            disabled={disabled}
-            onLongPress={onLongPress ?? undefined}
-            onPress={onPress}
-            onPressIn={onPressIn}
-            onPressOut={onPressOut}
-            style={style}
-            testID={testID}
-          >
-            {children}
-          </Pressable>
-        ),
-        tabBarLabelStyle: {
-          fontSize: 11,
-          lineHeight: 14,
-          fontFamily: resolveAppFontFamily("medium"),
-          marginBottom: 2,
-        },
-        tabBarStyle: {
-          backgroundColor: colors.surface,
-          borderTopColor: resolvedTheme === "dark" ? colors.divider : colors.border,
-          borderTopWidth: 0.5,
-        },
-      }}
-    >
-      <Tabs.Screen
-        name="index"
+    <>
+      {/* Native tabs use the enclosing stack for their navigation header. */}
+      <Stack.Screen
         options={{
-          title: "Home",
-          tabBarLabel: "Home",
-          headerTitle: "DevGeet",
-          headerRight: homeHeaderRight,
-          tabBarIcon: ({ color, focused }) => (
-            <HomeTabIcon color={color} size={24} filled={focused} />
-          ),
+          headerShown: true,
+          headerBackVisible: false,
+          headerTitle,
+          headerTitleStyle: { fontFamily: resolveAppFontFamily("medium") },
+          headerRight: pathname === "/" ? homeHeaderRight : undefined,
         }}
       />
-      <Tabs.Screen
-        name="categories"
-        options={{
-          title: "Categories",
-          tabBarIcon: ({ color, focused }) => (
-            <CategoryTabIcon color={color} size={24} filled={focused} />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="favorite"
-        options={{
-          title: "Bookmarks",
-          tabBarIcon: ({ color, focused }) => (
-            <FavoriteTabIcon color={color} size={24} filled={focused} />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="settings"
-        options={{
-          title: "Settings",
-          tabBarIcon: ({ color, focused }) => (
-            <SettingsTabIcon color={color} size={24} filled={focused} />
-          ),
-        }}
-      />
-    </Tabs>
+      <ThemeProvider value={navigationTheme}>
+        <NativeTabs
+          backBehavior="history"
+          backgroundColor={colors.surface}
+          tintColor={colors.tabActive}
+          iconColor={{ default: colors.tabInactive, selected: colors.tabActive }}
+          labelStyle={{
+            default: {
+              fontFamily: resolveAppFontFamily("medium"),
+              fontSize: 12,
+              color: colors.tabInactive,
+            },
+            selected: {
+              fontFamily: resolveAppFontFamily("medium"),
+              fontSize: 12,
+              color: colors.tabActive,
+            },
+          }}
+          indicatorColor={`${colors.tabActive}1F`}
+          rippleColor={`${colors.tabActive}14`}
+          labelVisibilityMode="labeled"
+          minimizeBehavior="never"
+          disableTransparentOnScrollEdge
+        >
+          <NativeTabs.Trigger name="index" contentStyle={{ backgroundColor: colors.background }}>
+            <NativeTabs.Trigger.Icon sf={{ default: "house", selected: "house.fill" }} md="home" />
+            <NativeTabs.Trigger.Label>Home</NativeTabs.Trigger.Label>
+          </NativeTabs.Trigger>
+          <NativeTabs.Trigger name="categories" contentStyle={{ backgroundColor: colors.background }}>
+            <NativeTabs.Trigger.Icon
+              sf={{ default: "square.grid.2x2", selected: "square.grid.2x2.fill" }}
+              md="grid_view"
+            />
+            <NativeTabs.Trigger.Label>Categories</NativeTabs.Trigger.Label>
+          </NativeTabs.Trigger>
+          <NativeTabs.Trigger name="favorite" contentStyle={{ backgroundColor: colors.background }}>
+            <NativeTabs.Trigger.Icon
+              sf={{ default: "bookmark", selected: "bookmark.fill" }}
+              md={{ default: "bookmark_border", selected: "bookmark" }}
+            />
+            <NativeTabs.Trigger.Label>Bookmarks</NativeTabs.Trigger.Label>
+          </NativeTabs.Trigger>
+          <NativeTabs.Trigger name="settings" contentStyle={{ backgroundColor: colors.background }}>
+            <NativeTabs.Trigger.Icon sf="gearshape" md="settings" />
+            <NativeTabs.Trigger.Label>Settings</NativeTabs.Trigger.Label>
+          </NativeTabs.Trigger>
+        </NativeTabs>
+      </ThemeProvider>
+    </>
   );
 }
 

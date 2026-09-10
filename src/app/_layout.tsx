@@ -6,15 +6,21 @@ import { AppUpdatesProvider } from "@/providers/app-updates-provider";
 import { AuthProvider } from "@/providers/auth-provider";
 import { LyricsReaderPreferencesProvider } from "@/providers/lyrics-reader-preferences-provider";
 import { MainTabDataProvider } from "@/providers/main-tab-data-provider";
-import { NetworkProvider } from "@/providers/network-provider";
+import { NetworkProvider, useNetworkStatus } from "@/providers/network-provider";
 import { NotificationsProvider } from "@/providers/notifications-provider";
 import { ThemeProvider, useAppTheme } from "@/providers/theme-provider";
+import { GoogleSans_400Regular } from "@expo-google-fonts/google-sans/400Regular";
+import { GoogleSans_400Regular_Italic } from "@expo-google-fonts/google-sans/400Regular_Italic";
+import { GoogleSans_500Medium } from "@expo-google-fonts/google-sans/500Medium";
+import { GoogleSans_500Medium_Italic } from "@expo-google-fonts/google-sans/500Medium_Italic";
+import { GoogleSans_700Bold } from "@expo-google-fonts/google-sans/700Bold";
+import { GoogleSans_700Bold_Italic } from "@expo-google-fonts/google-sans/700Bold_Italic";
 import Constants from "expo-constants";
 import { useFonts } from "expo-font";
-import { Stack, useRouter } from "expo-router";
+import { Stack, usePathname, useRouter } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { BackHandler, Platform, StyleSheet, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -22,9 +28,15 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 void SplashScreen.preventAutoHideAsync();
 installGlobalTypography();
 
+const EXIT_CONFIRMATION_WINDOW_MS = 2000;
+const MAIN_TAB_ROOT_PATHS = new Set(["/", "/categories", "/favorite", "/settings"]);
+
 function AppShell() {
   const { colors, resolvedTheme } = useAppTheme();
+  const { showToast } = useNetworkStatus();
+  const pathname = usePathname();
   const router = useRouter();
+  const lastExitBackPressAtRef = useRef(0);
   const styles = createStyles(colors.background);
   const detailScreenOptions = {
     headerShown: true,
@@ -39,17 +51,29 @@ function AppShell() {
       const backHandler = BackHandler.addEventListener(
         "hardwareBackPress",
         () => {
-          if (router.canGoBack()) {
+          if (!MAIN_TAB_ROOT_PATHS.has(pathname) && router.canGoBack()) {
             router.back();
             return true;
           }
-          return false;
+
+          const pressedAt = Date.now();
+          if (pressedAt - lastExitBackPressAtRef.current <= EXIT_CONFIRMATION_WINDOW_MS) {
+            BackHandler.exitApp();
+            return true;
+          }
+
+          lastExitBackPressAtRef.current = pressedAt;
+          showToast("Press back again to exit");
+          return true;
         },
       );
 
-      return () => backHandler.remove();
+      return () => {
+        lastExitBackPressAtRef.current = 0;
+        backHandler.remove();
+      };
     }
-  }, [router]);
+  }, [pathname, router, showToast]);
 
   return (
     <View style={styles.container}>
@@ -89,12 +113,12 @@ function AppShell() {
 
 export default function RootLayout() {
   const [fontsLoaded, fontsError] = useFonts({
-    [APP_FONTS.regular]: require("../../assets/fonts/GoogleSans-Regular.ttf"),
-    [APP_FONTS.medium]: require("../../assets/fonts/GoogleSans-Medium.ttf"),
-    [APP_FONTS.bold]: require("../../assets/fonts/GoogleSans-Bold.ttf"),
-    [APP_FONTS.italic]: require("../../assets/fonts/GoogleSans-Italic.ttf"),
-    [APP_FONTS.mediumItalic]: require("../../assets/fonts/GoogleSans-MediumItalic.ttf"),
-    [APP_FONTS.boldItalic]: require("../../assets/fonts/GoogleSans-BoldItalic.ttf"),
+    [APP_FONTS.regular]: GoogleSans_400Regular,
+    [APP_FONTS.medium]: GoogleSans_500Medium,
+    [APP_FONTS.bold]: GoogleSans_700Bold,
+    [APP_FONTS.italic]: GoogleSans_400Regular_Italic,
+    [APP_FONTS.mediumItalic]: GoogleSans_500Medium_Italic,
+    [APP_FONTS.boldItalic]: GoogleSans_700Bold_Italic,
   });
 
   useEffect(() => {

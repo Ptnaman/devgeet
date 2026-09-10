@@ -12,6 +12,8 @@ export type CategoryRecord = {
   id: string;
   name: string;
   slug: string;
+  imageUrl: string;
+  accentColor: string;
   createDate: string;
   uploadDate: string;
 };
@@ -291,6 +293,28 @@ const normalizeHttpUrl = (value: unknown) => {
   return "";
 };
 
+const normalizeColorValue = (value: unknown) => {
+  if (typeof value !== "string") {
+    return "";
+  }
+
+  const normalized = value.trim();
+  if (!normalized) {
+    return "";
+  }
+
+  if (
+    /^#(?:[0-9a-f]{3}|[0-9a-f]{4}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(normalized) ||
+    /^rgba?\(([^)]+)\)$/i.test(normalized) ||
+    /^hsla?\(([^)]+)\)$/i.test(normalized) ||
+    /^[a-z]+$/i.test(normalized)
+  ) {
+    return normalized;
+  }
+
+  return "";
+};
+
 const YOUTUBE_ID_PATTERN = /^[a-zA-Z0-9_-]{11}$/;
 
 export const getYouTubeVideoId = (value: string) => {
@@ -351,6 +375,14 @@ export const mapCategoryRecord = (id: string, data: DocumentData): CategoryRecor
   id,
   name: typeof data.name === "string" ? data.name : "Unnamed Category",
   slug: typeof data.slug === "string" && data.slug ? data.slug : id,
+  imageUrl:
+    normalizeHttpUrl(data.imageUrl) ||
+    normalizeHttpUrl(data.coverImageUrl) ||
+    normalizeHttpUrl(data.featureImageUrl),
+  accentColor:
+    normalizeColorValue(data.accentColor) ||
+    normalizeColorValue(data.color) ||
+    normalizeColorValue(data.backgroundColor),
   createDate: toDateString(data.createDate),
   uploadDate: toDateString(data.uploadDate),
 });

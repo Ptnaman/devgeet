@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { usePathname } from "expo-router";
 import { GlassView } from "expo-glass-effect";
+import { Image } from "expo-image";
 import {
   ActivityIndicator,
-  Image,
   Modal,
   Pressable,
   ScrollView,
@@ -14,6 +14,10 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { NotificationBellIcon } from "@/components/icons/notification-bell-icon";
+import {
+  REMOTE_IMAGE_PLACEHOLDER,
+  REMOTE_IMAGE_TRANSITION_MS,
+} from "@/constants/image-loading";
 import { RADIUS, SHADOWS, SPACING, STATIC_COLORS, type ThemeColors } from "@/constants/theme";
 import {
   markUserNotificationsAsReadAsync,
@@ -226,8 +230,13 @@ export function HeaderNotificationsMenu({
                 >
                   {notification.imageUrl ? (
                     <Image
+                      cachePolicy="memory-disk"
+                      contentFit="cover"
+                      placeholder={REMOTE_IMAGE_PLACEHOLDER}
+                      placeholderContentFit="cover"
                       source={{ uri: notification.imageUrl }}
                       style={styles.notificationImage}
+                      transition={REMOTE_IMAGE_TRANSITION_MS}
                     />
                   ) : (
                     <View style={styles.notificationImageFallback}>
@@ -280,8 +289,13 @@ export function HeaderNotificationsMenu({
               >
                 {selectedNotification.imageUrl ? (
                   <Image
+                    cachePolicy="memory-disk"
+                    contentFit="cover"
+                    placeholder={REMOTE_IMAGE_PLACEHOLDER}
+                    placeholderContentFit="cover"
                     source={{ uri: selectedNotification.imageUrl }}
                     style={styles.detailsImage}
+                    transition={REMOTE_IMAGE_TRANSITION_MS}
                   />
                 ) : null}
                 <Text style={styles.detailsBody}>{selectedNotification.body}</Text>

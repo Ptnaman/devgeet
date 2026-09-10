@@ -155,7 +155,11 @@ export function GoogleAuthButton({
 
   const googleClientIds = useMemo(() => resolveGoogleClientIds(), []);
   const isWeb = Platform.OS === "web";
-  const googleSignInModule = useMemo(() => loadGoogleSignInModule(), []);
+  const isExpoGo = Constants.appOwnership === "expo";
+  const googleSignInModule = useMemo(
+    () => (isWeb || isExpoGo ? null : loadGoogleSignInModule()),
+    [isExpoGo, isWeb],
+  );
   const hasNativeGoogleSignIn = Boolean(googleSignInModule);
   const hasOneTapApi = Boolean(googleSignInModule?.GoogleOneTapSignIn);
   const isGoogleConfigured = Boolean(googleClientIds.webClientId);
@@ -251,7 +255,11 @@ export function GoogleAuthButton({
     }
 
     if (!hasNativeGoogleSignIn || !googleSignInModule) {
-      onError("Google sign-in is missing in this build. Use a development build instead of Expo Go.");
+      onError(
+        isExpoGo
+          ? "Google sign-in is available in the app build, not Expo Go. You can still use email."
+          : "Google sign-in is unavailable in this build. Please use email or try again later.",
+      );
       return;
     }
 
@@ -345,6 +353,7 @@ export function GoogleAuthButton({
     googleSignInModule,
     hasNativeGoogleSignIn,
     hasOneTapApi,
+    isExpoGo,
     isGoogleConfigured,
     isWeb,
     loginWithGoogleIdToken,

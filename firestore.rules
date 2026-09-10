@@ -82,7 +82,10 @@ service cloud.firestore {
     }
 
     function isValidProvider(provider) {
-      return provider == "password" || provider == "google" || provider == "apple";
+      // Email/password accounts were historically stored as "password";
+      // the current client stores them as "email". Accept both aliases.
+      return provider == "email" || provider == "password" ||
+        provider == "google" || provider == "apple";
     }
 
     function normalizedProfileProvider(data) {
@@ -94,14 +97,21 @@ service cloud.firestore {
           : currentSignInProvider() == "apple.com"
             ? "apple"
             : currentSignInProvider() == "password"
-              ? "password"
+              ? "email"
             : "";
     }
 
     function hasMatchingProfileProvider(provider) {
-      return (provider == "password" && currentSignInProvider() == "password") ||
+      return ((provider == "email" || provider == "password") &&
+          currentSignInProvider() == "password") ||
         (provider == "google" && currentSignInProvider() == "google.com") ||
         (provider == "apple" && currentSignInProvider() == "apple.com");
+    }
+
+    function hasCompatibleProfileProvider(existingProvider, nextProvider) {
+      return (existingProvider == nextProvider) ||
+        ((existingProvider == "email" || existingProvider == "password") &&
+          (nextProvider == "email" || nextProvider == "password"));
     }
 
     function isOwnPost(data) {
@@ -552,7 +562,10 @@ service cloud.firestore {
           normalizedAccountStatus(resource.data) == "active" &&
           request.resource.data.uid == resource.data.uid &&
           request.resource.data.email == resource.data.email &&
-          request.resource.data.provider == normalizedProfileProvider(resource.data) &&
+          hasCompatibleProfileProvider(
+            normalizedProfileProvider(resource.data),
+            request.resource.data.provider
+          ) &&
           hasMatchingProfileProvider(request.resource.data.provider) &&
           hasAuthorEligibleProfile(request.resource.data) &&
           request.resource.data.role == "author" &&
@@ -573,7 +586,10 @@ service cloud.firestore {
             request.resource.data.username,
             request.resource.data.usernameLower
           ) &&
-          request.resource.data.provider == normalizedProfileProvider(resource.data) &&
+          hasCompatibleProfileProvider(
+            normalizedProfileProvider(resource.data),
+            request.resource.data.provider
+          ) &&
           hasMatchingProfileProvider(request.resource.data.provider) &&
           request.resource.data.role == normalizedUserRole(resource.data) &&
           request.resource.data.accountStatus == normalizedAccountStatus(resource.data) &&

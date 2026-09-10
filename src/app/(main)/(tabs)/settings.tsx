@@ -1,9 +1,9 @@
 import Constants from "expo-constants";
+import { Image } from "expo-image";
 import { useRouter } from "expo-router";
 import { type ReactNode } from "react";
 import {
   Alert,
-  Image,
   Linking,
   Pressable,
   Share,
@@ -20,6 +20,10 @@ import { HelpQuestionIcon } from "@/components/icons/help-question-icon";
 import { MainTabScrollView } from "@/components/main-tabs/main-tab-scroll-view";
 import { VerifiedRoleBadge } from "@/components/verified-role-badge";
 import { APP_LINKS } from "@/constants/app-links";
+import {
+  REMOTE_IMAGE_PLACEHOLDER,
+  REMOTE_IMAGE_TRANSITION_MS,
+} from "@/constants/image-loading";
 import { RADIUS, SHADOWS, SPACING, type ThemeColors } from "@/constants/theme";
 import { useAppUpdates } from "@/providers/app-updates-provider";
 import { useAuth } from "@/providers/auth-provider";
@@ -360,7 +364,15 @@ export default function SettingsTabScreen() {
       >
         <View style={styles.avatarWrap}>
           {avatarUri ? (
-            <Image source={{ uri: avatarUri }} style={styles.avatarImage} />
+            <Image
+              cachePolicy="memory-disk"
+              contentFit="cover"
+              placeholder={REMOTE_IMAGE_PLACEHOLDER}
+              placeholderContentFit="cover"
+              source={{ uri: avatarUri }}
+              style={styles.avatarImage}
+              transition={REMOTE_IMAGE_TRANSITION_MS}
+            />
           ) : (
             <Text style={styles.avatarText}>{accountInitials}</Text>
           )}

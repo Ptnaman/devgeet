@@ -1,7 +1,12 @@
 import { useEffect, useState } from "react";
-import { Image, Pressable, StyleSheet, View } from "react-native";
+import { Image } from "expo-image";
+import { Pressable, StyleSheet, View } from "react-native";
 
 import { UserAvatarIcon } from "@/components/icons/user-avatar-icon";
+import {
+  REMOTE_IMAGE_PLACEHOLDER,
+  REMOTE_IMAGE_TRANSITION_MS,
+} from "@/constants/image-loading";
 import { type ThemeColors } from "@/constants/theme";
 import { useAuth } from "@/providers/auth-provider";
 import { useAppTheme } from "@/providers/theme-provider";
@@ -51,9 +56,14 @@ export function HeaderProfileButton({
     >
       {shouldShowPhoto ? (
         <Image
+          cachePolicy="memory-disk"
+          contentFit="cover"
+          placeholder={REMOTE_IMAGE_PLACEHOLDER}
+          placeholderContentFit="cover"
           source={{ uri: avatarUri }}
           style={styles.avatarImage}
           onError={() => setHasImageError(true)}
+          transition={REMOTE_IMAGE_TRANSITION_MS}
         />
       ) : (
         <View style={[styles.avatarImage, styles.avatarFallback]}>

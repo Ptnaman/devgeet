@@ -46,6 +46,10 @@ import {
   type PostRecord,
   type PostStatus,
 } from "@/lib/content";
+import {
+  extractPlainTextContent,
+  toHtmlContent,
+} from "@/lib/content-normalization";
 import { getEffectiveUserRole } from "@/lib/access";
 import { firestore } from "@/lib/firebase";
 import { getActionErrorMessage, getRequestErrorMessage } from "@/lib/network";
@@ -55,7 +59,6 @@ import { useNetworkStatus } from "@/providers/network-provider";
 import { useAppTheme } from "@/providers/theme-provider";
 
 const POST_STATUSES: PostStatus[] = ["draft", "pending", "published"];
-const HTML_TAG_PATTERN = /<\/?[a-z][\s\S]*>/i;
 type PostEditorField =
   | "title"
   | "slug"
@@ -75,46 +78,6 @@ const getStatusLabel = (status: PostStatus) => {
 
 const resolvePostId = (value: string | string[] | undefined) =>
   typeof value === "string" ? value : "";
-
-const toHtmlContent = (value: string) => {
-  const normalized = value.trim();
-  if (!normalized) {
-    return "";
-  }
-
-  if (HTML_TAG_PATTERN.test(normalized)) {
-    return normalized;
-  }
-
-  const escaped = normalized
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
-
-  return `<p>${escaped.replace(/\n/g, "<br/>")}</p>`;
-};
-
-const extractPlainText = (value: string) =>
-  value
-    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, " ")
-    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, " ")
-    .replace(/<\s*br\s*\/?\s*>/gi, "\n")
-    .replace(/<\s*\/\s*(p|div|h[1-6]|li|ul|ol|blockquote|section|article|tr)\s*>/gi, "\n")
-    .replace(/<\s*li[^>]*>/gi, "* ")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/\r\n?/g, "\n")
-    .replace(/[ \t]+\n/g, "\n")
-    .replace(/\n[ \t]+/g, "\n")
-    .replace(/&nbsp;/gi, " ")
-    .replace(/&amp;/gi, "&")
-    .replace(/&lt;/gi, "<")
-    .replace(/&gt;/gi, ">")
-    .replace(/&#39;/gi, "'")
-    .replace(/&quot;/gi, '"')
-    .replace(/\u200B/g, "")
-    .replace(/[ \t]{2,}/g, " ")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
 
 export default function AdminPostEditScreen() {
   const { colors, resolvedTheme } = useAppTheme();
@@ -331,7 +294,7 @@ export default function AdminPostEditScreen() {
             ? rawData.contentHtml
             : toHtmlContent(post.content);
         const hydratedPlainText =
-          extractPlainText(hydratedContentHtml) || post.content.trim();
+          extractPlainTextContent(hydratedContentHtml) || post.content.trim();
         setContentPlainText(hydratedPlainText);
         setInitialContentPlainText(hydratedPlainText);
         setInitialContentHtml(hydratedContentHtml.trim());

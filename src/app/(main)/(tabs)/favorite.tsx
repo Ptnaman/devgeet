@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Image } from "expo-image";
 import { useRouter } from "expo-router";
 import {
@@ -13,6 +13,7 @@ import {
   ActivityIndicator,
   Alert,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -21,6 +22,10 @@ import {
 import { FavoriteTabIcon } from "@/components/icons/favorite-tab-icon";
 import { MainTabFlatList } from "@/components/main-tabs/main-tab-flat-list";
 import { TrashActionIcon } from "@/components/icons/trash-action-icon";
+import {
+  REMOTE_IMAGE_PLACEHOLDER,
+  REMOTE_IMAGE_TRANSITION_MS,
+} from "@/constants/image-loading";
 import {
   FONT_SIZE,
   RADIUS,
@@ -45,10 +50,112 @@ import {
   getRequestErrorMessage,
 } from "@/lib/network";
 import { useFavorites } from "@/hooks/use-favorites";
+import { useBookmarkCollections } from "@/hooks/use-bookmark-collections";
 import { useNetworkStatus } from "@/providers/network-provider";
 import { useAppTheme } from "@/providers/theme-provider";
 
 const FAVORITE_POST_IDS_CHUNK_SIZE = 10;
+type FavoriteStyles = ReturnType<typeof createStyles>;
+
+const mergeFavoritePosts = ({
+  currentPosts,
+  nextPosts,
+  favoriteIds,
+}: {
+  currentPosts: PostRecord[];
+  nextPosts: PostRecord[];
+  favoriteIds: Set<string>;
+}) => {
+  const postsById = new Map<string, PostRecord>();
+
+  currentPosts.forEach((post) => {
+    if (favoriteIds.has(post.id)) {
+      postsById.set(post.id, post);
+    }
+  });
+
+  nextPosts.forEach((post) => {
+    if (favoriteIds.has(post.id)) {
+      postsById.set(post.id, post);
+    }
+  });
+
+  return sortPostsByRecency(Array.from(postsById.values()));
+};
+
+const FavoritePostCard = memo(function FavoritePostCard({
+  colors,
+  onOpenPost,
+  onRemoveFavorite,
+  post,
+  styles,
+}: {
+  colors: ThemeColors;
+  onOpenPost: (post: PostRecord) => void;
+  onRemoveFavorite: (post: PostRecord) => Promise<void>;
+  post: PostRecord;
+  styles: FavoriteStyles;
+}) {
+  const thumbnailUrl = getPostCardThumbnailUrl(post);
+  const authorName =
+    post.authorDisplayName.trim() ||
+    post.authorUsername.trim() ||
+    "Unknown Author";
+
+  return (
+    <View style={styles.card}>
+      <Pressable
+        style={({ pressed }) => [
+          styles.cardBody,
+          pressed && styles.cardBodyPressed,
+        ]}
+        onPress={() => onOpenPost(post)}
+      >
+        {thumbnailUrl ? (
+          <Image
+            cachePolicy="memory-disk"
+            contentFit="cover"
+            placeholder={REMOTE_IMAGE_PLACEHOLDER}
+            placeholderContentFit="cover"
+            source={{ uri: thumbnailUrl }}
+            style={styles.thumbnail}
+            transition={REMOTE_IMAGE_TRANSITION_MS}
+          />
+        ) : (
+          <View style={styles.thumbnailFallback}>
+            <FavoriteTabIcon size={18} color={colors.mutedText} />
+          </View>
+        )}
+
+        <View style={styles.cardContent}>
+          <Text style={styles.cardTitle} numberOfLines={2} ellipsizeMode="tail">
+            {post.title}
+          </Text>
+          <Text style={styles.cardPreview} numberOfLines={1} ellipsizeMode="tail">
+            {post.content.trim() || "-"}
+          </Text>
+          <Text style={styles.cardAuthor} numberOfLines={1}>
+            {`By ${authorName}`}
+          </Text>
+        </View>
+      </Pressable>
+
+      <Pressable
+        style={({ pressed }) => [
+          styles.removeButton,
+          pressed && styles.removeButtonPressed,
+        ]}
+        onPress={() => {
+          void onRemoveFavorite(post);
+        }}
+        accessibilityRole="button"
+        accessibilityLabel={`Remove ${post.title} from bookmarks`}
+      >
+        <TrashActionIcon size={17} color={STATIC_COLORS.white} />
+      </Pressable>
+    </View>
+  );
+});
 
 export default function FavoriteTabScreen() {
   const { colors } = useAppTheme();
@@ -61,16 +168,38 @@ export default function FavoriteTabScreen() {
     clearFavorites,
     toggleFavorite,
   } = useFavorites();
-  const styles = createStyles(colors);
+  const { collections } = useBookmarkCollections();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const isConnectedRef = useRef(isConnected);
+  const favoritePostsRef = useRef<PostRecord[]>([]);
+  const favoriteSwipePostIdsRef = useRef("");
   const [favoritePosts, setFavoritePosts] = useState<PostRecord[]>([]);
   const [favoritePostsError, setFavoritePostsError] = useState("");
   const [isLoadingFavoritePosts, setIsLoadingFavoritePosts] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [selectedCollectionId, setSelectedCollectionId] = useState("");
+
+  const selectedCollection = collections.find((item) => item.id === selectedCollectionId);
+  const visibleFavoritePosts = useMemo(() => {
+    if (!selectedCollection) return favoritePosts;
+    const selectedPostIds = new Set(selectedCollection.postIds);
+    return favoritePosts.filter((post) => selectedPostIds.has(post.id));
+  }, [favoritePosts, selectedCollection]);
+
+  useEffect(() => {
+    if (selectedCollectionId && !collections.some((item) => item.id === selectedCollectionId)) {
+      setSelectedCollectionId("");
+    }
+  }, [collections, selectedCollectionId]);
 
   useEffect(() => {
     isConnectedRef.current = isConnected;
   }, [isConnected]);
+
+  useEffect(() => {
+    favoritePostsRef.current = favoritePosts;
+    favoriteSwipePostIdsRef.current = favoritePosts.map((item) => item.id).join(",");
+  }, [favoritePosts]);
 
   const fetchFavoritePostsByIdsAsync = useCallback(async (favoriteIds: string[]) => {
     const chunks: string[][] = [];
@@ -100,6 +229,7 @@ export default function FavoriteTabScreen() {
   useEffect(() => {
     let active = true;
     const favoriteIds = Array.from(favoritePostIds);
+    const favoriteIdsSet = new Set(favoriteIds);
 
     if (!favoriteIds.length) {
       setFavoritePosts([]);
@@ -110,23 +240,42 @@ export default function FavoriteTabScreen() {
       };
     }
 
+    const retainedPosts = sortPostsByRecency(
+      favoritePostsRef.current.filter((post) => favoriteIdsSet.has(post.id)),
+    );
+    const retainedIds = new Set(retainedPosts.map((post) => post.id));
+    const missingIds = favoriteIds.filter((postId) => !retainedIds.has(postId));
+
+    setFavoritePosts(retainedPosts);
+    setFavoritePostsError("");
+
+    if (!missingIds.length) {
+      setIsLoadingFavoritePosts(false);
+      return () => {
+        active = false;
+      };
+    }
+
     const hydrateFavoritePosts = async () => {
       try {
-        setIsLoadingFavoritePosts(true);
-        const posts = await fetchFavoritePostsByIdsAsync(favoriteIds);
+        setIsLoadingFavoritePosts(retainedPosts.length === 0);
+        const posts = await fetchFavoritePostsByIdsAsync(missingIds);
 
         if (!active) {
           return;
         }
 
-        setFavoritePosts(posts);
+        setFavoritePosts((currentPosts) => mergeFavoritePosts({
+          currentPosts,
+          nextPosts: posts,
+          favoriteIds: favoriteIdsSet,
+        }));
         setFavoritePostsError("");
       } catch (loadError) {
         if (!active) {
           return;
         }
 
-        setFavoritePosts([]);
         setFavoritePostsError(
           getRequestErrorMessage({
             error: loadError,
@@ -196,19 +345,19 @@ export default function FavoriteTabScreen() {
   const isOfflineState = !isConnected || combinedError === DEFAULT_OFFLINE_MESSAGE;
   const showInlineError = Boolean(combinedError) && !isOfflineState;
 
-  const openPost = (post: PostRecord) => {
+  const openPost = useCallback((post: PostRecord) => {
     primePostNavigationCache(post);
     router.push({
       pathname: "/post/[postId]",
       params: {
         postId: post.id,
         swipeSource: "favorite",
-        swipePostIds: favoritePosts.map((item) => item.id).join(","),
+        swipePostIds: favoriteSwipePostIdsRef.current,
       },
     });
-  };
+  }, [router]);
 
-  const handleToggleFavorite = async (post: PostRecord) => {
+  const handleToggleFavorite = useCallback(async (post: PostRecord) => {
     try {
       await toggleFavorite(post);
     } catch (toggleError) {
@@ -225,9 +374,9 @@ export default function FavoriteTabScreen() {
 
       Alert.alert("Unable to update bookmarks", message);
     }
-  };
+  }, [isConnected, showOfflineToast, toggleFavorite]);
 
-  const handleClearAllFavorites = async () => {
+  const handleClearAllFavorites = useCallback(async () => {
     try {
       await clearFavorites();
     } catch (clearError) {
@@ -244,9 +393,9 @@ export default function FavoriteTabScreen() {
 
       Alert.alert("Unable to clear bookmarks", message);
     }
-  };
+  }, [clearFavorites, isConnected, showOfflineToast]);
 
-  const handleConfirmClearAllFavorites = () => {
+  const handleConfirmClearAllFavorites = useCallback(() => {
     Alert.alert(
       "Clear all bookmarks?",
       "This will remove every saved post from your bookmarks.",
@@ -264,7 +413,27 @@ export default function FavoriteTabScreen() {
         },
       ],
     );
-  };
+  }, [handleClearAllFavorites]);
+
+  const keyExtractor = useCallback((item: PostRecord) => item.id, []);
+
+  const renderFavoritePost = useCallback(
+    ({ item }: { item: PostRecord }) => (
+      <FavoritePostCard
+        colors={colors}
+        onOpenPost={openPost}
+        onRemoveFavorite={handleToggleFavorite}
+        post={item}
+        styles={styles}
+      />
+    ),
+    [colors, handleToggleFavorite, openPost, styles],
+  );
+
+  const renderSeparator = useCallback(
+    () => <View style={styles.listSeparator} />,
+    [styles],
+  );
 
   const subtitle = useMemo(() => {
     if (isLoading) {
@@ -286,68 +455,10 @@ export default function FavoriteTabScreen() {
     <View style={styles.screen}>
       <MainTabFlatList
         tabName="favorite"
-        data={isLoading ? [] : favoritePosts}
-        keyExtractor={(item) => item.id}
-        renderItem={({ item: post }) => {
-          const thumbnailUrl = getPostCardThumbnailUrl(post);
-          const authorName =
-            post.authorDisplayName.trim() ||
-            post.authorUsername.trim() ||
-            "Unknown Author";
-
-          return (
-            <View style={styles.card}>
-              <Pressable
-                style={({ pressed }) => [
-                  styles.cardBody,
-                  pressed && styles.cardBodyPressed,
-                ]}
-                onPress={() => openPost(post)}
-              >
-                {thumbnailUrl ? (
-                  <Image
-                    cachePolicy="memory-disk"
-                    contentFit="cover"
-                    source={{ uri: thumbnailUrl }}
-                    style={styles.thumbnail}
-                    transition={120}
-                  />
-                ) : (
-                  <View style={styles.thumbnailFallback}>
-                    <FavoriteTabIcon size={18} color={colors.mutedText} />
-                  </View>
-                )}
-
-                <View style={styles.cardContent}>
-                  <Text style={styles.cardTitle} numberOfLines={2} ellipsizeMode="tail">
-                    {post.title}
-                  </Text>
-                  <Text style={styles.cardPreview} numberOfLines={1} ellipsizeMode="tail">
-                    {post.content.trim() || "-"}
-                  </Text>
-                  <Text style={styles.cardAuthor} numberOfLines={1}>
-                    {`By ${authorName}`}
-                  </Text>
-                </View>
-              </Pressable>
-
-              <Pressable
-                style={({ pressed }) => [
-                  styles.removeButton,
-                  pressed && styles.removeButtonPressed,
-                ]}
-                onPress={() => {
-                  void handleToggleFavorite(post);
-                }}
-                accessibilityRole="button"
-                accessibilityLabel={`Remove ${post.title} from bookmarks`}
-              >
-                <TrashActionIcon size={17} color={STATIC_COLORS.white} />
-              </Pressable>
-            </View>
-          );
-        }}
-        ItemSeparatorComponent={() => <View style={styles.listSeparator} />}
+        data={isLoading ? [] : visibleFavoritePosts}
+        keyExtractor={keyExtractor}
+        renderItem={renderFavoritePost}
+        ItemSeparatorComponent={renderSeparator}
         ListHeaderComponent={
           <View style={styles.headerContent}>
             <View style={styles.headerCard}>
@@ -377,6 +488,26 @@ export default function FavoriteTabScreen() {
               </View>
             </View>
 
+            {collections.length ? (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.collectionRow}>
+                <Pressable
+                  onPress={() => setSelectedCollectionId("")}
+                  style={[styles.collectionChip, !selectedCollectionId && styles.collectionChipSelected]}
+                >
+                  <Text style={[styles.collectionChipText, !selectedCollectionId && styles.collectionChipTextSelected]}>All</Text>
+                </Pressable>
+                {collections.map((item) => (
+                  <Pressable
+                    key={item.id}
+                    onPress={() => setSelectedCollectionId(item.id)}
+                    style={[styles.collectionChip, selectedCollectionId === item.id && styles.collectionChipSelected]}
+                  >
+                    <Text style={[styles.collectionChipText, selectedCollectionId === item.id && styles.collectionChipTextSelected]}>{item.name}</Text>
+                  </Pressable>
+                ))}
+              </ScrollView>
+            ) : null}
+
             {isLoading ? (
               <ActivityIndicator size="large" color={colors.primary} style={styles.loader} />
             ) : null}
@@ -392,7 +523,7 @@ export default function FavoriteTabScreen() {
               <View style={styles.emptyIconCard}>
                 <FavoriteTabIcon size={30} color={colors.mutedText} />
               </View>
-              <Text style={styles.emptyTitle}>No bookmarks yet</Text>
+              <Text style={styles.emptyTitle}>{selectedCollection ? "No posts in this collection" : "No bookmarks yet"}</Text>
               <Text style={styles.emptyText}>
                 Bookmark any post and it will show here for quick access.
               </Text>
@@ -424,6 +555,11 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     marginBottom: SPACING.md,
     gap: SPACING.md,
   },
+  collectionRow: { gap: SPACING.sm, paddingRight: SPACING.md },
+  collectionChip: { minHeight: 38, paddingHorizontal: SPACING.md, borderRadius: RADIUS.pill, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface, alignItems: "center", justifyContent: "center" },
+  collectionChipSelected: { backgroundColor: colors.primary, borderColor: colors.primary },
+  collectionChipText: { color: colors.text, fontSize: 13, fontWeight: "700" },
+  collectionChipTextSelected: { color: colors.primaryText },
   listSeparator: {
     height: SPACING.md,
   },

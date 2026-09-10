@@ -1,6 +1,5 @@
-import { useCallback, useMemo, useState } from "react";
 import { useRouter } from "expo-router";
-import { Pressable, RefreshControl, StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import { MainTabScrollView } from "@/components/main-tabs/main-tab-scroll-view";
 import { SkeletonBlock } from "@/components/skeleton-block";
@@ -18,57 +17,20 @@ import { useAppTheme } from "@/providers/theme-provider";
 
 const CATEGORY_SKELETON_ITEMS = Array.from({ length: 4 }, (_, index) => index);
 
-const normalizeCategoryKey = (value: string) => value.trim().toLowerCase();
-
 export default function CategoriesTabScreen() {
   const { colors } = useAppTheme();
   const {
     categories,
-    publishedPosts,
-    hasMorePublishedPosts,
     isLoadingCategories,
-    isLoadingPosts,
     categoriesError,
-    postsError,
-    refreshMainTabDataAsync,
   } = useMainTabData();
-  const { isConnected, refreshConnection } = useNetworkStatus();
+  const { isConnected } = useNetworkStatus();
   const router = useRouter();
   const styles = createStyles(colors);
-  const error = categoriesError || postsError;
+  const error = categoriesError;
   const isOfflineState = !isConnected || error === DEFAULT_OFFLINE_MESSAGE;
   const showInlineError = Boolean(error) && !isOfflineState;
-  const isLoading = isLoadingCategories || isLoadingPosts;
-  const [isRefreshing, setIsRefreshing] = useState(false);
-  const postCountsByCategory = useMemo(() => {
-    const nextCounts = new Map<string, number>();
-
-    publishedPosts.forEach((post) => {
-      const categoryKey = normalizeCategoryKey(post.category);
-      nextCounts.set(categoryKey, (nextCounts.get(categoryKey) ?? 0) + 1);
-    });
-
-    return nextCounts;
-  }, [publishedPosts]);
-  const refreshCategoriesAsync = useCallback(async () => {
-    if (isRefreshing) {
-      return;
-    }
-
-    setIsRefreshing(true);
-    try {
-      await refreshConnection();
-    } catch {
-      // Continue to Firestore refresh even if connectivity probe fails.
-    }
-
-    try {
-      await refreshMainTabDataAsync();
-    } finally {
-      setIsRefreshing(false);
-    }
-  }, [isRefreshing, refreshConnection, refreshMainTabDataAsync]);
-
+  const isLoading = isLoadingCategories;
   const subtitle = "Tap a category to see all of its published posts on the next screen.";
 
   const openCategory = (categorySlug: string) => {
@@ -80,15 +42,6 @@ export default function CategoriesTabScreen() {
       <MainTabScrollView
         tabName="categories"
         contentContainerStyle={styles.container}
-        refreshControl={(
-          <RefreshControl
-            refreshing={isRefreshing}
-            onRefresh={() => {
-              void refreshCategoriesAsync();
-            }}
-            tintColor={colors.primary}
-          />
-        )}
       >
         <Text style={styles.subtitle}>{subtitle}</Text>
 
@@ -100,7 +53,6 @@ export default function CategoriesTabScreen() {
               <View key={item} style={styles.categoryCard}>
                 <SkeletonBlock width="72%" height={20} borderRadius={RADIUS.sm} />
                 <SkeletonBlock width="52%" height={14} borderRadius={RADIUS.sm} />
-                <SkeletonBlock width={70} height={16} borderRadius={RADIUS.sm} />
               </View>
             ))}
           </View>
@@ -114,17 +66,7 @@ export default function CategoriesTabScreen() {
 
         {!!categories.length ? (
           <View style={styles.grid}>
-            {categories.map((item) => {
-              const categoryKey = normalizeCategoryKey(item.slug);
-              const postCount = postCountsByCategory.get(categoryKey) ?? 0;
-              const hasApproximateCount = hasMorePublishedPosts;
-              const postCountLabel = hasApproximateCount
-                ? postCount > 0
-                  ? `At least ${postCount} post${postCount === 1 ? "" : "s"}`
-                  : "Counting posts..."
-                : `${postCount} post${postCount === 1 ? "" : "s"}`;
-
-              return (
+            {categories.map((item) => (
                 <Pressable
                   key={item.id}
                   style={({ pressed }) => [
@@ -139,10 +81,8 @@ export default function CategoriesTabScreen() {
                   <Text style={styles.categorySlug} numberOfLines={1}>
                     {item.slug}
                   </Text>
-                  <Text style={styles.categoryCount}>{postCountLabel}</Text>
                 </Pressable>
-              );
-            })}
+            ))}
           </View>
         ) : null}
       </MainTabScrollView>
@@ -213,10 +153,5 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   categorySlug: {
     color: colors.mutedText,
     fontSize: 12,
-  },
-  categoryCount: {
-    color: colors.text,
-    fontSize: 12,
-    fontWeight: "600",
   },
 });
