@@ -33,7 +33,6 @@ export function DevGeetAuthShell({
         router.replace("/auth-choice");
       }}
       showTopBar
-      topBarShadow
       topAligned
       layoutStyle={styles.layout}
       scrollContentStyle={styles.scrollContent}
@@ -166,10 +165,11 @@ export const devgeetAuthStyles = StyleSheet.create({
 
 const styles = StyleSheet.create({
   scrollContent: {
-    paddingTop: 8,
+    paddingTop: 16,
+    paddingBottom: 24,
   },
   layout: {
-    gap: 16,
+    gap: 22,
     paddingVertical: 0,
   },
   form: {

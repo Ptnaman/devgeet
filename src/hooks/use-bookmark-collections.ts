@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import {
   arrayUnion,
   collection,
+  deleteDoc,
   doc,
   onSnapshot,
   query,
@@ -86,7 +87,7 @@ export function useBookmarkCollections() {
     }, { merge: true });
   }, [isConnected, user?.uid]);
 
-  const createCollection = useCallback(async (nameValue: string, postId: string) => {
+  const createCollection = useCallback(async (nameValue: string, postId?: string) => {
     if (!user?.uid) throw new Error("Please login to save bookmarks.");
     if (!isConnected) throw new Error(DEFAULT_OFFLINE_MESSAGE);
     const name = nameValue.trim();
@@ -98,12 +99,38 @@ export function useBookmarkCollections() {
       id: collectionId,
       uid: user.uid,
       name,
-      postIds: [postId],
+      postIds: postId ? [postId] : [],
       createDate: serverTimestamp(),
       uploadDate: serverTimestamp(),
     });
     return collectionId;
   }, [isConnected, user?.uid]);
 
-  return { collections, isLoadingCollections, collectionsError, addPostToCollection, createCollection };
+  const renameCollection = useCallback(async (collectionId: string, nameValue: string) => {
+    if (!user?.uid) throw new Error("Please login to manage collections.");
+    if (!isConnected) throw new Error(DEFAULT_OFFLINE_MESSAGE);
+    const name = nameValue.trim();
+    if (!name) throw new Error("Enter a collection name.");
+
+    await setDoc(doc(firestore, BOOKMARK_COLLECTIONS_COLLECTION, collectionId), {
+      name,
+      uploadDate: serverTimestamp(),
+    }, { merge: true });
+  }, [isConnected, user?.uid]);
+
+  const deleteCollection = useCallback(async (collectionId: string) => {
+    if (!user?.uid) throw new Error("Please login to manage collections.");
+    if (!isConnected) throw new Error(DEFAULT_OFFLINE_MESSAGE);
+    await deleteDoc(doc(firestore, BOOKMARK_COLLECTIONS_COLLECTION, collectionId));
+  }, [isConnected, user?.uid]);
+
+  return {
+    collections,
+    isLoadingCollections,
+    collectionsError,
+    addPostToCollection,
+    createCollection,
+    renameCollection,
+    deleteCollection,
+  };
 }

@@ -15,6 +15,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { CancelInputIcon } from "@/components/icons/cancel-input-icon";
+import { BookmarkCollectionSheet } from "@/components/bookmark-collection-sheet";
 import { FavoriteActionIcon } from "@/components/icons/favorite-action-icon";
 import { SearchInput } from "@/components/search-input";
 import { SkeletonBlock } from "@/components/skeleton-block";
@@ -216,6 +217,7 @@ export default function SearchScreen() {
   const [hasScrolled, setHasScrolled] = useState(false);
   const [dismissedSuggestedSearches, setDismissedSuggestedSearches] = useState<string[]>([]);
   const [isRefreshingSearch, setIsRefreshingSearch] = useState(false);
+  const [collectionPostId, setCollectionPostId] = useState("");
   const autoLoadAttemptsRef = useRef(0);
   const deferredSearchTerm = useDeferredValue(searchTerm);
   const normalizedDeferredSearchTerm = useMemo(
@@ -390,7 +392,12 @@ export default function SearchScreen() {
 
   const handleToggleFavorite = useCallback(async (post: PostRecord) => {
     try {
-      await toggleFavorite(post);
+      if (favoritePostIds.has(post.id)) {
+        await toggleFavorite(post);
+        return;
+      }
+      await toggleFavorite(post, { showToast: false });
+      setCollectionPostId(post.id);
     } catch (toggleError) {
       const message = getActionErrorMessage({
         error: toggleError,
@@ -405,7 +412,7 @@ export default function SearchScreen() {
 
       Alert.alert("Unable to update bookmarks", message);
     }
-  }, [isConnected, showOfflineToast, toggleFavorite]);
+  }, [favoritePostIds, isConnected, showOfflineToast, toggleFavorite]);
 
   const handleScroll = useCallback((offsetY: number) => {
     const nextHasScrolled = offsetY > HEADER_SHADOW_SCROLL_THRESHOLD;
@@ -713,6 +720,11 @@ export default function SearchScreen() {
           </ScrollView>
         )}
       </View>
+      <BookmarkCollectionSheet
+        isPresented={Boolean(collectionPostId)}
+        onDismiss={() => setCollectionPostId("")}
+        postId={collectionPostId}
+      />
     </>
   );
 }
@@ -859,7 +871,7 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     fontSize: 12,
   },
   card: {
-    borderRadius: RADIUS.md,
+    borderRadius: 9,
     backgroundColor: colors.surface,
     padding: SPACING.md,
     gap: SPACING.sm,

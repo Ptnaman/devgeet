@@ -6,6 +6,7 @@ import {
 } from "@/constants/image-loading";
 import {
   ActivityIndicator,
+  AppState,
   Animated as RNAnimated,
   Alert,
   Easing,
@@ -69,6 +70,7 @@ import {
 } from "@/lib/content";
 import { useFavorites } from "@/hooks/use-favorites";
 import { firestore } from "@/lib/firebase";
+import { recordPostReadingTimeAsync } from "@/lib/reading-history";
 import {
   DEFAULT_OFFLINE_MESSAGE,
   getActionErrorMessage,
@@ -1188,6 +1190,31 @@ export default function PostDetailsScreen() {
   }, [isConnected]);
 
   useEffect(() => {
+    if (!activePostId) return;
+
+    let startedAt = AppState.currentState === "active" ? Date.now() : null;
+    const saveCurrentSession = () => {
+      if (startedAt === null) return;
+      const durationMs = Date.now() - startedAt;
+      startedAt = null;
+      void recordPostReadingTimeAsync(user?.uid ?? "guest", activePostId, durationMs);
+    };
+
+    const subscription = AppState.addEventListener("change", (nextState) => {
+      if (nextState === "active") {
+        startedAt = Date.now();
+      } else {
+        saveCurrentSession();
+      }
+    });
+
+    return () => {
+      subscription.remove();
+      saveCurrentSession();
+    };
+  }, [activePostId, user?.uid]);
+
+  useEffect(() => {
     if (!activePostId) {
       return;
     }
@@ -1683,7 +1710,7 @@ export default function PostDetailsScreen() {
     }
 
     router.push({
-      pathname: "/category/[categorySlug]",
+      pathname: "/(main)/(tabs)/categories",
       params: { categorySlug },
     });
   };
@@ -2736,7 +2763,7 @@ const createStyles = (colors: ThemeColors, isDarkTheme: boolean) => StyleSheet.c
     gap: SPACING.sm,
   },
   relatedCard: {
-    borderRadius: RADIUS.md,
+    borderRadius: 9,
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: colors.surface,

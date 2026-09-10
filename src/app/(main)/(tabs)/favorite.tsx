@@ -13,13 +13,13 @@ import {
   ActivityIndicator,
   Alert,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   View,
 } from "react-native";
 
 import { FavoriteTabIcon } from "@/components/icons/favorite-tab-icon";
+import { BookmarkCollectionManagerSheet } from "@/components/bookmark-collection-sheet";
 import { MainTabFlatList } from "@/components/main-tabs/main-tab-flat-list";
 import { TrashActionIcon } from "@/components/icons/trash-action-icon";
 import {
@@ -111,21 +111,31 @@ const FavoritePostCard = memo(function FavoritePostCard({
         ]}
         onPress={() => onOpenPost(post)}
       >
-        {thumbnailUrl ? (
-          <Image
-            cachePolicy="memory-disk"
-            contentFit="cover"
-            placeholder={REMOTE_IMAGE_PLACEHOLDER}
-            placeholderContentFit="cover"
-            source={{ uri: thumbnailUrl }}
-            style={styles.thumbnail}
-            transition={REMOTE_IMAGE_TRANSITION_MS}
-          />
-        ) : (
-          <View style={styles.thumbnailFallback}>
-            <FavoriteTabIcon size={18} color={colors.mutedText} />
-          </View>
-        )}
+        <View style={styles.thumbnailWrap}>
+          {thumbnailUrl ? (
+            <Image
+              cachePolicy="memory-disk"
+              contentFit="cover"
+              placeholder={REMOTE_IMAGE_PLACEHOLDER}
+              placeholderContentFit="cover"
+              source={{ uri: thumbnailUrl }}
+              style={styles.thumbnail}
+              transition={REMOTE_IMAGE_TRANSITION_MS}
+            />
+          ) : (
+            <View style={styles.thumbnailFallback}>
+              <FavoriteTabIcon size={18} color={colors.mutedText} />
+            </View>
+          )}
+          <Pressable
+            style={({ pressed }) => [styles.removeButton, pressed && styles.removeButtonPressed]}
+            onPress={(event) => { event.stopPropagation(); void onRemoveFavorite(post); }}
+            accessibilityRole="button"
+            accessibilityLabel={`Remove ${post.title} from bookmarks`}
+          >
+            <TrashActionIcon size={15} color={STATIC_COLORS.white} />
+          </Pressable>
+        </View>
 
         <View style={styles.cardContent}>
           <Text style={styles.cardTitle} numberOfLines={2} ellipsizeMode="tail">
@@ -140,19 +150,6 @@ const FavoritePostCard = memo(function FavoritePostCard({
         </View>
       </Pressable>
 
-      <Pressable
-        style={({ pressed }) => [
-          styles.removeButton,
-          pressed && styles.removeButtonPressed,
-        ]}
-        onPress={() => {
-          void onRemoveFavorite(post);
-        }}
-        accessibilityRole="button"
-        accessibilityLabel={`Remove ${post.title} from bookmarks`}
-      >
-        <TrashActionIcon size={17} color={STATIC_COLORS.white} />
-      </Pressable>
     </View>
   );
 });
@@ -168,7 +165,7 @@ export default function FavoriteTabScreen() {
     clearFavorites,
     toggleFavorite,
   } = useFavorites();
-  const { collections } = useBookmarkCollections();
+  const { collections, collectionsError, isLoadingCollections } = useBookmarkCollections();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const isConnectedRef = useRef(isConnected);
   const favoritePostsRef = useRef<PostRecord[]>([]);
@@ -178,6 +175,8 @@ export default function FavoriteTabScreen() {
   const [isLoadingFavoritePosts, setIsLoadingFavoritePosts] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [selectedCollectionId, setSelectedCollectionId] = useState("");
+  const [isCollectionManagerOpen, setIsCollectionManagerOpen] = useState(false);
+  const [managedCollectionId, setManagedCollectionId] = useState("");
 
   const selectedCollection = collections.find((item) => item.id === selectedCollectionId);
   const visibleFavoritePosts = useMemo(() => {
@@ -461,52 +460,63 @@ export default function FavoriteTabScreen() {
         ItemSeparatorComponent={renderSeparator}
         ListHeaderComponent={
           <View style={styles.headerContent}>
-            <View style={styles.headerCard}>
-              <View style={styles.headerRow}>
-                <View style={styles.headerTextWrap}>
-                  <Text style={styles.title}>Bookmarks</Text>
-                  <Text style={styles.subtitle}>{subtitle}</Text>
-                </View>
-                <View style={styles.headerActions}>
-                  {!isLoading && favoritePosts.length ? (
-                    <Pressable
-                      style={({ pressed }) => [
-                        styles.clearAllButton,
-                        pressed && styles.clearAllButtonPressed,
-                      ]}
-                      onPress={handleConfirmClearAllFavorites}
-                      accessibilityRole="button"
-                      accessibilityLabel="Clear all bookmarks"
-                    >
-                      <Text style={styles.clearAllButtonText}>Clear all</Text>
-                    </Pressable>
-                  ) : null}
-                  <View style={styles.countPill}>
-                    <Text style={styles.countPillText}>{favoritePosts.length}</Text>
-                  </View>
-                </View>
-              </View>
+            <View style={styles.simpleHeader}>
+              <Text style={styles.title}>Saved posts</Text>
+              <Text style={styles.subtitle}>{subtitle}</Text>
             </View>
 
-            {collections.length ? (
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.collectionRow}>
-                <Pressable
-                  onPress={() => setSelectedCollectionId("")}
-                  style={[styles.collectionChip, !selectedCollectionId && styles.collectionChipSelected]}
-                >
-                  <Text style={[styles.collectionChipText, !selectedCollectionId && styles.collectionChipTextSelected]}>All</Text>
-                </Pressable>
-                {collections.map((item) => (
-                  <Pressable
-                    key={item.id}
-                    onPress={() => setSelectedCollectionId(item.id)}
-                    style={[styles.collectionChip, selectedCollectionId === item.id && styles.collectionChipSelected]}
-                  >
-                    <Text style={[styles.collectionChipText, selectedCollectionId === item.id && styles.collectionChipTextSelected]}>{item.name}</Text>
+            <View style={styles.collectionsCard}>
+              <Pressable onPress={() => setSelectedCollectionId("")} style={[styles.favoriteCollectionRow, !selectedCollectionId && styles.collectionRowSelected]}>
+                <View style={styles.collectionNameWrap}>
+                  <FavoriteTabIcon size={21} color={!selectedCollectionId ? colors.primary : colors.text} filled={!selectedCollectionId} />
+                  <Text style={[styles.collectionName, !selectedCollectionId && styles.collectionNameSelected]}>Favorite</Text>
+                </View>
+                <Text style={styles.collectionCount}>{favoritePosts.length}</Text>
+                {!isLoading && favoritePosts.length ? (
+                  <Pressable onPress={handleConfirmClearAllFavorites} hitSlop={8}>
+                    <Text style={styles.clearAllButtonText}>Clear</Text>
                   </Pressable>
-                ))}
-              </ScrollView>
-            ) : null}
+                ) : null}
+              </Pressable>
+
+              <View style={styles.customCollectionHeader}>
+                <Text style={styles.customCollectionTitle}>Custom collections</Text>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Add custom collection"
+                  onPress={() => {
+                    setManagedCollectionId("");
+                    setIsCollectionManagerOpen(true);
+                  }}
+                  style={({ pressed }) => [styles.addCollectionButton, pressed && styles.clearAllButtonPressed]}
+                >
+                  <Text style={styles.addCollectionText}>+ Add</Text>
+                </Pressable>
+              </View>
+
+              {isLoadingCollections ? <ActivityIndicator color={colors.primary} /> : null}
+              {!isLoadingCollections && !collections.length ? <Text style={styles.noCollectionsText}>No custom collections yet.</Text> : null}
+              {collections.map((item) => (
+                <View key={item.id} style={[styles.customCollectionRow, selectedCollectionId === item.id && styles.collectionRowSelected]}>
+                  <Pressable onPress={() => setSelectedCollectionId(item.id)} style={styles.collectionSelectButton}>
+                    <Text numberOfLines={1} style={[styles.collectionName, selectedCollectionId === item.id && styles.collectionNameSelected]}>{item.name}</Text>
+                    <Text style={styles.collectionCount}>{item.postIds.length}</Text>
+                  </Pressable>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={`Manage ${item.name}`}
+                    onPress={() => {
+                      setManagedCollectionId(item.id);
+                      setIsCollectionManagerOpen(true);
+                    }}
+                    style={({ pressed }) => [styles.manageButton, pressed && styles.clearAllButtonPressed]}
+                  >
+                    <Text style={styles.manageButtonText}>Edit</Text>
+                  </Pressable>
+                </View>
+              ))}
+              {collectionsError ? <Text style={styles.errorText}>{collectionsError}</Text> : null}
+            </View>
 
             {isLoading ? (
               <ActivityIndicator size="large" color={colors.primary} style={styles.loader} />
@@ -537,6 +547,12 @@ export default function FavoriteTabScreen() {
           void refreshFavoritePostsAsync();
         }}
       />
+      <BookmarkCollectionManagerSheet
+        collectionId={managedCollectionId || undefined}
+        collectionName={collections.find((item) => item.id === managedCollectionId)?.name}
+        isPresented={isCollectionManagerOpen}
+        onDismiss={() => setIsCollectionManagerOpen(false)}
+      />
     </View>
   );
 }
@@ -555,11 +571,23 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     marginBottom: SPACING.md,
     gap: SPACING.md,
   },
-  collectionRow: { gap: SPACING.sm, paddingRight: SPACING.md },
-  collectionChip: { minHeight: 38, paddingHorizontal: SPACING.md, borderRadius: RADIUS.pill, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface, alignItems: "center", justifyContent: "center" },
-  collectionChipSelected: { backgroundColor: colors.primary, borderColor: colors.primary },
-  collectionChipText: { color: colors.text, fontSize: 13, fontWeight: "700" },
-  collectionChipTextSelected: { color: colors.primaryText },
+  collectionsCard: { gap: SPACING.sm, padding: SPACING.md, borderRadius: RADIUS.lg, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface },
+  simpleHeader: { gap: 3 },
+  favoriteCollectionRow: { minHeight: 50, paddingHorizontal: SPACING.md, borderRadius: RADIUS.md, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  collectionRowSelected: { backgroundColor: colors.surfaceSoft },
+  collectionNameWrap: { flexDirection: "row", alignItems: "center", gap: SPACING.sm },
+  customCollectionHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingTop: SPACING.sm },
+  customCollectionTitle: { color: colors.mutedText, fontSize: 13, fontWeight: "700" },
+  addCollectionButton: { minHeight: 36, paddingHorizontal: SPACING.sm, alignItems: "center", justifyContent: "center" },
+  addCollectionText: { color: colors.primary, fontSize: 14, fontWeight: "800" },
+  customCollectionRow: { minHeight: 50, borderRadius: RADIUS.md, flexDirection: "row", alignItems: "center" },
+  collectionSelectButton: { flex: 1, minHeight: 50, paddingHorizontal: SPACING.md, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: SPACING.sm },
+  collectionName: { flexShrink: 1, color: colors.text, fontSize: 15, fontWeight: "700" },
+  collectionNameSelected: { color: colors.primary },
+  collectionCount: { color: colors.mutedText, fontSize: 13, fontVariant: ["tabular-nums"] },
+  manageButton: { minHeight: 42, paddingHorizontal: SPACING.sm, alignItems: "center", justifyContent: "center" },
+  manageButtonText: { color: colors.primary, fontSize: 13, fontWeight: "700" },
+  noCollectionsText: { color: colors.mutedText, fontSize: 13, paddingHorizontal: SPACING.md, paddingVertical: SPACING.sm },
   listSeparator: {
     height: SPACING.md,
   },
@@ -668,7 +696,7 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   },
   card: {
     backgroundColor: colors.surface,
-    borderRadius: RADIUS.md,
+    borderRadius: 9,
     padding: SPACING.md,
     ...SHADOWS.sm,
     flexDirection: "row",
@@ -690,6 +718,7 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     borderRadius: RADIUS.sm,
     backgroundColor: colors.surfaceSoft,
   },
+  thumbnailWrap: { position: "relative" },
   thumbnailFallback: {
     width: 84,
     height: 84,
@@ -723,11 +752,14 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     lineHeight: 17,
   },
   removeButton: {
+    position: "absolute",
+    top: 6,
+    right: 6,
     alignItems: "center",
     justifyContent: "center",
     borderRadius: 12,
-    width: 42,
-    height: 42,
+    width: 30,
+    height: 30,
     backgroundColor: colors.favoriteRemove,
   },
   removeButtonPressed: {

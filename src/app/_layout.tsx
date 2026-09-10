@@ -98,13 +98,6 @@ function AppShell() {
               ...detailScreenOptions,
             }}
           />
-          <Stack.Screen
-            name="category/[categorySlug]"
-            options={{
-              title: "Category Posts",
-              ...detailScreenOptions,
-            }}
-          />
         </Stack>
       </MainTabDataProvider>
     </View>

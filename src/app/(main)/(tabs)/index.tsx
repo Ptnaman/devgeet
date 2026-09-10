@@ -1,327 +1,337 @@
-import { memo, type Ref, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Image } from "expo-image";
-import { useNavigation, useRouter } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  ActivityIndicator,
   Alert,
   FlatList,
-  type NativeScrollEvent,
-  type NativeSyntheticEvent,
   Pressable,
   StyleSheet,
   Text,
+  type GestureResponderEvent,
   View,
+  useWindowDimensions,
 } from "react-native";
 
-import { MainTabFlatList } from "@/components/main-tabs/main-tab-flat-list";
 import { BookmarkCollectionSheet } from "@/components/bookmark-collection-sheet";
+import { ArrowRightIcon } from "@/components/icons/arrow-right-icon";
+import { FavoriteTabIcon } from "@/components/icons/favorite-tab-icon";
+import { MainTabScrollView } from "@/components/main-tabs/main-tab-scroll-view";
 import { SkeletonBlock } from "@/components/skeleton-block";
-import {
-  FONT_SIZE,
-  RADIUS,
-  SHADOWS,
-  SPACING,
-  STATIC_COLORS,
-  type ThemeColors,
-} from "@/constants/theme";
 import {
   REMOTE_IMAGE_PLACEHOLDER,
   REMOTE_IMAGE_TRANSITION_MS,
 } from "@/constants/image-loading";
+import { RADIUS, SHADOWS, SPACING, type ThemeColors } from "@/constants/theme";
+import { useFavorites } from "@/hooks/use-favorites";
 import {
   getContentPreviewLines,
   getPostCardThumbnailUrl,
   type PostRecord,
 } from "@/lib/content";
-import { primePostNavigationCache } from "@/lib/post-navigation-cache";
 import { DEFAULT_OFFLINE_MESSAGE, getActionErrorMessage } from "@/lib/network";
-import { useFavorites } from "@/hooks/use-favorites";
-import { useNetworkStatus } from "@/providers/network-provider";
+import { primePostNavigationCache } from "@/lib/post-navigation-cache";
+import { getRecommendedPostsAsync } from "@/lib/reading-history";
+import { useAuth } from "@/providers/auth-provider";
 import { useMainTabData } from "@/providers/main-tab-data-provider";
+import { useNetworkStatus } from "@/providers/network-provider";
 import { useAppTheme } from "@/providers/theme-provider";
 
-const HOME_SKELETON_ITEMS = Array.from({ length: 3 }, (_, index) => index);
-type HomeListItem = number | PostRecord;
-type HomeListRef = FlatList<HomeListItem>;
-const HOME_FEED_MEMORY = { scrollOffset: 0 };
+const FEATURED_LIMIT = 4;
+const CATEGORY_LIMIT = 6;
+const RECOMMENDED_LIMIT = 5;
+const AUTO_SCROLL_INTERVAL_MS = 4_500;
+
 type HomeStyles = ReturnType<typeof createStyles>;
 
-const HomeSkeletonCard = memo(function HomeSkeletonCard({ styles }: { styles: HomeStyles }) {
+function BookmarkButton({
+  active,
+  onPress,
+  styles,
+}: {
+  active: boolean;
+  onPress: () => void;
+  styles: HomeStyles;
+}) {
   return (
-    <View style={styles.card}>
-      <View style={styles.cardBody}>
-        <SkeletonBlock height={156} borderRadius={RADIUS.md} />
-        <SkeletonBlock width="82%" height={24} />
-        <SkeletonBlock width="68%" height={24} />
-        <SkeletonBlock width="100%" height={16} borderRadius={RADIUS.sm} />
-        <SkeletonBlock width="76%" height={16} borderRadius={RADIUS.sm} />
-      </View>
-
-      <View style={styles.cardFooter}>
-        <SkeletonBlock width={92} height={16} borderRadius={RADIUS.sm} />
-      </View>
-    </View>
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={active ? "Remove bookmark" : "Add bookmark"}
+      accessibilityState={{ selected: active }}
+      hitSlop={8}
+      onPress={(event: GestureResponderEvent) => {
+        event.stopPropagation();
+        onPress();
+      }}
+      style={({ pressed }) => [
+        styles.bookmarkButton,
+        active && styles.bookmarkButtonActive,
+        pressed && styles.pressed,
+      ]}
+    >
+      <FavoriteTabIcon
+        color={active ? styles.bookmarkActiveColor.color : styles.bookmarkColor.color}
+        filled={active}
+        size={21}
+      />
+    </Pressable>
   );
-});
+}
 
-const HomePostCard = memo(function HomePostCard({
-  onDoublePressPost,
-  onPressPost,
+function RecommendedPostCard({
+  bookmarked,
+  onBookmark,
+  onOpen,
   post,
   styles,
 }: {
-  onDoublePressPost: (post: PostRecord) => void;
-  onPressPost: (post: PostRecord) => void;
+  bookmarked: boolean;
+  onBookmark: () => void;
+  onOpen: () => void;
   post: PostRecord;
   styles: HomeStyles;
 }) {
-  const tapTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const thumbnailUrl = getPostCardThumbnailUrl(post);
-  const previewText = getContentPreviewLines(post.content);
-  const authorName =
-    post.authorDisplayName.trim() ||
-    post.authorUsername.trim() ||
-    "Unknown Author";
-
-  useEffect(() => () => {
-    if (tapTimerRef.current) clearTimeout(tapTimerRef.current);
-  }, []);
-
-  const handlePress = () => {
-    if (tapTimerRef.current) {
-      clearTimeout(tapTimerRef.current);
-      tapTimerRef.current = null;
-      onDoublePressPost(post);
-      return;
-    }
-    tapTimerRef.current = setTimeout(() => {
-      tapTimerRef.current = null;
-      onPressPost(post);
-    }, 240);
-  };
+  const author = post.authorDisplayName.trim() || post.authorUsername.trim() || "Unknown Author";
 
   return (
-    <View style={styles.card}>
-      <Pressable
-        style={({ pressed }) => [
-          styles.cardBody,
-          pressed && styles.cardBodyPressed,
-        ]}
-        onPress={handlePress}
-      >
-        <View style={styles.mediaWrap}>
-          {thumbnailUrl ? (
-            <Image
-              cachePolicy="memory-disk"
-              contentFit="cover"
-              placeholder={REMOTE_IMAGE_PLACEHOLDER}
-              placeholderContentFit="cover"
-              source={{ uri: thumbnailUrl }}
-              style={styles.thumbnail}
-              transition={REMOTE_IMAGE_TRANSITION_MS}
-            />
-          ) : (
-            <View style={styles.thumbnailFallback} />
-          )}
-        </View>
-        <Text style={styles.cardTitle} numberOfLines={3} ellipsizeMode="tail">
-          {post.title}
-        </Text>
-        <Text
-          style={styles.cardPreview}
-          numberOfLines={2}
-          ellipsizeMode="tail"
-        >
-          {previewText}
-        </Text>
-        <Text style={styles.cardAuthor} numberOfLines={1}>
-          {`By ${authorName}`}
-        </Text>
-      </Pressable>
-    </View>
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`Open ${post.title}`}
+      onPress={onOpen}
+      style={({ pressed }) => [styles.postCard, pressed && styles.cardPressed]}
+    >
+      <View style={styles.postMedia}>
+        {thumbnailUrl ? (
+          <Image
+            accessibilityLabel={post.title}
+            cachePolicy="memory-disk"
+            contentFit="cover"
+            placeholder={REMOTE_IMAGE_PLACEHOLDER}
+            placeholderContentFit="cover"
+            source={{ uri: thumbnailUrl }}
+            style={styles.postImage}
+            transition={REMOTE_IMAGE_TRANSITION_MS}
+          />
+        ) : <View style={styles.postImageFallback} />}
+        <BookmarkButton active={bookmarked} onPress={onBookmark} styles={styles} />
+      </View>
+      <View style={styles.postBody}>
+        <Text style={styles.postTitle} numberOfLines={2}>{post.title}</Text>
+        <Text style={styles.postPreview} numberOfLines={2}>{getContentPreviewLines(post.content)}</Text>
+        <Text style={styles.postAuthor} numberOfLines={1}>{`By ${author}`}</Text>
+      </View>
+    </Pressable>
   );
-});
+}
 
-export default function MainIndexScreen() {
+export default function HomeTabScreen() {
   const { colors } = useAppTheme();
+  const { user } = useAuth();
   const { isConnected, showOfflineToast } = useNetworkStatus();
   const { isFavorite, toggleFavorite } = useFavorites();
-  const {
-    publishedPosts,
-    isLoadingPosts,
-    isLoadingMorePosts,
-    hasMorePublishedPosts,
-    postsError,
-    loadMorePublishedPostsAsync,
-  } = useMainTabData();
-  const navigation = useNavigation();
+  const { categories, isLoadingCategories, isLoadingPosts, postsError, publishedPosts } = useMainTabData();
   const router = useRouter();
-  const listRef = useRef<HomeListRef | null>(null);
-  const hasRestoredInitialScrollRef = useRef(false);
-  const [collectionPostId, setCollectionPostId] = useState("");
+  const { width } = useWindowDimensions();
   const styles = useMemo(() => createStyles(colors), [colors]);
-  // Background requests must keep existing cards mounted and scrollable.
-  const isLoadingVisiblePosts = isLoadingPosts && publishedPosts.length === 0;
-  const listItems = useMemo<HomeListItem[]>(
-    () => (isLoadingVisiblePosts ? HOME_SKELETON_ITEMS : publishedPosts),
-    [isLoadingVisiblePosts, publishedPosts],
+  const carouselRef = useRef<FlatList<PostRecord> | null>(null);
+  const activeSlideRef = useRef(0);
+  const [activeSlide, setActiveSlide] = useState(0);
+  const [recommendedPosts, setRecommendedPosts] = useState<PostRecord[]>([]);
+  const [collectionPostId, setCollectionPostId] = useState("");
+
+  const carouselWidth = Math.max(width - SPACING.xxl * 2, 1);
+  const categoryCardWidth = Math.max((carouselWidth - SPACING.sm) / 2, 1);
+  const featuredPosts = useMemo(
+    () => publishedPosts.filter((post) => Boolean(getPostCardThumbnailUrl(post))).slice(0, FEATURED_LIMIT),
+    [publishedPosts],
   );
-  const scrollHomeFeedToTop = useCallback((animated = true) => {
-    HOME_FEED_MEMORY.scrollOffset = 0;
-    listRef.current?.scrollToOffset({ offset: 0, animated });
-  }, []);
+  const visibleCategories = useMemo(() => categories.slice(0, CATEGORY_LIMIT), [categories]);
+
+  const refreshRecommendations = useCallback(() => {
+    let active = true;
+    void getRecommendedPostsAsync(user?.uid ?? "guest", publishedPosts, RECOMMENDED_LIMIT)
+      .then((posts) => {
+        if (active) setRecommendedPosts(posts);
+      })
+      .catch(() => {
+        if (active) setRecommendedPosts(publishedPosts.slice(0, RECOMMENDED_LIMIT));
+      });
+    return () => {
+      active = false;
+    };
+  }, [publishedPosts, user?.uid]);
+
+  useFocusEffect(refreshRecommendations);
+
+  useEffect(() => {
+    if (featuredPosts.length < 2) return;
+    const intervalId = setInterval(() => {
+      const nextIndex = (activeSlideRef.current + 1) % featuredPosts.length;
+      carouselRef.current?.scrollToOffset({ offset: nextIndex * carouselWidth, animated: true });
+      activeSlideRef.current = nextIndex;
+      setActiveSlide(nextIndex);
+    }, AUTO_SCROLL_INTERVAL_MS);
+    return () => clearInterval(intervalId);
+  }, [carouselWidth, featuredPosts.length]);
+
+  useEffect(() => {
+    if (activeSlideRef.current < featuredPosts.length) return;
+    activeSlideRef.current = 0;
+    setActiveSlide(0);
+    carouselRef.current?.scrollToOffset({ offset: 0, animated: false });
+  }, [featuredPosts.length]);
+
   const openPost = useCallback((post: PostRecord) => {
     primePostNavigationCache(post);
     router.push({ pathname: "/post/[postId]", params: { postId: post.id } });
   }, [router]);
-  const bookmarkPostWithDoubleTap = useCallback(async (post: PostRecord) => {
+
+  const openCategory = useCallback((categorySlug: string) => {
+    router.push({ pathname: "/(main)/(tabs)/categories", params: { categorySlug } });
+  }, [router]);
+
+  const handleBookmark = useCallback(async (post: PostRecord) => {
     try {
-      if (!isFavorite(post.id)) {
-        await toggleFavorite(post, { showToast: false });
-      }
-      setCollectionPostId(post.id);
-    } catch (bookmarkError) {
-      const message = getActionErrorMessage({ error: bookmarkError, isConnected, fallbackMessage: "Bookmark could not be saved right now." });
-      if (message === DEFAULT_OFFLINE_MESSAGE) {
-        showOfflineToast();
+      if (isFavorite(post.id)) {
+        await toggleFavorite(post);
         return;
       }
-      Alert.alert("Unable to save bookmark", message);
+      await toggleFavorite(post, { showToast: false });
+      setCollectionPostId(post.id);
+    } catch (error) {
+      const message = getActionErrorMessage({
+        error,
+        isConnected,
+        fallbackMessage: "Bookmark could not be updated right now.",
+      });
+      if (message === DEFAULT_OFFLINE_MESSAGE) showOfflineToast();
+      else Alert.alert("Unable to update bookmark", message);
     }
   }, [isConnected, isFavorite, showOfflineToast, toggleFavorite]);
 
-  const handleScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
-    HOME_FEED_MEMORY.scrollOffset = event.nativeEvent.contentOffset.y;
-  }, []);
-
-  useEffect(() => {
-    const subscribeToTabPress = (
-      navigation as typeof navigation & {
-        addListener: (eventName: string, callback: () => void) => () => void;
-      }
-    ).addListener;
-
-    const unsubscribe = subscribeToTabPress("tabPress", () => {
-      if (!navigation.isFocused()) {
-        return;
-      }
-
-      scrollHomeFeedToTop();
-    });
-
-    return unsubscribe;
-  }, [navigation, scrollHomeFeedToTop]);
-
-  useEffect(() => {
-    if (hasRestoredInitialScrollRef.current || isLoadingVisiblePosts) {
-      return;
-    }
-
-    hasRestoredInitialScrollRef.current = true;
-
-    if (HOME_FEED_MEMORY.scrollOffset <= 0) {
-      return;
-    }
-
-    requestAnimationFrame(() => {
-      listRef.current?.scrollToOffset({
-        offset: HOME_FEED_MEMORY.scrollOffset,
-        animated: false,
-      });
-    });
-  }, [isLoadingVisiblePosts, listItems.length]);
-
-  const keyExtractor = useCallback((item: HomeListItem) => {
-    if (typeof item === "number") {
-      return `skeleton-${item}`;
-    }
-
-    return item.id;
-  }, []);
-
-  const renderItem = useCallback(
-    ({ item }: { item: HomeListItem }) => {
-      if (typeof item === "number") {
-        return <HomeSkeletonCard styles={styles} />;
-      }
-
-      return (
-        <HomePostCard
-          onDoublePressPost={(post) => void bookmarkPostWithDoubleTap(post)}
-          onPressPost={openPost}
-          post={item}
-          styles={styles}
-        />
-      );
-    },
-    [bookmarkPostWithDoubleTap, openPost, styles],
-  );
-
-  const renderSeparator = useCallback(
-    () => <View style={styles.listSeparator} />,
-    [styles],
-  );
-
-  const listEmptyComponent = useMemo(
-    () =>
-      !isLoadingVisiblePosts && !postsError ? (
-        <View style={styles.emptyWrap}>
-          <Text style={styles.emptyText}>
-            No published posts are available right now.
-          </Text>
-        </View>
-      ) : null,
-    [isLoadingVisiblePosts, postsError, styles],
-  );
-
-  const listFooterComponent = (
-    <View style={styles.listFooter}>
-      {!isLoadingVisiblePosts && postsError ? (
-        <Text selectable style={styles.errorText}>{postsError}</Text>
-      ) : null}
-      {!isLoadingVisiblePosts && (hasMorePublishedPosts || isLoadingMorePosts) ? (
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Load more posts"
-          accessibilityState={{ busy: isLoadingMorePosts, disabled: isLoadingMorePosts }}
-          disabled={isLoadingMorePosts}
-          onPress={() => void loadMorePublishedPostsAsync()}
-          style={({ pressed }) => [
-            styles.loadMoreButton,
-            isLoadingMorePosts && styles.loadMoreButtonDisabled,
-            pressed && !isLoadingMorePosts && styles.loadMoreButtonPressed,
-          ]}
-        >
-          {({ pressed }) => (
-            <>
-              {isLoadingMorePosts ? (
-                <ActivityIndicator size="small" color={pressed ? colors.primaryText : colors.primary} />
-              ) : null}
-              <Text style={[styles.loadMoreButtonText, pressed && styles.loadMoreButtonTextPressed]}>
-                {isLoadingMorePosts ? "Loading..." : "Load more"}
-              </Text>
-            </>
-          )}
-        </Pressable>
-      ) : null}
-    </View>
-  );
   return (
     <View style={styles.screen}>
-      <MainTabFlatList<HomeListItem>
+      <MainTabScrollView
         tabName="home"
-        listRef={listRef as Ref<FlatList<HomeListItem>>}
-        data={listItems}
-        keyExtractor={keyExtractor}
-        renderItem={renderItem}
-        ItemSeparatorComponent={renderSeparator}
-        ListEmptyComponent={listEmptyComponent}
-        ListFooterComponent={listFooterComponent}
-        contentContainerStyle={styles.listContentContainer}
-        showsVerticalScrollIndicator={false}
-        onScroll={handleScroll}
+        contentContainerStyle={styles.content}
         contentInsetAdjustmentBehavior="automatic"
-      />
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Featured</Text>
+          {isLoadingPosts && !featuredPosts.length ? (
+            <SkeletonBlock height={carouselWidth * 9 / 16} borderRadius={4} />
+          ) : null}
+          {featuredPosts.length ? (
+            <View>
+              <FlatList
+                ref={carouselRef}
+                horizontal
+                data={featuredPosts}
+                keyExtractor={(post) => post.id}
+                pagingEnabled
+                showsHorizontalScrollIndicator={false}
+                getItemLayout={(_, index) => ({ length: carouselWidth, offset: carouselWidth * index, index })}
+                onMomentumScrollEnd={(event) => {
+                  const nextIndex = Math.round(event.nativeEvent.contentOffset.x / carouselWidth);
+                  activeSlideRef.current = nextIndex;
+                  setActiveSlide(nextIndex);
+                }}
+                renderItem={({ item }) => (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={`Open featured post ${item.title}`}
+                    onPress={() => openPost(item)}
+                    style={[styles.featuredCard, { width: carouselWidth }]}
+                  >
+                    <Image
+                      accessibilityLabel={item.title}
+                      cachePolicy="memory-disk"
+                      contentFit="cover"
+                      placeholder={REMOTE_IMAGE_PLACEHOLDER}
+                      placeholderContentFit="cover"
+                      source={{ uri: getPostCardThumbnailUrl(item) }}
+                      style={styles.featuredImage}
+                      transition={REMOTE_IMAGE_TRANSITION_MS}
+                    />
+                    <View style={styles.featuredOverlay}>
+                      <Text style={styles.featuredTitle} numberOfLines={2}>{item.title}</Text>
+                    </View>
+                  </Pressable>
+                )}
+              />
+              <View style={styles.dots}>
+                {featuredPosts.map((post, index) => (
+                  <View key={post.id} style={[styles.dot, index === activeSlide && styles.dotActive]} />
+                ))}
+              </View>
+            </View>
+          ) : null}
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Categories</Text>
+          <View style={styles.categoryGrid}>
+            {isLoadingCategories && !visibleCategories.length
+              ? Array.from({ length: CATEGORY_LIMIT }, (_, index) => (
+                  <SkeletonBlock key={index} width={categoryCardWidth} height={132} borderRadius={4} />
+                ))
+              : visibleCategories.map((category) => (
+                  <Pressable
+                    key={category.id}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Open ${category.name}`}
+                    onPress={() => openCategory(category.slug)}
+                    style={({ pressed }) => [styles.categoryCard, { width: categoryCardWidth }, pressed && styles.cardPressed]}
+                  >
+                    {category.imageUrl ? (
+                      <Image
+                        accessibilityLabel={category.name}
+                        cachePolicy="memory-disk"
+                        contentFit="cover"
+                        placeholder={REMOTE_IMAGE_PLACEHOLDER}
+                        placeholderContentFit="cover"
+                        source={{ uri: category.imageUrl }}
+                        style={styles.categoryImage}
+                        transition={REMOTE_IMAGE_TRANSITION_MS}
+                      />
+                    ) : (
+                      <View style={styles.categoryImageFallback}>
+                        <Text style={styles.categoryInitialText}>{category.name.trim().charAt(0).toUpperCase()}</Text>
+                      </View>
+                    )}
+                    <View style={styles.categoryContent}>
+                      <Text style={styles.categoryName} numberOfLines={1}>{category.name}</Text>
+                      <ArrowRightIcon size={15} color={colors.tabActive} />
+                    </View>
+                  </Pressable>
+                ))}
+          </View>
+        </View>
+
+        <View style={styles.section}>
+          <View style={styles.sectionHeadingRow}>
+            <Text style={styles.sectionTitle}>Recommended for you</Text>
+            <Text style={styles.sectionCount}>{recommendedPosts.length}/5</Text>
+          </View>
+          {isLoadingPosts && !recommendedPosts.length
+            ? Array.from({ length: 2 }, (_, index) => (
+                <SkeletonBlock key={index} height={250} borderRadius={RADIUS.lg} />
+              ))
+            : recommendedPosts.map((post) => (
+                <RecommendedPostCard
+                  key={post.id}
+                  bookmarked={isFavorite(post.id)}
+                  onBookmark={() => void handleBookmark(post)}
+                  onOpen={() => openPost(post)}
+                  post={post}
+                  styles={styles}
+                />
+              ))}
+          {postsError ? <Text selectable style={styles.errorText}>{postsError}</Text> : null}
+        </View>
+      </MainTabScrollView>
+
       <BookmarkCollectionSheet
         isPresented={Boolean(collectionPostId)}
         onDismiss={() => setCollectionPostId("")}
@@ -331,123 +341,84 @@ export default function MainIndexScreen() {
   );
 }
 
-const createStyles = (colors: ThemeColors) => {
-  return StyleSheet.create({
-    screen: {
-      flex: 1,
-      backgroundColor: colors.background,
-    },
-    listContentContainer: {
-      flexGrow: 1,
-      paddingHorizontal: SPACING.xxl,
-      paddingTop: SPACING.lg,
-      paddingBottom: SPACING.xxl * 2,
-      backgroundColor: colors.background,
-    },
-    listSeparator: {
-      height: SPACING.xl,
-    },
-    listFooter: {
-      minHeight: 88,
-      gap: SPACING.md,
-      paddingVertical: SPACING.lg,
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    loadMoreButton: {
-      width: "100%",
-      minHeight: 50,
-      paddingVertical: SPACING.md,
-      paddingHorizontal: SPACING.lg,
-      borderRadius: RADIUS.md,
-      backgroundColor: STATIC_COLORS.white,
-      flexDirection: "row",
-      alignItems: "center",
-      justifyContent: "center",
-      gap: SPACING.sm,
-      borderCurve: "continuous",
-      boxShadow: "0 5px 16px rgba(0, 0, 0, 0.12)",
-    },
-    loadMoreButtonDisabled: {
-      opacity: 0.7,
-    },
-    loadMoreButtonPressed: {
-      backgroundColor: colors.primary,
-      transform: [{ scale: 0.97 }],
-    },
-    loadMoreButtonText: {
-      color: colors.text,
-      fontSize: 15,
-      fontWeight: "800",
-    },
-    loadMoreButtonTextPressed: { color: colors.primaryText },
-    card: {
-      borderRadius: 14,
-      backgroundColor: colors.surface,
-      padding: SPACING.md,
-      gap: SPACING.sm,
-      ...SHADOWS.sm,
-    },
-    cardBody: {
-      gap: SPACING.sm,
-    },
-    cardBodyPressed: {
-      opacity: 0.92,
-    },
-    mediaWrap: {
-      position: "relative",
-    },
-    thumbnail: {
-      width: "100%",
-      height: 156,
-      borderRadius: 9,
-      backgroundColor: colors.surfaceSoft,
-    },
-    thumbnailFallback: {
-      width: "100%",
-      height: 156,
-      borderRadius: 9,
-      backgroundColor: colors.surfaceSoft,
-    },
-    cardTitle: {
-      fontSize: 17,
-      fontWeight: "700",
-      color: colors.text,
-      lineHeight: 23,
-    },
-    cardPreview: {
-      fontSize: FONT_SIZE.body,
-      color: colors.mutedText,
-      lineHeight: 21,
-    },
-    cardAuthor: {
-      fontSize: 12,
-      color: colors.subtleText,
-      fontWeight: "600",
-      lineHeight: 18,
-    },
-    cardFooter: {
-      marginTop: SPACING.xs,
-      flexDirection: "row",
-      alignItems: "center",
-      justifyContent: "space-between",
-      gap: SPACING.sm,
-    },
-    errorText: {
-      color: colors.danger,
-      fontSize: 13,
-    },
-    emptyWrap: {
-      borderRadius: RADIUS.md,
-      borderWidth: 1,
-      borderColor: colors.border,
-      backgroundColor: colors.surface,
-      padding: SPACING.lg,
-    },
-    emptyText: {
-      color: colors.mutedText,
-      fontSize: 14,
-      textAlign: "center",
-    },
-  });
-};
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
+  screen: { flex: 1, backgroundColor: colors.background },
+  content: {
+    paddingHorizontal: SPACING.xxl,
+    paddingTop: SPACING.lg,
+    paddingBottom: SPACING.xxl * 2,
+    gap: SPACING.xxl,
+  },
+  section: { gap: SPACING.md },
+  sectionHeadingRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  sectionTitle: { color: colors.text, fontSize: 21, lineHeight: 27, fontWeight: "800" },
+  sectionCount: { color: colors.subtleText, fontSize: 13, fontVariant: ["tabular-nums"] },
+  featuredCard: {
+    aspectRatio: 16 / 9,
+    overflow: "hidden",
+    borderRadius: 4,
+    backgroundColor: colors.surfaceSoft,
+    borderCurve: "continuous",
+  },
+  featuredImage: { width: "100%", height: "100%" },
+  featuredOverlay: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    paddingHorizontal: SPACING.lg,
+    paddingTop: SPACING.xxl,
+    paddingBottom: SPACING.lg,
+    backgroundColor: "#00000080",
+  },
+  featuredTitle: { color: "#FFFFFF", fontSize: 19, lineHeight: 25, fontWeight: "800" },
+  dots: { flexDirection: "row", justifyContent: "center", gap: 6, paddingTop: SPACING.sm },
+  dot: { width: 6, height: 6, borderRadius: RADIUS.pill, backgroundColor: colors.border },
+  dotActive: { width: 20, backgroundColor: colors.tabActive },
+  categoryGrid: { flexDirection: "row", flexWrap: "wrap", gap: SPACING.sm },
+  categoryCard: {
+    overflow: "hidden",
+    borderRadius: 4,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderCurve: "continuous",
+  },
+  categoryImage: { width: "100%", aspectRatio: 16 / 9, backgroundColor: colors.surfaceSoft },
+  categoryImageFallback: { width: "100%", aspectRatio: 16 / 9, alignItems: "center", justifyContent: "center", backgroundColor: colors.activeSurface },
+  categoryInitialText: { color: colors.tabActive, fontSize: 22, fontWeight: "800" },
+  categoryContent: { minHeight: 46, paddingHorizontal: SPACING.md, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: SPACING.sm },
+  categoryName: { flex: 1, color: colors.text, fontSize: 14, lineHeight: 18, fontWeight: "700" },
+  postCard: {
+    overflow: "hidden",
+    borderRadius: 9,
+    backgroundColor: colors.surface,
+    borderCurve: "continuous",
+    ...SHADOWS.sm,
+  },
+  cardPressed: { opacity: 0.92, transform: [{ scale: 0.995 }] },
+  postImage: { width: "100%", height: 158, backgroundColor: colors.surfaceSoft },
+  postImageFallback: { width: "100%", height: 158, backgroundColor: colors.surfaceSoft },
+  postMedia: { position: "relative" },
+  postBody: { padding: SPACING.lg, gap: SPACING.sm },
+  postTitle: { color: colors.text, fontSize: 17, lineHeight: 23, fontWeight: "700" },
+  postPreview: { color: colors.mutedText, fontSize: 14, lineHeight: 20 },
+  postAuthor: { color: colors.subtleText, fontSize: 12, fontWeight: "600" },
+  bookmarkButton: {
+    position: "absolute",
+    top: SPACING.sm,
+    right: SPACING.sm,
+    width: 38,
+    height: 38,
+    borderRadius: RADIUS.pill,
+    backgroundColor: colors.surface,
+    alignItems: "center",
+    justifyContent: "center",
+    ...SHADOWS.sm,
+  },
+  bookmarkButtonActive: { backgroundColor: colors.favoriteSurface },
+  bookmarkColor: { color: colors.iconMuted },
+  bookmarkActiveColor: { color: colors.tabActive },
+  pressed: { opacity: 0.7 },
+  errorText: { color: colors.danger, fontSize: 13 },
+});
